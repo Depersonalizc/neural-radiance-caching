@@ -27,7 +27,7 @@
  */
 
 #pragma once
- 
+
 #ifndef RAYTRACER_H
 #define RAYTRACER_H
 
@@ -50,82 +50,97 @@
 #define P2P_GAS 4
 #define P2P_ENV 8
 
-class Raytracer
-{
+class Raytracer {
 public:
-  Raytracer(const int maskDevices,
-            const TypeLight typeEnv,
-            const int interop,
-            const unsigned int tex,
-            const unsigned int pbo,
-            const size_t sizeArena,
-            const int p2p);
-  ~Raytracer();
+    Raytracer(const int maskDevices,
+              const TypeLight typeEnv,
+              const int interop,
+              const unsigned int tex,
+              const unsigned int pbo,
+              const size_t sizeArena,
+              const int p2p);
 
-  int matchUUID(const char* uuid);
-  int matchLUID(const char* luid, const unsigned int nodeMask);
+    ~Raytracer();
 
-  bool enablePeerAccess();  // Calculates peer-to-peer access bit matrix in m_peerConnections and sets the m_islands.
-  void disablePeerAccess(); // Clear the peer-to-peer islands. Afterwards each device is its own island.
-  
-  void synchronize();        // Needed for the benchmark to wait for all asynchronous rendering to have finished.
+    int matchUUID(const char *uuid);
 
-  void initTextures(const std::map<std::string, Picture*>& mapOfPictures);
-  void initCameras(const std::vector<CameraDefinition>& cameras);
-  void initLights(const std::vector<LightGUI>& lights, const std::vector<MaterialGUI>& materialsGUI);
-  void initMaterials(const std::vector<MaterialGUI>& materialsGUI);
-  void initScene(std::shared_ptr<sg::Group> root, const unsigned int numGeometries);
-  void initState(const DeviceState& state);
+    int matchLUID(const char *luid, const unsigned int nodeMask);
 
-  // Update functions should be replaced with NOP functions in a derived batch renderer because the device functions are fully asynchronous then.
-  void updateCamera(const int idCamera, const CameraDefinition& camera);
-  void updateLight(const int idLight, const MaterialGUI& materialGUI);
-  //void updateLight(const int idLight, const LightDefinition& light);
-  void updateMaterial(const int idMaterial, const MaterialGUI& materialGUI);
-  void updateState(const DeviceState& state);
-  void updateTLAS();
+    bool enablePeerAccess();  // Calculates peer-to-peer access bit matrix in m_peerConnections and sets the m_islands.
+    void disablePeerAccess(); // Clear the peer-to-peer islands. Afterwards each device is its own island.
 
-  unsigned int render(const int mode = 0); // 0 = interactive, 1 = benchmark (fully asynchronous launches)
-  void updateDisplayTexture();
-  const void* getOutputBufferHost();
+    void synchronize();        // Needed for the benchmark to wait for all asynchronous rendering to have finished.
+
+    void initTextures(const std::map<std::string, Picture *> &mapOfPictures);
+
+    void initCameras(const std::vector<CameraDefinition> &cameras);
+
+    void initLights(const std::vector<LightGUI> &lights, const std::vector<MaterialGUI> &materialsGUI);
+
+    void initMaterials(const std::vector<MaterialGUI> &materialsGUI);
+
+    void initScene(std::shared_ptr<sg::Group> root, const unsigned int numGeometries);
+
+    void initState(const DeviceState &state);
+
+    // Update functions should be replaced with NOP functions in a derived batch renderer because the device functions are fully asynchronous then.
+    void updateCamera(const int idCamera, const CameraDefinition &camera);
+
+    void updateLight(const int idLight, const MaterialGUI &materialGUI);
+
+    //void updateLight(const int idLight, const LightDefinition& light);
+    void updateMaterial(const int idMaterial, const MaterialGUI &materialGUI);
+
+    void updateState(const DeviceState &state);
+
+    void updateTLAS();
+
+    unsigned int render(const int mode = 0); // 0 = interactive, 1 = benchmark (fully asynchronous launches)
+    void updateDisplayTexture();
+
+    const void *getOutputBufferHost();
 
 private:
-  void selectDevices();
-  int  getDeviceHome(const std::vector<int>& island) const;
-  void traverseNode(std::shared_ptr<sg::Node> node, InstanceData instanceData, float matrix[12]);
-  bool activeNVLINK(const int home, const int peer) const;
-  int findActiveDevice(const unsigned int domain, const unsigned int bus, const unsigned int device) const;
+    void selectDevices();
+
+    int getDeviceHome(const std::vector<int> &island) const;
+
+    void traverseNode(std::shared_ptr<sg::Node> node, InstanceData instanceData, float matrix[12]);
+
+    bool activeNVLINK(const int home, const int peer) const;
+
+    int findActiveDevice(const unsigned int domain, const unsigned int bus, const unsigned int device) const;
 
 public:
-  // Constructor arguments
-  unsigned int m_maskDevices; // The bitmask with the devices the user selected.
-  TypeLight    m_typeEnv;     // Controls the miss program selection.
-  int          m_interop;     // Which CUDA-OpenGL interop to use.
-  unsigned int m_tex;         // The OpenGL texture object used for display. 
-  unsigned int m_pbo;         // The pixel buffer object when using INTEROP_MODE_PBO.
-  size_t       m_sizeArena;   // The default Arena allocation size in mega-bytes, just routed through to Device class.
-  int          m_peerToPeer;  // Bitfield encoding for which resources CUDA P2P sharing is allowed:
-                              // Bit 0: Allow sharing via PCI-E, ignores the NVLINK topology, just checks cuDeviceCanAccessPeer().
-                              // Bit 1: Share material textures (not the HDR environment).
-                              // Bit 2: Share GAS and vertex attribute data.
-                              // Bit 3: Share (optional) HDR environment and its CDF data.
+    // Constructor arguments
+    unsigned int m_maskDevices; // The bitmask with the devices the user selected.
+    TypeLight m_typeEnv;     // Controls the miss program selection.
+    int m_interop;     // Which CUDA-OpenGL interop to use.
+    unsigned int m_tex;         // The OpenGL texture object used for display.
+    unsigned int m_pbo;         // The pixel buffer object when using INTEROP_MODE_PBO.
+    size_t m_sizeArena;   // The default Arena allocation size in mega-bytes, just routed through to Device class.
+    int m_peerToPeer;  // Bitfield encoding for which resources CUDA P2P sharing is allowed:
+    // Bit 0: Allow sharing via PCI-E, ignores the NVLINK topology, just checks cuDeviceCanAccessPeer().
+    // Bit 1: Share material textures (not the HDR environment).
+    // Bit 2: Share GAS and vertex attribute data.
+    // Bit 3: Share (optional) HDR environment and its CDF data.
 
-  bool m_isValid;
+    bool m_isValid;
 
-  int                  m_numDevicesVisible; // The number of visible CUDA devices. (What you can control via the CUDA_VISIBLE_DEVICES environment variable.)
-  int                  m_indexDeviceOGL;    // The first device which matches with the OpenGL LUID and node mask. -1 when there was no match.
-  unsigned int         m_maskDevicesActive; // The bitmask marking the actually enabled devices.
-  std::vector<Device*> m_devicesActive;
+    int m_numDevicesVisible; // The number of visible CUDA devices. (What you can control via the CUDA_VISIBLE_DEVICES environment variable.)
+    int m_indexDeviceOGL;    // The first device which matches with the OpenGL LUID and node mask. -1 when there was no match.
+    unsigned int m_maskDevicesActive; // The bitmask marking the actually enabled devices.
+    std::vector<Device *> m_devicesActive;
 
-  unsigned int m_iterationIndex;  // Tracks which sub-frame is currently raytraced.
-  unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.
+    unsigned int m_iterationIndex;  // Tracks which sub-frame is currently raytraced.
+    unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.
 
-  std::vector<unsigned int>       m_peerConnections; // Bitfield indicating peer-to-peer access between devices. Indexing is m_peerConnections[home] & (1 << peer)
-  std::vector< std::vector<int> > m_islands;         // Vector with vector of active device indices (not ordinals) building a peer-to-peer island.
+    std::vector<unsigned int> m_peerConnections; // Bitfield indicating peer-to-peer access between devices. Indexing is m_peerConnections[home] & (1 << peer)
+    std::vector<std::vector<int> > m_islands;         // Vector with vector of active device indices (not ordinals) building a peer-to-peer island.
 
-  std::vector<GeometryData> m_geometryData; // The geometry device data. (Either per P2P island when sharing GAS, or per device when not sharing.)
+    std::vector<GeometryData> m_geometryData; // The geometry device data. (Either per P2P island when sharing GAS, or per device when not sharing.)
 
-  NVMLImpl m_nvml;
+    NVMLImpl m_nvml;
 };
 
 #endif // RAYTRACER_H

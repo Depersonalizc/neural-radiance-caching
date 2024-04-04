@@ -31,106 +31,96 @@
 
 #include "shaders/vector_math.h"
 
-namespace sg
-{
+namespace sg {
 
-  void Triangles::createPlane(const unsigned int tessU, const unsigned int tessV, const unsigned int upAxis)
-  {
-    MY_ASSERT(1 <= tessU && 1 <= tessV);
-
-    m_attributes.clear();
-    m_indices.clear();
-
-    const float uTile = 2.0f / float(tessU);
-    const float vTile = 2.0f / float(tessV);
-
-    float3 corner;
-
-    TriangleAttributes attrib;
-
-    switch (upAxis)
+    void Triangles::createPlane(const unsigned int tessU, const unsigned int tessV, const unsigned int upAxis)
     {
-      case 0: // Positive x-axis is the geometry normal, create geometry on the yz-plane.
-        corner = make_float3(0.0f, -1.0f, 1.0f); // Lower front corner of the plane. texcoord (0.0f, 0.0f).
+        MY_ASSERT(1 <= tessU && 1 <= tessV);
 
-        attrib.tangent = make_float3(0.0f, 0.0f, -1.0f);
-        attrib.normal  = make_float3(1.0f, 0.0f, 0.0f);
+        m_attributes.clear();
+        m_indices.clear();
 
-        for (unsigned int j = 0; j <= tessV; ++j)
-        {
-          const float v = float(j) * vTile;
+        const float uTile = 2.0f / float(tessU);
+        const float vTile = 2.0f / float(tessV);
 
-          for (unsigned int i = 0; i <= tessU; ++i)
-          {
-            const float u = float(i) * uTile;
+        float3 corner;
 
-            attrib.vertex   = corner + make_float3(0.0f, v, -u);
-            attrib.texcoord = make_float3(u * 0.5f, v * 0.5f, 0.0f);
+        TriangleAttributes attrib;
 
-            m_attributes.push_back(attrib);
-          }
+        switch (upAxis) {
+            case 0: // Positive x-axis is the geometry normal, create geometry on the yz-plane.
+                corner = make_float3(0.0f, -1.0f, 1.0f); // Lower front corner of the plane. texcoord (0.0f, 0.0f).
+
+                attrib.tangent = make_float3(0.0f, 0.0f, -1.0f);
+                attrib.normal = make_float3(1.0f, 0.0f, 0.0f);
+
+                for (unsigned int j = 0; j <= tessV; ++j) {
+                    const float v = float(j) * vTile;
+
+                    for (unsigned int i = 0; i <= tessU; ++i) {
+                        const float u = float(i) * uTile;
+
+                        attrib.vertex = corner + make_float3(0.0f, v, -u);
+                        attrib.texcoord = make_float3(u * 0.5f, v * 0.5f, 0.0f);
+
+                        m_attributes.push_back(attrib);
+                    }
+                }
+                break;
+
+            case 1: // Positive y-axis is the geometry normal, create geometry on the xz-plane.
+                corner = make_float3(-1.0f, 0.0f, 1.0f); // left front corner of the plane. texcoord (0.0f, 0.0f).
+
+                attrib.tangent = make_float3(1.0f, 0.0f, 0.0f);
+                attrib.normal = make_float3(0.0f, 1.0f, 0.0f);
+
+                for (unsigned int j = 0; j <= tessV; ++j) {
+                    const float v = float(j) * vTile;
+
+                    for (unsigned int i = 0; i <= tessU; ++i) {
+                        const float u = float(i) * uTile;
+
+                        attrib.vertex = corner + make_float3(u, 0.0f, -v);
+                        attrib.texcoord = make_float3(u * 0.5f, v * 0.5f, 0.0f);
+
+                        m_attributes.push_back(attrib);
+                    }
+                }
+                break;
+
+            case 2: // Positive z-axis is the geometry normal, create geometry on the xy-plane.
+                corner = make_float3(-1.0f, -1.0f, 0.0f); // Lower left corner of the plane. texcoord (0.0f, 0.0f).
+
+                attrib.tangent = make_float3(1.0f, 0.0f, 0.0f);
+                attrib.normal = make_float3(0.0f, 0.0f, 1.0f);
+
+                for (unsigned int j = 0; j <= tessV; ++j) {
+                    const float v = float(j) * vTile;
+
+                    for (unsigned int i = 0; i <= tessU; ++i) {
+                        const float u = float(i) * uTile;
+
+                        attrib.vertex = corner + make_float3(u, v, 0.0f);
+                        attrib.texcoord = make_float3(u * 0.5f, v * 0.5f, 0.0f);
+
+                        m_attributes.push_back(attrib);
+                    }
+                }
+                break;
         }
-        break;
 
-      case 1: // Positive y-axis is the geometry normal, create geometry on the xz-plane.
-        corner = make_float3(-1.0f, 0.0f, 1.0f); // left front corner of the plane. texcoord (0.0f, 0.0f).
+        const unsigned int stride = tessU + 1;
+        for (unsigned int j = 0; j < tessV; ++j) {
+            for (unsigned int i = 0; i < tessU; ++i) {
+                m_indices.push_back(j * stride + i);
+                m_indices.push_back(j * stride + i + 1);
+                m_indices.push_back((j + 1) * stride + i + 1);
 
-        attrib.tangent = make_float3(1.0f, 0.0f, 0.0f);
-        attrib.normal  = make_float3(0.0f, 1.0f, 0.0f);
-
-        for (unsigned int j = 0; j <= tessV; ++j)
-        {
-          const float v = float(j) * vTile;
-
-          for (unsigned int i = 0; i <= tessU; ++i)
-          {
-            const float u = float(i) * uTile;
-
-            attrib.vertex   = corner + make_float3(u, 0.0f, -v);
-            attrib.texcoord = make_float3(u * 0.5f, v * 0.5f, 0.0f);
-
-            m_attributes.push_back(attrib);
-          }
+                m_indices.push_back((j + 1) * stride + i + 1);
+                m_indices.push_back((j + 1) * stride + i);
+                m_indices.push_back(j * stride + i);
+            }
         }
-        break;
-
-      case 2: // Positive z-axis is the geometry normal, create geometry on the xy-plane.
-        corner = make_float3(-1.0f, -1.0f, 0.0f); // Lower left corner of the plane. texcoord (0.0f, 0.0f).
-
-        attrib.tangent = make_float3(1.0f, 0.0f, 0.0f);
-        attrib.normal  = make_float3(0.0f, 0.0f, 1.0f);
-
-        for (unsigned int j = 0; j <= tessV; ++j)
-        {
-          const float v = float(j) * vTile;
-
-          for (unsigned int i = 0; i <= tessU; ++i)
-          {
-            const float u = float(i) * uTile;
-
-            attrib.vertex   = corner + make_float3(u, v, 0.0f);
-            attrib.texcoord = make_float3(u * 0.5f, v * 0.5f, 0.0f);
-
-            m_attributes.push_back(attrib);
-          }
-        }
-        break;
     }
-
-    const unsigned int stride = tessU + 1;
-    for (unsigned int j = 0; j < tessV; ++j)
-    {
-      for (unsigned int i = 0; i < tessU; ++i)
-      {
-        m_indices.push_back( j      * stride + i);
-        m_indices.push_back( j      * stride + i + 1);
-        m_indices.push_back((j + 1) * stride + i + 1);
-
-        m_indices.push_back((j + 1) * stride + i + 1);
-        m_indices.push_back((j + 1) * stride + i);
-        m_indices.push_back( j      * stride + i);
-      }
-    }
-  }
 
 } // namespace sg

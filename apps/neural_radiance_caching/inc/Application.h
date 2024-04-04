@@ -204,9 +204,9 @@ public:
   Application(GLFWwindow* window, const Options& options);
   ~Application();
 
-  bool isValid() const;
+  [[nodiscard]] bool isValid() const;
 
-  void reshape(const int w, const int h);
+  void reshape(int w, int h);
   bool render();
   void benchmark();
 
@@ -222,41 +222,41 @@ private:
   bool loadSystemDescription(const std::string& filename);
   bool saveSystemDescription();
 
-  TypeBXDF determineTypeBXDF(const std::string& token) const;
-  TypeEDF  determineTypeEDF(const std::string& token) const;
+  [[nodiscard]] TypeBXDF determineTypeBXDF(const std::string& token) const;
+  [[nodiscard]] TypeEDF  determineTypeEDF(const std::string& token) const;
   bool loadSceneDescription(const std::string& filename);
 
   void restartRendering();
 
-  bool screenshot(const bool tonemap);
+  bool screenshot(bool tonemap);
 
   //void createPictures();
   void createCameras();
   
-  int findMaterial(const std::string& reference) const;
+  [[nodiscard]] int findMaterial(const std::string& reference) const;
 
   void appendInstance(std::shared_ptr<sg::Group>& group,
                       std::shared_ptr<sg::Node> geometry, // Baseclass Node to be prepared for different geometric primitives.
                       const dp::math::Mat44f& matrix, 
-                      const int indexMaterial,
-                      const int indexLight);
+                      int indexMaterial,
+                      int indexLight);
 
   std::shared_ptr<sg::Group> createASSIMP(const std::string& filename);
-  std::shared_ptr<sg::Group> traverseScene(const struct aiScene *scene, const unsigned int indexSceneBase, const struct aiNode* node);
+  std::shared_ptr<sg::Group> traverseScene(const struct aiScene *scene, unsigned int indexSceneBase, const struct aiNode* node);
 
-  void calculateTangents(std::vector<TriangleAttributes>& attributes, const std::vector<unsigned int>& indices);
+  static void calculateTangents(std::vector<TriangleAttributes>& attributes, const std::vector<unsigned int>& indices);
 
-  void guiRenderingIndicator(const bool isRendering);
+  void guiRenderingIndicator(bool isRendering);
 
   void createMeshLights();
-  void traverseGraph(std::shared_ptr<sg::Node> node, InstanceData& instanceData, float matrix[12]);
-  int createMeshLight(const std::shared_ptr<sg::Triangles> geometry, const int indexMaterial, const float matrix[12]);
+  void traverseGraph(const std::shared_ptr<sg::Node> &node, InstanceData& instanceData, float matrix[12]);
+  int createMeshLight(const std::shared_ptr<sg::Triangles> &geometry, int indexMaterial, const float matrix[12]);
 
-  bool loadString(const std::string& filename, std::string& text);
-  bool saveString(const std::string& filename, const std::string& text);
-  std::string getDateTime();
-  void convertPath(std::string& path);
-  void convertPath(char* path);
+  static bool loadString(const std::string& filename, std::string& text);
+  static bool saveString(const std::string& filename, const std::string& text);
+  static std::string getDateTime();
+  static void convertPath(std::string& path);
+  static void convertPath(char* path);
 
 private:
   GLFWwindow* m_window;

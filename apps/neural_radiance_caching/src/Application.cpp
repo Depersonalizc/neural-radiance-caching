@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stack>
 #include <memory>
+#include <utility>
 
 #include <dp/math/Matmnt.h>
 
@@ -342,8 +343,8 @@ Application::Application(GLFWwindow *window, const Options &options)
 
 Application::~Application()
 {
-    for (std::map<std::string, Picture *>::const_iterator it = m_mapPictures.begin(); it != m_mapPictures.end(); ++it) {
-        delete it->second;
+    for (auto & m_mapPicture : m_mapPictures) {
+        delete m_mapPicture.second;
     }
 
     ImGui_ImplGlfwGL3_Shutdown();
@@ -474,7 +475,7 @@ void Application::benchmark()
             // restartRendering();
         }
 
-        const unsigned int spp = (unsigned int) (m_samplesSqrt * m_samplesSqrt);
+        const auto spp = (unsigned int) (m_samplesSqrt * m_samplesSqrt);
         unsigned int iterationIndex = 0;
 
         m_timer.restart();
@@ -1124,13 +1125,13 @@ int Application::findMaterial(const std::string &reference) const
 {
     int indexMaterial = -1; //-1 means not found. This is a critical error.
 
-    std::map<std::string, int>::const_iterator itm = m_mapMaterialReferences.find(reference);
+    auto itm = m_mapMaterialReferences.find(reference);
     if (itm != m_mapMaterialReferences.end()) {
         indexMaterial = itm->second;
     } else {
         std::cerr << "WARNING: appendInstance() No material found for " << reference << ". Trying default.\n";
 
-        std::map<std::string, int>::const_iterator itmd = m_mapMaterialReferences.find(std::string("default"));
+        auto itmd = m_mapMaterialReferences.find(std::string("default"));
         if (itmd != m_mapMaterialReferences.end()) {
             indexMaterial = itmd->second;
         } else {
@@ -1162,7 +1163,7 @@ void Application::appendInstance(std::shared_ptr<sg::Group> &group,
     std::shared_ptr<sg::Instance> instance(new sg::Instance(m_idInstance++));
 
     instance->setTransform(trafo);
-    instance->setChild(geometry);
+    instance->setChild(std::move(geometry));
     instance->setMaterial(indexMaterial);
     instance->setLight(indexLight);
 
@@ -1172,7 +1173,7 @@ void Application::appendInstance(std::shared_ptr<sg::Group> &group,
 
 TypeBXDF Application::determineTypeBXDF(const std::string &token) const
 {
-    std::map<std::string, KeywordScene>::const_iterator it = m_mapKeywordScene.find(token);
+    auto it = m_mapKeywordScene.find(token);
     if (it == m_mapKeywordScene.end()) {
         std::cerr << "ERROR: determineTypeBXDF() Unknown token " << token << '\n';
         return TYPE_BXDF;
@@ -1203,7 +1204,7 @@ TypeBXDF Application::determineTypeBXDF(const std::string &token) const
 
 TypeEDF Application::determineTypeEDF(const std::string &token) const
 {
-    std::map<std::string, KeywordScene>::const_iterator it = m_mapKeywordScene.find(token);
+    auto it = m_mapKeywordScene.find(token);
     if (it == m_mapKeywordScene.end()) {
         std::cerr << "ERROR: determineTypeEDF() Unknown token " << token << '\n';
         return TYPE_EDF;
@@ -1519,7 +1520,7 @@ bool Application::loadSceneDescription(const std::string &filename)
                         std::map<std::string, Picture *>::const_iterator it = m_mapPictures.find(
                                 cur.material.nameAlbedo);
                         if (it == m_mapPictures.end()) {
-                            Picture *picture = new Picture();
+                            auto picture = new Picture();
                             picture->load(cur.material.nameAlbedo, IMAGE_FLAG_2D);
 
                             m_mapPictures[cur.material.nameAlbedo] = picture;
@@ -1530,7 +1531,7 @@ bool Application::loadSceneDescription(const std::string &filename)
                         std::map<std::string, Picture *>::const_iterator it = m_mapPictures.find(
                                 cur.material.nameEmission);
                         if (it == m_mapPictures.end()) {
-                            Picture *picture = new Picture();
+                            auto picture = new Picture();
                             picture->load(cur.material.nameEmission,
                                           IMAGE_FLAG_2D); // Load as 2D by default. env or rect will be ORed into the flags later.
 
@@ -1551,7 +1552,7 @@ bool Application::loadSceneDescription(const std::string &filename)
 
                             if (loaderIES.load(cur.material.nameProfile)) {
                                 if (loaderIES.parse()) {
-                                    Picture *picture = new Picture();
+                                    auto picture = new Picture();
                                     picture->createIES(
                                             loaderIES.getData()); // This generates the 2D 1-component luminance float image.
 
@@ -1868,7 +1869,7 @@ bool Application::loadSceneDescription(const std::string &filename)
                     if (token == "env") // Constant or spherical texture map environment light.
                     {
                         // There can be only one environment light and it must be the first light definition.
-                        if (m_lightsGUI.size() == 0) {
+                        if (m_lightsGUI.empty()) {
                             LightGUI lightGUI;
 
                             // FIXME This type selection would need to be handled via different env keywords for more than two environment lights (e.g. hemisphere).
@@ -1887,8 +1888,7 @@ bool Application::loadSceneDescription(const std::string &filename)
                             m_lightsGUI.push_back(lightGUI);
 
                             if (!materialGUI.nameEmission.empty()) {
-                                std::map<std::string, Picture *>::iterator it = m_mapPictures.find(
-                                        materialGUI.nameEmission);
+                                auto it = m_mapPictures.find(materialGUI.nameEmission);
                                 MY_ASSERT(it !=
                                           m_mapPictures.end()); // Must have been loaded when the material was parsed.
                                 if (it != m_mapPictures.end()) {
@@ -1933,8 +1933,7 @@ bool Application::loadSceneDescription(const std::string &filename)
                         m_lightsGUI.push_back(lightGUI);
 
                         if (!materialGUI.nameEmission.empty()) {
-                            std::map<std::string, Picture *>::iterator it = m_mapPictures.find(
-                                    materialGUI.nameEmission);
+                            auto it = m_mapPictures.find(materialGUI.nameEmission);
                             MY_ASSERT(it != m_mapPictures.end()); // Must have been loaded when the material was parsed.
                             if (it != m_mapPictures.end()) {
                                 MY_ASSERT((it->second->getFlags() & IMAGE_FLAG_ENV) ==
@@ -1985,8 +1984,7 @@ bool Application::loadSceneDescription(const std::string &filename)
                         m_lightsGUI.push_back(lightGUI);
 
                         if (!materialGUI.nameEmission.empty()) {
-                            std::map<std::string, Picture *>::iterator it = m_mapPictures.find(
-                                    materialGUI.nameEmission);
+                            auto it = m_mapPictures.find(materialGUI.nameEmission);
                             MY_ASSERT(it != m_mapPictures.end()); // Must have been loaded when the material was parsed.
                             if (it != m_mapPictures.end()) {
                                 it->second->addFlags(IMAGE_FLAG_POINT);
@@ -2015,8 +2013,7 @@ bool Application::loadSceneDescription(const std::string &filename)
                         m_lightsGUI.push_back(lightGUI);
 
                         if (!materialGUI.nameEmission.empty()) {
-                            std::map<std::string, Picture *>::iterator it = m_mapPictures.find(
-                                    materialGUI.nameEmission);
+                            auto it = m_mapPictures.find(materialGUI.nameEmission);
                             MY_ASSERT(it != m_mapPictures.end()); // Must have been loaded when the material was parsed.
                             if (it != m_mapPictures.end()) {
                                 it->second->addFlags(IMAGE_FLAG_SPOT);
@@ -2043,7 +2040,7 @@ bool Application::loadSceneDescription(const std::string &filename)
                         m_lightsGUI.push_back(lightGUI);
 
                         if (!materialGUI.nameProfile.empty()) {
-                            std::map<std::string, Picture *>::iterator it = m_mapPictures.find(materialGUI.nameProfile);
+                            auto it = m_mapPictures.find(materialGUI.nameProfile);
                             MY_ASSERT(it != m_mapPictures.end()); // Must have been loaded when the material was parsed.
                             if (it != m_mapPictures.end()) {
                                 it->second->addFlags(
@@ -2111,7 +2108,7 @@ static void multiplyMatrix(float *m, const float *a, const float *b)
 
 
 // Depth-first traversal of the scene graph to flatten all unique paths to a geometry node to one-level instancing inside the OptiX render graph.
-void Application::traverseGraph(std::shared_ptr<sg::Node> node, InstanceData &instanceData, float matrix[12])
+void Application::traverseGraph(const std::shared_ptr<sg::Node> &node, InstanceData &instanceData, float matrix[12])
 {
     switch (node->getType()) {
         case sg::NodeType::NT_GROUP: {
@@ -2166,7 +2163,7 @@ void Application::traverseGraph(std::shared_ptr<sg::Node> node, InstanceData &in
     }
 }
 
-int Application::createMeshLight(const std::shared_ptr<sg::Triangles> geometry, const int indexMaterial,
+int Application::createMeshLight(const std::shared_ptr<sg::Triangles> &geometry, const int indexMaterial,
                                  const float matrix[12])
 {
     int indexLight = -1;
@@ -2514,14 +2511,14 @@ Application::calculateTangents(std::vector<TriangleAttributes> &attributes, cons
     }
 
     // Build an ortho-normal basis with the existing normal.
-    for (size_t i = 0; i < attributes.size(); ++i) {
+    for (auto &attribute: attributes) {
         float3 tangent = direction;
         float3 bitangent = bidirection;
         // float3 normal    = attributes[i].normal;
         float3 normal;
-        normal.x = attributes[i].normal.x;
-        normal.y = attributes[i].normal.y;
-        normal.z = attributes[i].normal.z;
+        normal.x = attribute.normal.x;
+        normal.y = attribute.normal.y;
+        normal.z = attribute.normal.z;
 
         if (0.001f < 1.0f - fabsf(dot(normal, tangent))) {
             bitangent = normalize(cross(normal, tangent));
@@ -2532,7 +2529,7 @@ Application::calculateTangents(std::vector<TriangleAttributes> &attributes, cons
             tangent = normalize(cross(bitangent, normal));
             //bitangent = normalize(cross(normal, tangent));
         }
-        attributes[i].tangent = tangent;
+        attribute.tangent = tangent;
     }
 }
 
@@ -2556,14 +2553,14 @@ bool Application::screenshot(const bool tonemap)
 
     ilDisable(IL_ORIGIN_SET);
 
-    const float4 *bufferHost = reinterpret_cast<const float4 *>(m_raytracer->getOutputBufferHost());
+    const auto bufferHost = reinterpret_cast<const float4 *>(m_raytracer->getOutputBufferHost());
 
     if (tonemap) {
         // Store a tonemapped RGB8 *.png image
         path << ".png";
 
         if (ilTexImage(m_resolution.x, m_resolution.y, 1, 3, IL_RGB, IL_UNSIGNED_BYTE, nullptr)) {
-            uchar3 *dst = reinterpret_cast<uchar3 *>(ilGetData());
+            auto dst = reinterpret_cast<uchar3 *>(ilGetData());
 
             const float invGamma = 1.0f / m_tonemapperGUI.gamma;
             const float3 colorBalance = make_float3(m_tonemapperGUI.colorBalance[0], m_tonemapperGUI.colorBalance[1],
@@ -2642,10 +2639,10 @@ bool Application::screenshot(const bool tonemap)
 void Application::convertPath(std::string &path)
 {
 #if defined(_WIN32)
-    std::string::size_type pos = path.find("/", 0);
+    std::string::size_type pos = path.find('/', 0);
     while (pos != std::string::npos) {
         path[pos] = '\\';
-        pos = path.find("/", pos);
+        pos = path.find('/', pos);
     }
 #elif defined(__linux__)
     std::string::size_type pos = path.find("\\", 0);

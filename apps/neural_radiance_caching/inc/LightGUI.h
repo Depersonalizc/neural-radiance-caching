@@ -40,20 +40,19 @@
 #include <string>
 
 // Host side GUI light parameters, only stores the values not held inside the material already.
-struct LightGUI
-{
-  TypeLight typeLight; // Zero-based light type to select the light sampling and evaluation.
+struct LightGUI {
+    TypeLight typeLight; // Zero-based light type to select the light sampling and evaluation.
 
-  dp::math::Mat44f matrix;         // object to world
-  dp::math::Mat44f matrixInv;      // world to object
-  dp::math::Quatf  orientation;    // object to world, rotation only
-  dp::math::Quatf  orientationInv; // world to object, rotation only
+    dp::math::Mat44f matrix;         // object to world
+    dp::math::Mat44f matrixInv;      // world to object
+    dp::math::Quatf orientation;    // object to world, rotation only
+    dp::math::Quatf orientationInv; // world to object, rotation only
 
-  unsigned int idGeometry; // Geometry data index for mesh lights. (Supports GAS sharing!)
-  unsigned int idMaterial; // The MaterialGUI index which holds the light parameters
+    unsigned int idGeometry; // Geometry data index for mesh lights. (Supports GAS sharing!)
+    unsigned int idMaterial; // The MaterialGUI index which holds the light parameters
 
-  std::vector<float> cdfAreas;      // CDF over the areas of the mesh triangles used for uniform sampling.
-  float              area;          // Overall surface area of the mesh light in world space.
+    std::vector<float> cdfAreas;      // CDF over the areas of the mesh triangles used for uniform sampling.
+    float area;          // Overall surface area of the mesh light in world space.
 };
 
 #endif // LIGHT_GUI_H

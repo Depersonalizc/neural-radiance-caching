@@ -40,63 +40,64 @@
 #include <list>
 #include <map>
 
-namespace cuda
-{
-  enum Usage
-  {
-    USAGE_STATIC,
-    USAGE_TEMP
-  };
+namespace cuda {
+    enum Usage {
+        USAGE_STATIC,
+        USAGE_TEMP
+    };
 
-  class Arena;
+    class Arena;
 
-  struct Block
-  {
-    Block(cuda::Arena* arena = nullptr, const CUdeviceptr addr = 0, const size_t size = 0, const CUdeviceptr ptr = 0);
-    
-    bool isValid() const;
-    bool operator<(const cuda::Block& rhs);
+    struct Block {
+        explicit Block(cuda::Arena *arena = nullptr, CUdeviceptr addr = 0, size_t size = 0,
+                       CUdeviceptr ptr = 0);
 
-    cuda::Arena* m_arena; // The arena which owns this block.
-    CUdeviceptr  m_addr;  // The internal address inside the arena of the memory containing the aligned block at ptr.
-    size_t       m_size;  // The internal size of the allocation starting at m_addr.
-    CUdeviceptr  m_ptr;   // The aligned pointer to size bytes the user requested.
-  };
+        [[nodiscard]] bool isValid() const;
+
+        bool operator<(const cuda::Block &rhs);
+
+        cuda::Arena *m_arena; // The arena which owns this block.
+        CUdeviceptr m_addr;  // The internal address inside the arena of the memory containing the aligned block at ptr.
+        size_t m_size;  // The internal size of the allocation starting at m_addr.
+        CUdeviceptr m_ptr;   // The aligned pointer to size bytes the user requested.
+    };
 
 
-  class Arena
-  {
+    class Arena {
     public:
-      Arena(const size_t size);
-      ~Arena();
+        explicit Arena(size_t size);
 
-      bool allocBlock(cuda::Block& block, const size_t size, const size_t alignment, const cuda::Usage usage);
-      void freeBlock(const cuda::Block& block);
+        ~Arena();
+
+        bool allocBlock(cuda::Block &block, size_t size, size_t alignment, cuda::Usage usage);
+
+        void freeBlock(const cuda::Block &block);
 
     private:
-      CUdeviceptr            m_addr;       // The start pointer of the CUDA memory for this arena. This is 256 bytes aligned due to cuMalloc().
-      size_t                 m_size;       // The overall size of the arena in bytes.
-      std::list<cuda::Block> m_blocksFree; // A list of free blocks inside this arena. This is normally very short because static and temporary allocations are not interleaved.
-  };
+        CUdeviceptr m_addr;       // The start pointer of the CUDA memory for this arena. This is 256 bytes aligned due to cuMalloc().
+        size_t m_size;       // The overall size of the arena in bytes.
+        std::list<cuda::Block> m_blocksFree; // A list of free blocks inside this arena. This is normally very short because static and temporary allocations are not interleaved.
+    };
 
 
-  class ArenaAllocator
-  {
-  public:
-    ArenaAllocator(const size_t sizeArenaBytes);
-    ~ArenaAllocator();
+    class ArenaAllocator {
+    public:
+        explicit ArenaAllocator(size_t sizeArenaBytes);
 
-    CUdeviceptr alloc(const size_t size, const size_t alignment, const cuda::Usage usage = cuda::USAGE_STATIC);
-    void free(const CUdeviceptr ptr);
+        ~ArenaAllocator();
 
-    size_t getSizeMemoryAllocated() const;
+        CUdeviceptr alloc(size_t size, size_t alignment, cuda::Usage usage = cuda::USAGE_STATIC);
 
-  private:
-    size_t                             m_sizeArenaBytes;      // The minimum size an arena is allocated with. If calls alloc() with a bigger size, that will be used.
-    size_t                             m_sizeMemoryAllocated; // The number of bytes which have been allocated (with alignment).
-    std::vector<Arena*>                m_arenas;              // A number of Arenas managing a CUdeviceptr with at least m_sizeArenaBytes each.
-    std::map<CUdeviceptr, cuda::Block> m_blocksAllocated;     // Map the user pointer to the internal block. This abstracts Arena and Block from the user. (Kind of expensive.)
-  };
+        void free(CUdeviceptr ptr);
+
+        [[nodiscard]] size_t getSizeMemoryAllocated() const;
+
+    private:
+        size_t m_sizeArenaBytes;      // The minimum size an arena is allocated with. If calls alloc() with a bigger size, that will be used.
+        size_t m_sizeMemoryAllocated; // The number of bytes which have been allocated (with alignment).
+        std::vector<Arena *> m_arenas;              // A number of Arenas managing a CUdeviceptr with at least m_sizeArenaBytes each.
+        std::map<CUdeviceptr, cuda::Block> m_blocksAllocated;     // Map the user pointer to the internal block. This abstracts Arena and Block from the user. (Kind of expensive.)
+    };
 
 } // namespace cuda
 

@@ -52,7 +52,7 @@ public:
   void zoom(float x);
 
   bool  getFrustum(float3& p, float3& u, float3& v, float3& w, bool force = false);
-  float getAspectRatio() const;
+  [[nodiscard]] float getAspectRatio() const;
   void  markDirty();
   
 public: // public just to be able to load and save them easily.

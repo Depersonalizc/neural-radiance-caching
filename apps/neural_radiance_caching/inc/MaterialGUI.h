@@ -37,35 +37,34 @@
 
 // Host side material parameters.
 // FIXME Add a flag if a material is referenced inside the scene. Then avoid loading unused textures and profiles.
-struct MaterialGUI
-{
-  TypeBXDF typeBXDF; // Zero-based BXDF type to use for sampling and evaluation of the surface material.
-  TypeEDF  typeEDF;  // Zero-based EDF type. Diffuse emissive material when not default TYPE_EDF. 
-                     // Used to build LightDefinitions when this material is assigned to meshes.
+struct MaterialGUI {
+    TypeBXDF typeBXDF; // Zero-based BXDF type to use for sampling and evaluation of the surface material.
+    TypeEDF typeEDF;  // Zero-based EDF type. Diffuse emissive material when not default TYPE_EDF.
+    // Used to build LightDefinitions when this material is assigned to meshes.
 
-  std::string name; // The name used in the scene description to reference this material instance.
+    std::string name; // The name used in the scene description to reference this material instance.
 
-  std::string nameAlbedo;   // The filename of the albedo texture for this material. Empty when none.
-  std::string nameCutout;   // The filename of the cutout opacity texture for this material. Empty when none.
-  std::string nameEmission; // The filename of the emission texture. Empty when none.
-  std::string nameProfile;  // The filename of the IES light profile when typeEDF is TYPE_EDF_IES, otherwise unused. Empty when none.
+    std::string nameAlbedo;   // The filename of the albedo texture for this material. Empty when none.
+    std::string nameCutout;   // The filename of the cutout opacity texture for this material. Empty when none.
+    std::string nameEmission; // The filename of the emission texture. Empty when none.
+    std::string nameProfile;  // The filename of the IES light profile when typeEDF is TYPE_EDF_IES, otherwise unused. Empty when none.
 
-  float3 colorAlbedo;         // Tint, throughput change for specular materials.
-  float3 colorEmission;       // The emission base color.
-  float  multiplierEmission;  // A multiplier on top of colorEmission to get HDR lights.
-  float  spotAngle;           // Full cone angle in degrees, means max. 180 degrees is a hemispherical distribution.
-  float  spotExponent;        // Exponent on the cosine of the sotAngle, used to generate intensity falloff from spot cone center to outer angle. Set to 0.0 for no falloff.
-  float3 colorAbsorption;     // Color and scale together build the volume absorption coefficient
-  float  scaleAbsorption;     // Distance scale on the volume absorption, default 0.0f means off.
-  float3 colorScattering;     // Color and scale together build the volume absorption coefficient
-  float  scaleScattering;     // Distance scale on the volume scattering, default 0.0f means off.
-  float  biasScattering;      // Volume scattering directional bias, default 0.0f means isotropic.
-  float2 roughness;           // Anisotropic roughness for microfacet distributions.
-  float  ior;                 // Index of Refraction.
-  bool   thinwalled;          // Indicates if a material is thin-walled.
-                              // This only affects transmissive materials in this renderer implementation.
-                              // There is no support for different materials on front- and back-face in this renderer.
-                              // Thin-walled surfaces are not a boundary between volume, means there is no refraction or volume effect on these.
+    float3 colorAlbedo;         // Tint, throughput change for specular materials.
+    float3 colorEmission;       // The emission base color.
+    float multiplierEmission;  // A multiplier on top of colorEmission to get HDR lights.
+    float spotAngle;           // Full cone angle in degrees, means max. 180 degrees is a hemispherical distribution.
+    float spotExponent;        // Exponent on the cosine of the sotAngle, used to generate intensity falloff from spot cone center to outer angle. Set to 0.0 for no falloff.
+    float3 colorAbsorption;     // Color and scale together build the volume absorption coefficient
+    float scaleAbsorption;     // Distance scale on the volume absorption, default 0.0f means off.
+    float3 colorScattering;     // Color and scale together build the volume absorption coefficient
+    float scaleScattering;     // Distance scale on the volume scattering, default 0.0f means off.
+    float biasScattering;      // Volume scattering directional bias, default 0.0f means isotropic.
+    float2 roughness;           // Anisotropic roughness for microfacet distributions.
+    float ior;                 // Index of Refraction.
+    bool thinwalled;          // Indicates if a material is thin-walled.
+    // This only affects transmissive materials in this renderer implementation.
+    // There is no support for different materials on front- and back-face in this renderer.
+    // Thin-walled surfaces are not a boundary between volume, means there is no refraction or volume effect on these.
 };
 
 #endif // MATERIAL_GUI_H

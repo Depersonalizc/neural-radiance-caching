@@ -42,104 +42,110 @@
 #include <memory>
 #include <vector>
 
-namespace sg
-{
+namespace sg {
 
-  enum NodeType
-  {
-    NT_GROUP,
-    NT_INSTANCE,
-    NT_TRIANGLES
-  };
+    enum NodeType {
+        NT_GROUP,
+        NT_INSTANCE,
+        NT_TRIANGLES
+    };
 
-  class Node
-  {
-  public:
-    Node(const unsigned int id);
-    //~Node();
+    class Node {
+    public:
+        explicit Node(const unsigned int id);
+        //~Node();
 
-    virtual sg::NodeType getType() const = 0;
-    
-    unsigned int getId() const
-    {
-      return m_id;
-    }
+        virtual sg::NodeType getType() const = 0;
 
-  private:
-    unsigned int m_id;
-  };
+        unsigned int getId() const
+        {
+            return m_id;
+        }
+
+    private:
+        unsigned int m_id;
+    };
 
 
-  class Triangles : public Node
-  {
-  public:
-    Triangles(const unsigned int id);
-    //~Triangles();
+    class Triangles : public Node {
+    public:
+        explicit Triangles(const unsigned int id);
+        //~Triangles();
 
-    sg::NodeType getType() const;
+        sg::NodeType getType() const;
 
-    void createBox();
-    void createPlane(const unsigned int tessU, const unsigned int tessV, const unsigned int upAxis);
-    void createSphere(const unsigned int tessU, const unsigned int tessV, const float radius, const float maxTheta);
-    void createTorus(const unsigned int tessU, const unsigned int tessV, const float innerRadius, const float outerRadius);
-    void createRect(); // For the light "rect" case.
+        void createBox();
 
-    void calculateLightArea(LightGUI& lightGUI) const;
+        void createPlane(const unsigned int tessU, const unsigned int tessV, const unsigned int upAxis);
 
-    void setAttributes(const std::vector<TriangleAttributes>& attributes);
-    const std::vector<TriangleAttributes>& getAttributes() const;
-    
-    void setIndices(const std::vector<unsigned int>& indices);
-    const std::vector<unsigned int>& getIndices() const;
+        void createSphere(const unsigned int tessU, const unsigned int tessV, const float radius, const float maxTheta);
 
-  private:
-    std::vector<TriangleAttributes> m_attributes;
-    std::vector<unsigned int>       m_indices; // If m_indices.size() == 0, m_attributes are independent primitives. // Not actually supported in this renderer implementation.
-  };
+        void createTorus(const unsigned int tessU, const unsigned int tessV, const float innerRadius,
+                         const float outerRadius);
 
-  class Instance : public Node
-  {
-  public:
-    Instance(const unsigned int id);
-    //~Instance();
+        void createRect(); // For the light "rect" case.
 
-    sg::NodeType getType() const;
+        void calculateLightArea(LightGUI &lightGUI) const;
 
-    void setTransform(const float m[12]);
-    const float* getTransform() const;
-    
-    void setChild(std::shared_ptr<sg::Node> node);
-    std::shared_ptr<sg::Node> getChild();
+        void setAttributes(const std::vector<TriangleAttributes> &attributes);
 
-    void setMaterial(const int index);
-    int  getMaterial() const;
+        const std::vector<TriangleAttributes> &getAttributes() const;
 
-    void setLight(const int index);
-    int  getLight() const;
+        void setIndices(const std::vector<unsigned int> &indices);
 
-  private:
-    int                       m_material;
-    int                       m_light;
-    float                     m_matrix[12];
-    std::shared_ptr<sg::Node> m_child; // An Instance can either hold a Group or Triangles as child.
-  };
+        const std::vector<unsigned int> &getIndices() const;
 
-  class Group : public Node
-  {
-  public:
-    Group(const unsigned int id);
-    //~Group();
+    private:
+        std::vector<TriangleAttributes> m_attributes;
+        std::vector<unsigned int> m_indices; // If m_indices.size() == 0, m_attributes are independent primitives. // Not actually supported in this renderer implementation.
+    };
 
-    sg::NodeType getType() const;
+    class Instance : public Node {
+    public:
+        explicit Instance(const unsigned int id);
+        //~Instance();
 
-    void addChild(std::shared_ptr<sg::Instance> instance); // Groups can only hold Instances.
+        sg::NodeType getType() const;
 
-    size_t getNumChildren() const;
-    std::shared_ptr<sg::Instance> getChild(size_t index);
+        void setTransform(const float m[12]);
 
-  private:
-    std::vector< std::shared_ptr<sg::Instance> > m_children;
-  };
+        const float *getTransform() const;
+
+        void setChild(std::shared_ptr<sg::Node> node);
+
+        std::shared_ptr<sg::Node> getChild();
+
+        void setMaterial(const int index);
+
+        int getMaterial() const;
+
+        void setLight(const int index);
+
+        int getLight() const;
+
+    private:
+        int m_material;
+        int m_light;
+        float m_matrix[12];
+        std::shared_ptr<sg::Node> m_child; // An Instance can either hold a Group or Triangles as child.
+    };
+
+    class Group : public Node {
+    public:
+        explicit Group(const unsigned int id);
+        //~Group();
+
+        sg::NodeType getType() const;
+
+        void addChild(std::shared_ptr<sg::Instance> instance); // Groups can only hold Instances.
+
+        size_t getNumChildren() const;
+
+        std::shared_ptr<sg::Instance> getChild(size_t index);
+
+    private:
+        std::vector<std::shared_ptr<sg::Instance> > m_children;
+    };
 
 } // namespace sg
 

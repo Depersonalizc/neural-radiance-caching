@@ -112,94 +112,113 @@
 
 class Device;
 
-class Texture
-{
+class Texture {
 public:
-  Texture(Device* device);
-  ~Texture();
+    Texture(Device *device);
 
-  size_t destroy(Device* device);
+    ~Texture();
 
-  void setTextureDescription(const CUDA_TEXTURE_DESC& descr);
+    size_t destroy(Device *device);
 
-  void setAddressMode(CUaddress_mode s, CUaddress_mode t, CUaddress_mode r);
-  void setFilterMode(CUfilter_mode filter, CUfilter_mode filterMipmap);
-  void setReadMode(bool asInteger);
-  void setSRGB(bool srgb);
-  void setBorderColor(float r, float g, float b, float a);
-  void setNormalizedCoords(bool normalized);
-  void setMaxAnisotropy(unsigned int aniso);
-  void setMipmapLevelBiasMinMax(float bias, float minimum, float maximum);
- 
-  bool create(const Picture* picture, const unsigned int flags);
-  bool create(const Texture* shared);
-  
-  bool update(const Picture* picture);
+    void setTextureDescription(const CUDA_TEXTURE_DESC &descr);
 
-  Device* getOwner() const;
+    void setAddressMode(CUaddress_mode s, CUaddress_mode t, CUaddress_mode r);
 
-  unsigned int getWidth() const;
-  unsigned int getHeight() const;
-  unsigned int getDepth() const;
+    void setFilterMode(CUfilter_mode filter, CUfilter_mode filterMipmap);
 
-  cudaTextureObject_t getTextureObject() const;
+    void setReadMode(bool asInteger);
 
-  size_t getSizeBytes() const; // Texture memory tracking of CUarrays and CUmipmappedArrays in bytes sent to the cuMemCpy3D().
+    void setSRGB(bool srgb);
 
-  // Specific to emission texture handling.
-  void calculateSphericalCDF(const float* rgba);   // For importance sampling of spherical environment lights.
-  void calculateRectangularCDF(const float* rgba); // For importance-sampling of textured rectangle lights.
+    void setBorderColor(float r, float g, float b, float a);
 
-  CUdeviceptr getCDF_U() const;
-  CUdeviceptr getCDF_V() const;
-  float       getIntegral() const;
+    void setNormalizedCoords(bool normalized);
+
+    void setMaxAnisotropy(unsigned int aniso);
+
+    void setMipmapLevelBiasMinMax(float bias, float minimum, float maximum);
+
+    bool create(const Picture *picture, const unsigned int flags);
+
+    bool create(const Texture *shared);
+
+    bool update(const Picture *picture);
+
+    Device *getOwner() const;
+
+    unsigned int getWidth() const;
+
+    unsigned int getHeight() const;
+
+    unsigned int getDepth() const;
+
+    cudaTextureObject_t getTextureObject() const;
+
+    size_t
+    getSizeBytes() const; // Texture memory tracking of CUarrays and CUmipmappedArrays in bytes sent to the cuMemCpy3D().
+
+    // Specific to emission texture handling.
+    void calculateSphericalCDF(const float *rgba);   // For importance sampling of spherical environment lights.
+    void calculateRectangularCDF(const float *rgba); // For importance-sampling of textured rectangle lights.
+
+    CUdeviceptr getCDF_U() const;
+
+    CUdeviceptr getCDF_V() const;
+
+    float getIntegral() const;
 
 private:
-  bool create1D(const Picture* picture);
-  bool create2D(const Picture* picture);
-  bool create3D(const Picture* picture);
-  bool createCube(const Picture* picture);
+    bool create1D(const Picture *picture);
 
-  bool update1D(const Picture* picture);
-  bool update2D(const Picture* picture);
-  bool update3D(const Picture* picture);
-  bool updateCube(const Picture* picture);
+    bool create2D(const Picture *picture);
+
+    bool create3D(const Picture *picture);
+
+    bool createCube(const Picture *picture);
+
+    bool update1D(const Picture *picture);
+
+    bool update2D(const Picture *picture);
+
+    bool update3D(const Picture *picture);
+
+    bool updateCube(const Picture *picture);
 
 private:
-  Device* m_owner; // The device which created this Texture. Needed for peer-to-peer sharing, resp. for proper destruction.
+    Device *m_owner; // The device which created this Texture. Needed for peer-to-peer sharing, resp. for proper destruction.
 
-  unsigned int m_width;
-  unsigned int m_height;
-  unsigned int m_depth;
+    unsigned int m_width;
+    unsigned int m_height;
+    unsigned int m_depth;
 
-  unsigned int m_flags;
+    unsigned int m_flags;
 
-  unsigned int m_encodingHost;
-  unsigned int m_encodingDevice;
-  
-  CUDA_ARRAY3D_DESCRIPTOR m_descArray3D;
-  size_t                  m_sizeBytesPerElement;
+    unsigned int m_encodingHost;
+    unsigned int m_encodingDevice;
 
-  CUDA_RESOURCE_DESC m_resourceDescription; // For the final texture object creation.
+    CUDA_ARRAY3D_DESCRIPTOR m_descArray3D;
+    size_t m_sizeBytesPerElement;
 
-  CUDA_TEXTURE_DESC m_textureDescription; // This contains all texture parameters which can be set individually or as a whole.
-  
-  // Note that the CUarray or CUmipmappedArray are shared among peer devices, not the texture object!
-  // This needs to be created per device, which happens in the two create() functions.
-  CUtexObject       m_textureObject;
-  
-  // Only one of these is ever used per texture.
-  CUarray          m_d_array;
-  CUmipmappedArray m_d_mipmappedArray;
+    CUDA_RESOURCE_DESC m_resourceDescription; // For the final texture object creation.
 
-  // How much memory the CUarray or CUmipmappedArray required in bytes input to cuMemcpy3d()
-  // (without m_deviceAttribute.textureAlignment or potential row padding on the device).
-  size_t           m_sizeBytesArray;
+    CUDA_TEXTURE_DESC m_textureDescription; // This contains all texture parameters which can be set individually or as a whole.
 
-  // Specific to emission textures on spherical environment and rectangular lights.
-  CUdeviceptr m_d_cdfU;
-  CUdeviceptr m_d_cdfV;
-  float       m_integral;
+    // Note that the CUarray or CUmipmappedArray are shared among peer devices, not the texture object!
+    // This needs to be created per device, which happens in the two create() functions.
+    CUtexObject m_textureObject;
+
+    // Only one of these is ever used per texture.
+    CUarray m_d_array;
+    CUmipmappedArray m_d_mipmappedArray;
+
+    // How much memory the CUarray or CUmipmappedArray required in bytes input to cuMemcpy3d()
+    // (without m_deviceAttribute.textureAlignment or potential row padding on the device).
+    size_t m_sizeBytesArray;
+
+    // Specific to emission textures on spherical environment and rectangular lights.
+    CUdeviceptr m_d_cdfU;
+    CUdeviceptr m_d_cdfV;
+    float m_integral;
 };
 
 #endif // TEXTURE_H

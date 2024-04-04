@@ -57,7 +57,7 @@ public:
   void reshape(const int w, const int h);
   void display();
   
-  const int getNumDevices() const;
+  int getNumDevices() const;
   
   const unsigned char* getUUID(const unsigned int index) const;
   const unsigned char* getLUID() const;

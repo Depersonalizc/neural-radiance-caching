@@ -30,45 +30,44 @@
 
 #include "shaders/vector_math.h"
 
-namespace sg
-{
+namespace sg {
 
-  // Special case for the rectangle light.
-  // It's a square centered at the origin with extents in the range [-0.5, 0.5] on the xy-plane with positive z-axis as normal.
-  void Triangles::createRect()
-  {
-    m_attributes.clear();
-    m_indices.clear();
-    
-    TriangleAttributes attrib;
+    // Special case for the rectangle light.
+    // It's a square centered at the origin with extents in the range [-0.5, 0.5] on the xy-plane with positive z-axis as normal.
+    void Triangles::createRect()
+    {
+        m_attributes.clear();
+        m_indices.clear();
 
-    // Same for all four vertices of the rectangle.
-    attrib.tangent  = make_float3(1.0f, 0.0f, 0.0f);
-    attrib.normal   = make_float3(0.0f, 0.0f, 1.0f);
+        TriangleAttributes attrib;
 
-    attrib.vertex   = make_float3(-0.5f, -0.5f, 0.0f); // left bottom
-    attrib.texcoord = make_float3(0.0f, 0.0f, 0.0f);
-    m_attributes.push_back(attrib);
+        // Same for all four vertices of the rectangle.
+        attrib.tangent = make_float3(1.0f, 0.0f, 0.0f);
+        attrib.normal = make_float3(0.0f, 0.0f, 1.0f);
 
-    attrib.vertex   = make_float3(0.5f, -0.5f, 0.0f); // right bottom
-    attrib.texcoord = make_float3(1.0f, 0.0f, 0.0f);
-    m_attributes.push_back(attrib);
+        attrib.vertex = make_float3(-0.5f, -0.5f, 0.0f); // left bottom
+        attrib.texcoord = make_float3(0.0f, 0.0f, 0.0f);
+        m_attributes.push_back(attrib);
 
-    attrib.vertex   = make_float3(0.5f, 0.5f, 0.0f);  // right top
-    attrib.texcoord = make_float3(1.0f, 1.0f, 0.0f);
-    m_attributes.push_back(attrib);
+        attrib.vertex = make_float3(0.5f, -0.5f, 0.0f); // right bottom
+        attrib.texcoord = make_float3(1.0f, 0.0f, 0.0f);
+        m_attributes.push_back(attrib);
 
-    attrib.vertex   = make_float3(-0.5f, 0.5f, 0.0f); // left top
-    attrib.texcoord = make_float3(0.0f, 1.0f, 0.0f);
-    m_attributes.push_back(attrib);
+        attrib.vertex = make_float3(0.5f, 0.5f, 0.0f);  // right top
+        attrib.texcoord = make_float3(1.0f, 1.0f, 0.0f);
+        m_attributes.push_back(attrib);
 
-    m_indices.push_back(0);
-    m_indices.push_back(1);
-    m_indices.push_back(2);
+        attrib.vertex = make_float3(-0.5f, 0.5f, 0.0f); // left top
+        attrib.texcoord = make_float3(0.0f, 1.0f, 0.0f);
+        m_attributes.push_back(attrib);
 
-    m_indices.push_back(2);
-    m_indices.push_back(3);
-    m_indices.push_back(0);
-  }
+        m_indices.push_back(0);
+        m_indices.push_back(1);
+        m_indices.push_back(2);
+
+        m_indices.push_back(2);
+        m_indices.push_back(3);
+        m_indices.push_back(0);
+    }
 
 } // namespace sg

@@ -36,104 +36,98 @@
 #include <iostream>
 
 
-static Application* g_app = nullptr;
+static Application *g_app = nullptr;
 
-static void callbackError(int error, const char* description)
+static void callbackError(int error, const char *description)
 {
-  std::cerr << "ERROR: "<< error << ": " << description << '\n';
+    std::cerr << "ERROR: " << error << ": " << description << '\n';
 }
 
 
-static int runApp(const Options& options)
+static int runApp(const Options &options)
 {
-  int width  = std::max(1, options.getWidth());
-  int height = std::max(1, options.getHeight());
- 
-  GLFWwindow* window = glfwCreateWindow(width, height, "rtigo12 - Copyright (c) 2024 NVIDIA Corporation", NULL, NULL);
-  if (!window)
-  {
-    callbackError(APP_ERROR_CREATE_WINDOW, "glfwCreateWindow() failed.");
-    return APP_ERROR_CREATE_WINDOW;
-  }
+    int width = std::max(1, options.getWidth());
+    int height = std::max(1, options.getHeight());
 
-  glfwMakeContextCurrent(window);
-
-  if (glewInit() != GL_NO_ERROR)
-  {
-    callbackError(APP_ERROR_GLEW_INIT, "GLEW failed to initialize.");
-    return APP_ERROR_GLEW_INIT;
-  }
-    
-  ilInit(); // Initialize DevIL once.
-
-  g_app = new Application(window, options);
-
-  if (!g_app->isValid())
-  {
-    std::cerr << "ERROR: Application() failed to initialize successfully.\n";
-    ilShutDown();
-    return APP_ERROR_APP_INIT;
-  }
-
-  const int mode = std::max(0, options.getMode());
-
-  if (mode == 0) // Interactive, default.
-  {
-    // Main loop
-    bool finish = false;
-    while (!finish && !glfwWindowShouldClose(window))
-    {
-      glfwPollEvents(); // Render continuously. Battery drainer!
-
-      glfwGetFramebufferSize(window, &width, &height);
-
-      g_app->reshape(width, height);
-      g_app->guiNewFrame();
-      //g_app->guiReferenceManual();  // HACK The ImGUI "Programming Manual" as example code.
-      g_app->guiWindow();             // This application's GUI window rendering commands. 
-      g_app->guiEventHandler();       // SPACE to toggle the GUI windows and all mouse tracking via GuiState.
-      finish = g_app->render();       // OptiX rendering, returns true when benchmark is enabled and the samples per pixel have been rendered.
-      g_app->display();               // OpenGL display always required to lay the background for the GUI.
-      g_app->guiRender();             // Render all ImGUI elements at last.
-
-      glfwSwapBuffers(window);
-
-      //glfwWaitEvents(); // Render only when an event is happening. Needs some glfwPostEmptyEvent() to prevent GUI lagging one frame behind when ending an action.
+    GLFWwindow *window = glfwCreateWindow(width, height, "Neural Radiance Caching", nullptr, nullptr);
+    if (!window) {
+        callbackError(APP_ERROR_CREATE_WINDOW, "glfwCreateWindow() failed.");
+        return APP_ERROR_CREATE_WINDOW;
     }
-  }
-  else if (mode == 1) // Batched benchmark single shot. // FIXME When not using anything OpenGL, the whole window and OpenGL setup could be removed.
-  {
-    g_app->benchmark();
-  }
 
-  delete g_app;
+    glfwMakeContextCurrent(window);
 
-  ilShutDown();
+    if (glewInit() != GL_NO_ERROR) {
+        callbackError(APP_ERROR_GLEW_INIT, "GLEW failed to initialize.");
+        return APP_ERROR_GLEW_INIT;
+    }
 
-  return APP_EXIT_SUCCESS;
+    ilInit(); // Initialize DevIL once.
+
+    g_app = new Application(window, options);
+
+    if (!g_app->isValid()) {
+        std::cerr << "ERROR: Application() failed to initialize successfully.\n";
+        ilShutDown();
+        return APP_ERROR_APP_INIT;
+    }
+
+    const int mode = std::max(0, options.getMode());
+
+    if (mode == 0) // Interactive, default.
+    {
+        // Main loop
+        bool finish = false;
+        while (!finish && !glfwWindowShouldClose(window)) {
+            glfwPollEvents(); // Render continuously. Battery drainer!
+
+            glfwGetFramebufferSize(window, &width, &height);
+
+            g_app->reshape(width, height);
+            g_app->guiNewFrame();
+            //g_app->guiReferenceManual();  // HACK The ImGUI "Programming Manual" as example code.
+            g_app->guiWindow();             // This application's GUI window rendering commands.
+            g_app->guiEventHandler();       // SPACE to toggle the GUI windows and all mouse tracking via GuiState.
+            finish = g_app->render();       // OptiX rendering, returns true when benchmark is enabled and the samples per pixel have been rendered.
+            g_app->display();               // OpenGL display always required to lay the background for the GUI.
+            g_app->guiRender();             // Render all ImGUI elements at last.
+
+            glfwSwapBuffers(window);
+
+            //glfwWaitEvents(); // Render only when an event is happening. Needs some glfwPostEmptyEvent() to prevent GUI lagging one frame behind when ending an action.
+        }
+    } else if (mode ==
+               1) // Batched benchmark single shot. // FIXME When not using anything OpenGL, the whole window and OpenGL setup could be removed.
+    {
+        g_app->benchmark();
+    }
+
+    delete g_app;
+
+    ilShutDown();
+
+    return APP_EXIT_SUCCESS;
 }
 
 
 int main(int argc, char *argv[])
 {
-  glfwSetErrorCallback(callbackError);
+    glfwSetErrorCallback(callbackError);
 
-  if (!glfwInit())
-  {
-    callbackError(APP_ERROR_GLFW_INIT, "GLFW failed to initialize.");
-    return APP_ERROR_GLFW_INIT;
-  }
+    if (!glfwInit()) {
+        callbackError(APP_ERROR_GLFW_INIT, "GLFW failed to initialize.");
+        return APP_ERROR_GLFW_INIT;
+    }
 
-  int result = APP_ERROR_UNKNOWN;
+    int result = APP_ERROR_UNKNOWN;
 
-  Options options;
+    Options options;
 
-  if (options.parseCommandLine(argc, argv))
-  {
-    result = runApp(options);
-  }
+    if (options.parseCommandLine(argc, argv)) {
+        result = runApp(options);
+    }
 
-  glfwTerminate();
+    glfwTerminate();
 
-  return result;
+    return result;
 }
