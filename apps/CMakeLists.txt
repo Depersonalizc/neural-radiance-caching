@@ -76,3 +76,6 @@ else()
   message("WARNING: MDL_renderer requires the MDL_SDK. Set the MDL_SDK_PATH variable. Example excluded from build.") 
 endif()
 
+
+# Neural Radiance Caching demo
+add_subdirectory( neural_radiance_caching )
