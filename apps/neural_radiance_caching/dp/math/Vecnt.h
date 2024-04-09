@@ -1110,7 +1110,7 @@ namespace dp
     {
       if ( creaseAngle < T(0.01) )
       {
-        for_each( normals.begin(), normals.end(), std::mem_fun_ref(&Vecnt<3,T>::normalize) );
+        for_each( normals.begin(), normals.end(), std::mem_fn(&Vecnt<3,T>::normalize) );
       }
       else
       {
@@ -1118,7 +1118,7 @@ namespace dp
         //  and we need the normalized too
         std::vector<Vecnt<3,T> > normalizedNormals(normals);
         for_each( normalizedNormals.begin(), normalizedNormals.end()
-                , std::mem_fun_ref(&Vecnt<3,T>::normalize) );
+                , std::mem_fn(&Vecnt<3,T>::normalize) );
 
         //  the tolerance to distinguish different points is a function of the given radius
         T tolerance = sphere.getRadius() / 10000;
