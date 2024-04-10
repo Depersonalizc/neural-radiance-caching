@@ -94,8 +94,6 @@ class Picture {
 public:
     Picture();
 
-    ~Picture();
-
     bool load(const std::string &filename, const unsigned int flags);
 
     void clear();
@@ -152,7 +150,8 @@ private:
 private:
     unsigned int m_flags;  // The image flags with which this Picture has been loaded.
     bool m_isCube; // Track if the picture is a cube map.
-    std::vector<std::vector<Image *> > m_images;
+    //std::vector<std::vector<Image *> > m_images;
+    std::vector<std::vector<std::unique_ptr<Image>> > m_images;
 };
 
 #endif // PICTURE_H

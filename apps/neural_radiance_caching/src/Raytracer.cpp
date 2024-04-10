@@ -84,10 +84,6 @@ Raytracer::~Raytracer()
         for (auto &data: m_geometryData) {
             m_devicesActive[data.owner]->destroyGeometry(data);
         }
-
-        for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-            delete m_devicesActive[i];
-        }
     }
     catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
@@ -283,7 +279,7 @@ bool Raytracer::enablePeerAccess()
 
     while (!unassigned.empty()) {
         std::vector<int> island;
-        std::vector<int>::const_iterator it = unassigned.begin();
+        auto it = unassigned.begin();
 
         island.push_back(*it);
         unassigned.erase(it); // This device has been assigned to an island.
@@ -295,9 +291,7 @@ bool Raytracer::enablePeerAccess()
             const int peer = *it;
 
             // Check if this peer device is accessible by all other devices in the island.
-            for (size_t i = 0; i < island.size(); ++i) {
-                const int home = island[i];
-
+            for (auto home : island) {
                 if ((m_peerConnections[home] & (1 << peer)) == 0 ||
                     (m_peerConnections[peer] & (1 << home)) == 0) {
                     isAccessible = false;
@@ -380,21 +374,21 @@ void Raytracer::disablePeerAccess()
 
 void Raytracer::synchronize()
 {
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->activateContext();
-        m_devicesActive[i]->synchronizeStream();
+    for (auto &device : m_devicesActive) {
+        device->activateContext();
+        device->synchronizeStream();
     }
 }
 
 // FIXME This cannot handle cases where the same Picture would be used for different texture objects, but that is not happening in this example.
-void Raytracer::initTextures(const std::map<std::string, Picture *> &mapPictures)
+void Raytracer::initTextures(const std::map<std::string, std::unique_ptr<Picture>> &mapPictures)
 {
     const bool allowSharingTex = ((m_peerToPeer & P2P_TEX) != 0); // Material texture sharing (very cheap).
     const bool allowSharingEnv = ((m_peerToPeer & P2P_ENV) !=
                                   0); // HDR Environment and CDF sharing (CDF binary search is expensive).
 
-    for (std::map<std::string, Picture *>::const_iterator it = mapPictures.begin(); it != mapPictures.end(); ++it) {
-        const Picture *picture = it->second;
+    for (auto it = mapPictures.begin(); it != mapPictures.end(); ++it) {
+        const auto &picture = it->second;
 
         const bool isEnv = ((picture->getFlags() & IMAGE_FLAG_ENV) != 0);
 
@@ -403,7 +397,7 @@ void Raytracer::initTextures(const std::map<std::string, Picture *> &mapPictures
             {
                 const int deviceHome = getDeviceHome(island);
 
-                const Texture *texture = m_devicesActive[deviceHome]->initTexture(it->first, picture,
+                const Texture *texture = m_devicesActive[deviceHome]->initTexture(it->first, picture.get(),
                                                                                   picture->getFlags());
 
                 for (auto device: island) {
@@ -413,10 +407,10 @@ void Raytracer::initTextures(const std::map<std::string, Picture *> &mapPictures
                 }
             }
         } else {
-            const unsigned int numDevices = static_cast<unsigned int>(m_devicesActive.size());
+            const auto numDevices = static_cast<unsigned int>(m_devicesActive.size());
 
             for (unsigned int device = 0; device < numDevices; ++device) {
-                (void) m_devicesActive[device]->initTexture(it->first, picture, picture->getFlags());
+                (void) m_devicesActive[device]->initTexture(it->first, picture.get(), picture->getFlags());
             }
         }
     }
@@ -425,8 +419,8 @@ void Raytracer::initTextures(const std::map<std::string, Picture *> &mapPictures
 
 void Raytracer::initCameras(const std::vector<CameraDefinition> &cameras)
 {
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->initCameras(cameras);
+    for (auto &device : m_devicesActive) {
+        device->initCameras(cameras);
     }
 }
 
@@ -437,7 +431,7 @@ void Raytracer::initLights(const std::vector<LightGUI> &lightsGUI, const std::ve
                                   0); // GAS and vertex attribute sharing (GAS sharing is very expensive).
 
     if (allowSharingGas) {
-        const unsigned int numIslands = static_cast<unsigned int>(m_islands.size());
+        const auto numIslands = static_cast<unsigned int>(m_islands.size());
 
         for (unsigned int indexIsland = 0; indexIsland < numIslands; ++indexIsland) {
             const auto &island = m_islands[indexIsland]; // Vector of device indices.
@@ -448,7 +442,7 @@ void Raytracer::initLights(const std::vector<LightGUI> &lightsGUI, const std::ve
             }
         }
     } else {
-        const unsigned int numDevices = static_cast<unsigned int>(m_devicesActive.size());
+        const auto numDevices = static_cast<unsigned int>(m_devicesActive.size());
 
         for (unsigned int device = 0; device < numDevices; ++device) {
             m_devicesActive[device]->initLights(lightsGUI, materialsGUI, m_geometryData, numDevices, device);
@@ -458,8 +452,8 @@ void Raytracer::initLights(const std::vector<LightGUI> &lightsGUI, const std::ve
 
 void Raytracer::initMaterials(const std::vector<MaterialGUI> &materialsGUI)
 {
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->initMaterials(materialsGUI);
+    for (auto &device : m_devicesActive) {
+        device->initMaterials(materialsGUI);
     }
 }
 
@@ -491,7 +485,7 @@ void Raytracer::initScene(std::shared_ptr<sg::Group> root, const unsigned int nu
     traverseNode(root, instanceData, matrix);
 
     if (allowSharingGas) {
-        const unsigned int numIslands = static_cast<unsigned int>(m_islands.size());
+        const auto numIslands = static_cast<unsigned int>(m_islands.size());
 
         for (unsigned int indexIsland = 0; indexIsland < numIslands; ++indexIsland) {
             const auto &island = m_islands[indexIsland]; // Vector of device indices.
@@ -504,7 +498,7 @@ void Raytracer::initScene(std::shared_ptr<sg::Group> root, const unsigned int nu
             }
         }
     } else {
-        const unsigned int numDevices = static_cast<unsigned int>(m_devicesActive.size());
+        const auto numDevices = static_cast<unsigned int>(m_devicesActive.size());
 
         for (unsigned int device = 0; device < numDevices; ++device) {
             m_devicesActive[device]->createTLAS();
@@ -518,23 +512,23 @@ void Raytracer::initState(const DeviceState &state)
 {
     m_samplesPerPixel = (unsigned int) (state.samplesSqrt * state.samplesSqrt);
 
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->setState(state);
+    for (auto &device : m_devicesActive) {
+        device->setState(state);
     }
 }
 
 void Raytracer::updateCamera(const int idCamera, const CameraDefinition &camera)
 {
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->updateCamera(idCamera, camera);
+    for (auto &device : m_devicesActive) {
+        device->updateCamera(idCamera, camera);
     }
     m_iterationIndex = 0; // Restart accumulation.
 }
 
 void Raytracer::updateLight(const int idLight, const MaterialGUI &materialGUI)
 {
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->updateLight(idLight, materialGUI);
+    for (auto &device : m_devicesActive) {
+        device->updateLight(idLight, materialGUI);
     }
     m_iterationIndex = 0; // Restart accumulation.
 }
@@ -550,8 +544,8 @@ void Raytracer::updateLight(const int idLight, const MaterialGUI &materialGUI)
 
 void Raytracer::updateMaterial(const int idMaterial, const MaterialGUI &materialGUI)
 {
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->updateMaterial(idMaterial, materialGUI);
+    for (auto &device : m_devicesActive) {
+        device->updateMaterial(idMaterial, materialGUI);
     }
     m_iterationIndex = 0; // Restart accumulation.
 }
@@ -560,46 +554,46 @@ void Raytracer::updateState(const DeviceState &state)
 {
     m_samplesPerPixel = (unsigned int) (state.samplesSqrt * state.samplesSqrt);
 
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->setState(state);
+    for (auto& device : m_devicesActive) {
+        device->setState(state);
     }
     m_iterationIndex = 0; // Restart accumulation.
 }
 
 void Raytracer::updateTLAS()
 {
-    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-        m_devicesActive[i]->updateTLAS();
+    for (auto& device : m_devicesActive) {
+        device->updateTLAS();
     }
     m_iterationIndex = 0; // Restart accumulation.
 }
 
-// The public function which does the multi-GPU wrapping.
-// Returns the count of renderered iterations (m_iterationIndex after it has been incremented).
-unsigned int Raytracer::render(const int mode)
-{
-    // Continue manual accumulation rendering if the samples per pixel have not been reached.
-    if (m_iterationIndex < m_samplesPerPixel) {
-        void *buffer = nullptr;
-
-        // Make sure the OpenGL device is allocating the full resolution backing storage.
-        const int index = (m_indexDeviceOGL != -1) ? m_indexDeviceOGL : 0; // Destination device.
-
-        // This is the device which needs to allocate the peer-to-peer buffer to reside on the same device as the PBO or Texture
-        m_devicesActive[index]->render(m_iterationIndex, &buffer,
-                                       mode); // Interactive rendering. All devices work on the same iteration index.
-
-        for (size_t i = 0; i < m_devicesActive.size(); ++i) {
-            if (index != static_cast<int>(i)) {
-                // If buffer is still nullptr here, the first device will allocate the full resolution buffer.
-                m_devicesActive[i]->render(m_iterationIndex, &buffer, mode);
-            }
-        }
-
-        ++m_iterationIndex;
-    }
-    return m_iterationIndex;
-}
+//// The public function which does the multi-GPU wrapping.
+//// Returns the count of renderered iterations (m_iterationIndex after it has been incremented).
+//unsigned int Raytracer::render(const int mode)
+//{
+//    // Continue manual accumulation rendering if the samples per pixel have not been reached.
+//    if (m_iterationIndex < m_samplesPerPixel) {
+//        void *buffer = nullptr;
+//
+//        // Make sure the OpenGL device is allocating the full resolution backing storage.
+//        const int index = (m_indexDeviceOGL != -1) ? m_indexDeviceOGL : 0; // Destination device.
+//
+//        // This is the device which needs to allocate the peer-to-peer buffer to reside on the same device as the PBO or Texture
+//        m_devicesActive[index]->render(m_iterationIndex, &buffer,
+//                                       mode); // Interactive rendering. All devices work on the same iteration index.
+//
+//        for (int i = 0; i < m_devicesActive.size(); ++i) {
+//            if (i != index) {
+//                // If buffer is still nullptr here, the first device will allocate the full resolution buffer.
+//                m_devicesActive[i]->render(m_iterationIndex, &buffer, mode);
+//            }
+//        }
+//
+//        ++m_iterationIndex;
+//    }
+//    return m_iterationIndex;
+//}
 
 void Raytracer::updateDisplayTexture()
 {
@@ -607,9 +601,9 @@ void Raytracer::updateDisplayTexture()
 
     // Only need to composite the resulting frame when using multiple decvices.
     // Single device renders directly into the full resolution output buffer.
-    if (1 < m_devicesActive.size()) {
+    if (m_devicesActive.size() > 1) {
         // First, copy the texelBuffer of the primary device into its tileBuffer and then place the tiles into the outputBuffer.
-        m_devicesActive[index]->compositor(m_devicesActive[index]);
+        m_devicesActive[index]->compositor(m_devicesActive[index].get());
 
         // Now copy the other devices' texelBuffers over to the main tileBuffer and repeat the compositing for that other device.
         // The cuMemcpyPeerAsync done in that case is fast when the devices are in the same peer island, otherwise it's copied via PCI-E, but only N-1 copies of 1/N size are done.
@@ -618,7 +612,7 @@ void Raytracer::updateDisplayTexture()
         // PERF If all tiles are copied to the main device at once, such kernel would only need to be called once.
         for (size_t i = 0; i < m_devicesActive.size(); ++i) {
             if (index != static_cast<int>(i)) {
-                m_devicesActive[index]->compositor(m_devicesActive[i]);
+                m_devicesActive[index]->compositor(m_devicesActive[i].get());
             }
         }
     }
@@ -636,12 +630,12 @@ const void *Raytracer::getOutputBufferHost()
     // Single device renders  directly into the full resolution output buffer.
     if (1 < m_devicesActive.size()) {
         // First, copy the texelBuffer of the primary device into its tileBuffer and then place the tiles into the outputBuffer.
-        m_devicesActive[index]->compositor(m_devicesActive[index]);
+        m_devicesActive[index]->compositor(m_devicesActive[index].get());
 
         // Now copy the other devices' texelBuffers over to the main tileBuffer and repeat the compositing for that other device.
         for (size_t i = 0; i < m_devicesActive.size(); ++i) {
             if (index != static_cast<int>(i)) {
-                m_devicesActive[index]->compositor(m_devicesActive[i]);
+                m_devicesActive[index]->compositor(m_devicesActive[i].get());
             }
         }
     }
@@ -677,11 +671,12 @@ void Raytracer::selectDevices()
         const unsigned int mask = (1 << ordinal);
 
         if (m_maskDevicesActive & mask) {
-            const int index = static_cast<int>(m_devicesActive.size());
+            const auto index = static_cast<int>(m_devicesActive.size());
 
-            Device *device = new Device(ordinal, index, count, m_typeEnv, m_interop, m_tex, m_pbo, m_sizeArena);
-
-            m_devicesActive.push_back(device);
+            const auto &device = m_devicesActive.emplace_back(
+                std::make_unique<Device>(ordinal, index, count, m_typeEnv, m_interop, m_tex, m_pbo, m_sizeArena));
+            //auto device = new Device(ordinal, index, count, m_typeEnv, m_interop, m_tex, m_pbo, m_sizeArena);
+            //m_devicesActive.push_back(device);
 
             std::cout << "Device ordinal " << ordinal << ": " << device->m_deviceName
                       << " selected as active device index " << index << '\n';
@@ -800,7 +795,7 @@ void Raytracer::traverseNode(std::shared_ptr<sg::Node> node, InstanceData instan
             const bool allowSharingGas = ((m_peerToPeer & P2P_GAS) != 0);
 
             if (allowSharingGas) {
-                const unsigned int numIslands = static_cast<unsigned int>(m_islands.size());
+                const auto numIslands = static_cast<unsigned int>(m_islands.size());
 
                 for (unsigned int indexIsland = 0; indexIsland < numIslands; ++indexIsland) {
                     const auto &island = m_islands[indexIsland]; // Vector of device indices.
@@ -830,7 +825,7 @@ void Raytracer::traverseNode(std::shared_ptr<sg::Node> node, InstanceData instan
                     }
                 }
             } else {
-                const unsigned int numDevices = static_cast<unsigned int>(m_devicesActive.size());
+                const auto numDevices = static_cast<unsigned int>(m_devicesActive.size());
 
                 for (unsigned int device = 0; device < numDevices; ++device) {
                     GeometryData &geometryData = m_geometryData[instanceData.idGeometry * numDevices + device];

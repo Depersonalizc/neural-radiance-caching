@@ -71,7 +71,7 @@ public:
 
     void synchronize();        // Needed for the benchmark to wait for all asynchronous rendering to have finished.
 
-    void initTextures(const std::map<std::string, Picture *> &mapOfPictures);
+    void initTextures(const std::map<std::string, std::unique_ptr<Picture>> &mapPictures);
 
     void initCameras(const std::vector<CameraDefinition> &cameras);
 
@@ -95,10 +95,37 @@ public:
 
     void updateTLAS();
 
-    unsigned int render(const int mode = 0); // 0 = interactive, 1 = benchmark (fully asynchronous launches)
     void updateDisplayTexture();
 
     const void *getOutputBufferHost();
+
+    // The public function which does the multi-GPU wrapping.
+    // Returns the count of renderered iterations (m_iterationIndex after it has been incremented).
+    template<int Mode = 0>  // 0 = interactive, 1 = benchmark (fully asynchronous launches)
+    unsigned int render()
+    {
+        // Continue manual accumulation rendering if the samples per pixel have not been reached.
+        if (m_iterationIndex < m_samplesPerPixel) {
+            void* buffer = nullptr;
+
+            // Make sure the OpenGL device is allocating the full resolution backing storage.
+            const int index = (m_indexDeviceOGL != -1) ? m_indexDeviceOGL : 0; // Destination device.
+
+            // This is the device which needs to allocate the peer-to-peer buffer to reside on the same device as the PBO or Texture
+            m_devicesActive[index]->render<Mode>(m_iterationIndex, &buffer); // Interactive rendering. All devices work on the same iteration index.
+
+            for (int i = 0; i < m_devicesActive.size(); ++i) {
+                if (i != index) {
+                    // If buffer is still nullptr here, the first device will allocate the full resolution buffer.
+                    m_devicesActive[i]->render<Mode>(m_iterationIndex, &buffer);
+                }
+            }
+
+            ++m_iterationIndex;
+        }
+        return m_iterationIndex;
+    }
+
 
 private:
     void selectDevices();
@@ -130,7 +157,7 @@ public:
     int m_numDevicesVisible; // The number of visible CUDA devices. (What you can control via the CUDA_VISIBLE_DEVICES environment variable.)
     int m_indexDeviceOGL;    // The first device which matches with the OpenGL LUID and node mask. -1 when there was no match.
     unsigned int m_maskDevicesActive; // The bitmask marking the actually enabled devices.
-    std::vector<Device *> m_devicesActive;
+    std::vector<std::unique_ptr<Device>> m_devicesActive;
 
     unsigned int m_iterationIndex;  // Tracks which sub-frame is currently raytraced.
     unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.

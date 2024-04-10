@@ -198,13 +198,6 @@ namespace cuda {
     {
     }
 
-    ArenaAllocator::~ArenaAllocator()
-    {
-        for (auto arena: m_arenas) {
-            delete arena;
-        }
-    }
-
     CUdeviceptr ArenaAllocator::alloc(const size_t size, const size_t alignment, const cuda::Usage usage)
     {
         // All memory alignments needed in this implementation are at max 256 and power-of-two
@@ -236,9 +229,7 @@ namespace cuda {
 
                 // Allocate a new arena which can hold the requested size of bytes.
                 // No user pointer adjustment is required if m_sizeArenaBytes <= size. This is always aligned to 256 bytes.
-                auto arena = new Arena(sizeArenaBytes); // This can fail with a CUDA out-of-memory error!
-
-                m_arenas.push_back(arena); // Append it to the vector of arenas.
+                auto& arena = m_arenas.emplace_back(std::make_unique<Arena>(sizeArenaBytes)); // This can fail with a CUDA out-of-memory error!
 
                 (void) arena->allocBlock(block, size, alignment, usage);
                 MY_ASSERT(block.isValid()); // This allocation should not fail.

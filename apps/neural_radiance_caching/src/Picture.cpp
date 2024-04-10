@@ -105,10 +105,10 @@ Image::Image(unsigned int width,
 
 Image::~Image()
 {
-    if (m_pixels != nullptr) {
+    //if (m_pixels != nullptr) {
         delete[] m_pixels;
         m_pixels = nullptr;
-    }
+    //}
 }
 
 static int determineFace(int i, bool isCubemapDDS)
@@ -131,11 +131,6 @@ static int determineFace(int i, bool isCubemapDDS)
 Picture::Picture()
         : m_flags(0), m_isCube(false)
 {
-}
-
-Picture::~Picture()
-{
-    clearImages();
 }
 
 unsigned int Picture::getFlags() const
@@ -167,7 +162,7 @@ unsigned int Picture::getNumberOfLevels(unsigned int index) const
 const Image *Picture::getImageLevel(unsigned int index, unsigned int level) const
 {
     if (index < m_images.size() && level < m_images[index].size()) {
-        return m_images[index][level];
+        return m_images[index][level].get();
     }
     return nullptr;
 }
@@ -216,13 +211,6 @@ static bool calculateNextExtents(unsigned int &w, unsigned int &h, unsigned int 
 
 void Picture::clearImages()
 {
-    for (size_t i = 0; i < m_images.size(); ++i) {
-        for (size_t lod = 0; lod < m_images[i].size(); ++lod) {
-            delete m_images[i][lod];
-            m_images[i][lod] = nullptr;
-        }
-        m_images[i].clear();
-    }
     m_images.clear();
 }
 
@@ -506,10 +494,9 @@ void Picture::clear()
 // Append a new empty vector of images. Returns the new image index.
 unsigned int Picture::addImages()
 {
-    const unsigned int index = static_cast<unsigned int>(m_images.size());
+    const auto index = static_cast<unsigned int>(m_images.size());
 
-    m_images.push_back(
-            std::vector<Image *>()); // Append a new empty vector of image pointers. Each vector can hold one mipmap chain.
+    m_images.emplace_back(); // Append a new empty vector of image pointers. Each vector can hold one mipmap chain.
 
     return index;
 }
@@ -520,32 +507,35 @@ unsigned int Picture::addImages(const void *pixels,
                                 const int format, const int type,
                                 const std::vector<const void *> &mipmaps, const unsigned int flags)
 {
-    const unsigned int index = static_cast<unsigned int>(m_images.size());
+    const auto index = static_cast<unsigned int>(m_images.size());
 
-    m_images.push_back(std::vector<Image *>()); // Append a new empty vector of image pointers.
+    auto &imageLoDs = m_images.emplace_back(); // Append a new empty vector of image pointers.
+    //m_images.push_back(std::vector<Image *>()); // Append a new empty vector of image pointers.
 
-    Image *image = new Image(width, height, depth, format, type); // LOD 0
+    {
+        auto& image = imageLoDs.emplace_back(std::make_unique<Image>(width, height, depth, format, type)); // LOD 0
+        image->m_pixels = new unsigned char[image->m_nob];
+        memcpy(image->m_pixels, pixels, image->m_nob);
+    }
 
-    image->m_pixels = new unsigned char[image->m_nob];
-    memcpy(image->m_pixels, pixels, image->m_nob);
+    //Image *image = new Image(width, height, depth, format, type); // LOD 0
+    //image->m_pixels = new unsigned char[image->m_nob];
+    //memcpy(image->m_pixels, pixels, image->m_nob);
 
-    m_images[index].push_back(image); // LOD 0
+    //m_images[index].push_back(image); // LOD 0
 
     unsigned int w = width;
     unsigned int h = height;
     unsigned int d = depth;
 
-    for (size_t i = 0; i < mipmaps.size(); ++i) {
-        MY_ASSERT(mipmaps[i]); // No nullptr expected.
+    for (size_t lod = 0; lod < mipmaps.size(); ++lod) {
+        MY_ASSERT(mipmaps[lod]); // No nullptr expected.
 
         calculateNextExtents(w, h, d, flags); // Mind that the flags let this work for layered mipmap chains!
 
-        image = new Image(w, h, d, format, type); // LOD 1 to N.
-
+        auto& image = imageLoDs.emplace_back(std::make_unique<Image>(w, h, d, format, type)); // LOD 1 to N.
         image->m_pixels = new unsigned char[image->m_nob];
-        memcpy(image->m_pixels, mipmaps[i], image->m_nob);
-
-        m_images[index].push_back(image); // LOD 1 - N
+        memcpy(image->m_pixels, mipmaps[lod], image->m_nob);
     }
 
     return index;
@@ -560,14 +550,15 @@ unsigned int Picture::addLevel(const unsigned int index, const void *pixels,
     MY_ASSERT(pixels != nullptr);
     MY_ASSERT((0 < width) && (0 < height) && (0 < depth));
 
-    Image *image = new Image(width, height, depth, format, type);
+    const auto level = static_cast<unsigned int>(m_images[index].size());
 
+    auto& image = m_images[index].emplace_back(
+        std::make_unique<Image>(width, height, depth, format, type));
+    //Image *image = new Image(width, height, depth, format, type);
     image->m_pixels = new unsigned char[image->m_nob];
     memcpy(image->m_pixels, pixels, image->m_nob);
 
-    const unsigned int level = static_cast<unsigned int>(m_images[index].size());
-
-    m_images[index].push_back(image);
+    //m_images[index].push_back(image);
 
     return level;
 }
@@ -578,11 +569,10 @@ void Picture::mirrorX(unsigned int index)
     MY_ASSERT(index < m_images.size());
 
     // Flip all images upside down.
-    for (size_t i = 0; i < m_images[index].size(); ++i) {
-        Image *image = m_images[index][i];
+    for (auto &image : m_images[index]) {
 
-        const unsigned char *srcPixels = image->m_pixels;
-        unsigned char *dstPixels = new unsigned char[image->m_nob];
+        const auto srcPixels = image->m_pixels;
+        const auto dstPixels = new unsigned char[image->m_nob];
 
         for (unsigned int z = 0; z < image->m_depth; ++z) {
             for (unsigned int y = 0; y < image->m_height; ++y) {
@@ -602,11 +592,10 @@ void Picture::mirrorY(unsigned int index)
     MY_ASSERT(index < m_images.size());
 
     // Mirror all images left to right.
-    for (size_t i = 0; i < m_images[index].size(); ++i) {
-        Image *image = m_images[index][i];
+    for (auto& image : m_images[index]) {
 
-        const unsigned char *srcPixels = image->m_pixels;
-        unsigned char *dstPixels = new unsigned char[image->m_nob];
+        const auto srcPixels = image->m_pixels;
+        const auto dstPixels = new unsigned char[image->m_nob];
 
         for (unsigned int z = 0; z < image->m_depth; ++z) {
             for (unsigned int y = 0; y < image->m_height; ++y) {

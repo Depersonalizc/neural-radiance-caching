@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
  */
 
 #pragma once
- 
+
 #ifndef RASTERIZER_H
 #define RASTERIZER_H
 
@@ -43,78 +43,78 @@
 
 typedef struct
 {
-  float u;     // u-coordinate in range [0.0, 1.0]
-  float c[3];  // color, components in range [0.0, 1.0]
+	float u;     // u-coordinate in range [0.0, 1.0]
+	float c[3];  // color, components in range [0.0, 1.0]
 } ColorRampElement;
 
 
 class Rasterizer
 {
 public:
-  Rasterizer(const int w, const int h, const int interop);
-  ~Rasterizer();
+	Rasterizer(const int w, const int h, const int interop);
+	~Rasterizer();
 
-  void reshape(const int w, const int h);
-  void display();
-  
-  int getNumDevices() const;
-  
-  const unsigned char* getUUID(const unsigned int index) const;
-  const unsigned char* getLUID() const;
-  int getNodeMask() const;
+	void reshape(const int w, const int h);
+	void display();
 
-  unsigned int getTextureObject() const;
-  unsigned int getPixelBufferObject() const;
+	int getNumDevices() const;
 
-  void setResolution(const int w, const int h);
-  void setTonemapper(const TonemapperGUI& tm);
+	const unsigned char* getUUID(const unsigned int index) const;
+	const unsigned char* getLUID() const;
+	int getNodeMask() const;
 
-private:
-  void checkInfoLog(const char *msg, GLuint object);
-  void initGLSL();
-  void updateProjectionMatrix();
-  void updateVertexAttributes();
+	unsigned int getTextureObject() const;
+	unsigned int getPixelBufferObject() const;
+
+	void setResolution(const int w, const int h);
+	void setTonemapper(const TonemapperGUI& tm);
 
 private:
-  int m_width;
-  int m_height;
-  int m_interop;
+	void checkInfoLog(const char* msg, GLuint object);
+	void initGLSL();
+	void updateProjectionMatrix();
+	void updateVertexAttributes();
 
-  int m_widthResolution;
-  int m_heightResolution;
+private:
+	int m_width;
+	int m_height;
+	int m_interop;
 
-  GLint   m_numDevices;                       // Number of OpenGL devices. Normally 1, unless multicast is enabled.
-  GLubyte m_deviceUUID[24][GL_UUID_SIZE_EXT]; // Max. 24 devices supported. 16 bytes identifier.
-  //GLubyte m_driverUUID[GL_UUID_SIZE_EXT];   // 16 bytes identifier, unused.
-  GLubyte m_deviceLUID[GL_LUID_SIZE_EXT];     //  8 bytes identifier.
-  GLint   m_nodeMask;                         // Node mask used together with the LUID to identify OpenGL device uniquely.
+	int m_widthResolution;
+	int m_heightResolution;
 
-  GLuint m_hdrTexture;
-  GLuint m_pbo;
+	GLint   m_numDevices;                       // Number of OpenGL devices. Normally 1, unless multicast is enabled.
+	GLubyte m_deviceUUID[24][GL_UUID_SIZE_EXT]; // Max. 24 devices supported. 16 bytes identifier.
+	//GLubyte m_driverUUID[GL_UUID_SIZE_EXT];   // 16 bytes identifier, unused.
+	GLubyte m_deviceLUID[GL_LUID_SIZE_EXT];     //  8 bytes identifier.
+	GLint   m_nodeMask;                         // Node mask used together with the LUID to identify OpenGL device uniquely.
 
-  GLuint m_colorRampTexture;
+	GLuint m_hdrTexture;
+	GLuint m_pbo;
 
-  GLuint m_glslProgram;
-  
-  GLuint m_vboAttributes;
-  GLuint m_vboIndices;
+	GLuint m_colorRampTexture;
 
-  GLint m_locAttrPosition;
-  GLint m_locAttrTexCoord;
-  GLint m_locProjection;
+	GLuint m_glslProgram;
 
-  GLint m_locSamplerHDR;
-  GLint m_locSamplerColorRamp;
+	GLuint m_vboAttributes;
+	GLuint m_vboIndices;
 
-  // Rasterizer side of the TonemapperGUI data
-  GLint m_locInvGamma;
-  GLint m_locColorBalance;
-  GLint m_locInvWhitePoint;
-  GLint m_locBurnHighlights;
-  GLint m_locCrushBlacks;
-  GLint m_locSaturation;
+	GLint m_locAttrPosition;
+	GLint m_locAttrTexCoord;
+	GLint m_locProjection;
 
-  Timer m_timer;
+	GLint m_locSamplerHDR;
+	GLint m_locSamplerColorRamp;
+
+	// Rasterizer side of the TonemapperGUI data
+	GLint m_locInvGamma;
+	GLint m_locColorBalance;
+	GLint m_locInvWhitePoint;
+	GLint m_locBurnHighlights;
+	GLint m_locCrushBlacks;
+	GLint m_locSaturation;
+
+	Timer m_timer;
 };
 
 #endif // RASTERIZER_H

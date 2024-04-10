@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -60,7 +60,7 @@
 
 #include "shaders/material_definition.h"
 
-// This include gl.h and needs to be done after glew.h
+ // This include gl.h and needs to be done after glew.h
 #include <GLFW/glfw3.h>
 
 // assimp include files.
@@ -74,125 +74,126 @@
 #include <memory>
 
 
-constexpr int APP_EXIT_SUCCESS        =  0;
-constexpr int APP_ERROR_UNKNOWN       = -1;
-constexpr int APP_ERROR_CREATE_WINDOW = -2;
-constexpr int APP_ERROR_GLFW_INIT     = -3;
-constexpr int APP_ERROR_GLEW_INIT     = -4;
-constexpr int APP_ERROR_APP_INIT      = -5;
+static constexpr inline int APP_EXIT_SUCCESS = 0;
+static constexpr inline int APP_ERROR_UNKNOWN = -1;
+static constexpr inline int APP_ERROR_CREATE_WINDOW = -2;
+static constexpr inline int APP_ERROR_GLFW_INIT = -3;
+static constexpr inline int APP_ERROR_GLEW_INIT = -4;
+static constexpr inline int APP_ERROR_APP_INIT = -5;
+static constexpr inline int APP_ERROR_PARSE_COMMAND_LINE = -6;
 
 
 enum GuiState
 {
-  GUI_STATE_NONE,
-  GUI_STATE_ORBIT,
-  GUI_STATE_PAN,
-  GUI_STATE_DOLLY,
-  GUI_STATE_FOCUS
+	GUI_STATE_NONE,
+	GUI_STATE_ORBIT,
+	GUI_STATE_PAN,
+	GUI_STATE_DOLLY,
+	GUI_STATE_FOCUS
 };
 
 
 enum KeywordScene
 {
-  KS_LENS_SHADER,
-  KS_CENTER,
-  KS_CAMERA,
-  KS_GAMMA,
-  KS_COLOR_BALANCE,
-  KS_WHITE_POINT,
-  KS_BURN_HIGHLIGHTS,
-  KS_CRUSH_BLACKS,
-  KS_SATURATION,
-  KS_BRIGHTNESS,
-  KS_ALBEDO,
-  KS_ALBEDO_TEXTURE,
-  KS_CUTOUT_TEXTURE,
-  KS_ROUGHNESS,
-  KS_ABSORPTION,
-  KS_ABSORPTION_SCALE,
-  KS_SCATTERING,
-  KS_SCATTERING_SCALE,
-  KS_SCATTERING_BIAS,
-  KS_IOR,
-  KS_THINWALLED,
-  KS_EMISSION,
-  KS_EMISSION_MULTIPLIER,
-  KS_EMISSION_PROFILE,
-  KS_EMISSION_TEXTURE,
-  KS_SPOT_ANGLE,
-  KS_SPOT_EXPONENT,
-  KS_IDENTITY,
-  KS_PUSH,
-  KS_POP,
-  KS_ROTATE,
-  KS_SCALE,
-  KS_TRANSLATE,
-  KS_BXDF,
-  KS_BRDF_DIFFUSE,
-  KS_BRDF_SPECULAR,
-  KS_BTDF_SPECULAR,
-  KS_BSDF_SPECULAR,
-  KS_BRDF_GGX_SMITH,
-  KS_BTDF_GGX_SMITH,
-  KS_BSDF_GGX_SMITH,
-  KS_EDF,
-  KS_EDF_DIFFUSE,
-  KS_EDF_SPOT,
-  KS_EDF_IES,
-  KS_PLANE,
-  KS_BOX,
-  KS_SPHERE,
-  KS_TORUS,
-  KS_ASSIMP,
-  KS_LIGHT_ENV,
-  KS_LIGHT_RECT,
-  KS_MATERIAL,
-  KS_LIGHT,
-  KS_MODEL
+	KS_LENS_SHADER,
+	KS_CENTER,
+	KS_CAMERA,
+	KS_GAMMA,
+	KS_COLOR_BALANCE,
+	KS_WHITE_POINT,
+	KS_BURN_HIGHLIGHTS,
+	KS_CRUSH_BLACKS,
+	KS_SATURATION,
+	KS_BRIGHTNESS,
+	KS_ALBEDO,
+	KS_ALBEDO_TEXTURE,
+	KS_CUTOUT_TEXTURE,
+	KS_ROUGHNESS,
+	KS_ABSORPTION,
+	KS_ABSORPTION_SCALE,
+	KS_SCATTERING,
+	KS_SCATTERING_SCALE,
+	KS_SCATTERING_BIAS,
+	KS_IOR,
+	KS_THINWALLED,
+	KS_EMISSION,
+	KS_EMISSION_MULTIPLIER,
+	KS_EMISSION_PROFILE,
+	KS_EMISSION_TEXTURE,
+	KS_SPOT_ANGLE,
+	KS_SPOT_EXPONENT,
+	KS_IDENTITY,
+	KS_PUSH,
+	KS_POP,
+	KS_ROTATE,
+	KS_SCALE,
+	KS_TRANSLATE,
+	KS_BXDF,
+	KS_BRDF_DIFFUSE,
+	KS_BRDF_SPECULAR,
+	KS_BTDF_SPECULAR,
+	KS_BSDF_SPECULAR,
+	KS_BRDF_GGX_SMITH,
+	KS_BTDF_GGX_SMITH,
+	KS_BSDF_GGX_SMITH,
+	KS_EDF,
+	KS_EDF_DIFFUSE,
+	KS_EDF_SPOT,
+	KS_EDF_IES,
+	KS_PLANE,
+	KS_BOX,
+	KS_SPHERE,
+	KS_TORUS,
+	KS_ASSIMP,
+	KS_LIGHT_ENV,
+	KS_LIGHT_RECT,
+	KS_MATERIAL,
+	KS_LIGHT,
+	KS_MODEL
 };
 
 
 struct SceneState
 {
-  void reset()
-  {
-    matrix         = dp::math::cIdentity44f;
-    matrixInv      = dp::math::cIdentity44f;
-    orientation    = dp::math::Quatf(0.0f, 0.0f, 0.0f, 1.0f);
-    orientationInv = dp::math::Quatf(0.0f, 0.0f, 0.0f, 1.0f);
+	void reset()
+	{
+		matrix = dp::math::cIdentity44f;
+		matrixInv = dp::math::cIdentity44f;
+		orientation = dp::math::Quatf(0.0f, 0.0f, 0.0f, 1.0f);
+		orientationInv = dp::math::Quatf(0.0f, 0.0f, 0.0f, 1.0f);
 
-    material.typeBXDF = TYPE_BXDF; // Black BRDF.
-    material.typeEDF  = TYPE_EDF;  // Black EDF, not a light.
+		material.typeBXDF = TYPE_BXDF; // Black BRDF.
+		material.typeEDF = TYPE_EDF;  // Black EDF, not a light.
 
-    material.name.clear();
-    material.nameAlbedo.clear();
-    material.nameCutout.clear();
-    material.nameEmission.clear();
-    material.nameProfile.clear();
+		material.name.clear();
+		material.nameAlbedo.clear();
+		material.nameCutout.clear();
+		material.nameEmission.clear();
+		material.nameProfile.clear();
 
-    material.colorAlbedo        = make_float3(1.0f);
-    material.colorEmission      = make_float3(1.0f);
-    material.multiplierEmission = 1.0f;
-    material.spotAngle          = 180.0f; // Full hemispherical distribution.
-    material.spotExponent       = 1.0f;   // Cosine falloff from cone center to edge.
-    material.colorAbsorption    = make_float3(1.0f); // no sbsorption
-    material.scaleAbsorption    = 0.0f; // off
-    material.colorScattering    = make_float3(1.0f); // no scattering
-    material.scaleScattering    = 0.0f; // off
-    material.biasScattering     = 0.0f; // isotropic
-    material.roughness          = make_float2(0.1f);
-    material.ior                = 1.5f;
-    material.thinwalled         = false;
-  }
+		material.colorAlbedo = make_float3(1.0f);
+		material.colorEmission = make_float3(1.0f);
+		material.multiplierEmission = 1.0f;
+		material.spotAngle = 180.0f; // Full hemispherical distribution.
+		material.spotExponent = 1.0f;   // Cosine falloff from cone center to edge.
+		material.colorAbsorption = make_float3(1.0f); // no sbsorption
+		material.scaleAbsorption = 0.0f; // off
+		material.colorScattering = make_float3(1.0f); // no scattering
+		material.scaleScattering = 0.0f; // off
+		material.biasScattering = 0.0f; // isotropic
+		material.roughness = make_float2(0.1f);
+		material.ior = 1.5f;
+		material.thinwalled = false;
+	}
 
-  // Transformation state
-  dp::math::Mat44f matrix;
-  dp::math::Mat44f matrixInv;
-  // The orientation (the pure rotational part of the above matrices).
-  dp::math::Quatf  orientation;
-  dp::math::Quatf  orientationInv;
+	// Transformation state
+	dp::math::Mat44f matrix;
+	dp::math::Mat44f matrixInv;
+	// The orientation (the pure rotational part of the above matrices).
+	dp::math::Quatf  orientation;
+	dp::math::Quatf  orientationInv;
 
-  MaterialGUI material;
+	MaterialGUI material;
 };
 
 
@@ -201,146 +202,146 @@ class Application
 {
 public:
 
-  Application(GLFWwindow* window, const Options& options);
-  ~Application();
+	Application(GLFWwindow* window, const Options& options);
+	~Application();
 
-  [[nodiscard]] bool isValid() const;
+	[[nodiscard]] bool isValid() const;
 
-  void reshape(int w, int h);
-  bool render();
-  void benchmark();
+	void reshape(int w, int h);
+	bool render();
+	void benchmark();
 
-  void display();
+	void display();
 
-  void guiNewFrame();
-  void guiWindow();
-  void guiEventHandler();
-  void guiReferenceManual(); // The ImGui "programming manual" in form of a live window.
-  void guiRender();
-
-private:
-  bool loadSystemDescription(const std::string& filename);
-  bool saveSystemDescription();
-
-  [[nodiscard]] TypeBXDF determineTypeBXDF(const std::string& token) const;
-  [[nodiscard]] TypeEDF  determineTypeEDF(const std::string& token) const;
-  bool loadSceneDescription(const std::string& filename);
-
-  void restartRendering();
-
-  bool screenshot(bool tonemap);
-
-  //void createPictures();
-  void createCameras();
-  
-  [[nodiscard]] int findMaterial(const std::string& reference) const;
-
-  void appendInstance(std::shared_ptr<sg::Group>& group,
-                      std::shared_ptr<sg::Node> geometry, // Baseclass Node to be prepared for different geometric primitives.
-                      const dp::math::Mat44f& matrix, 
-                      int indexMaterial,
-                      int indexLight);
-
-  std::shared_ptr<sg::Group> createASSIMP(const std::string& filename);
-  std::shared_ptr<sg::Group> traverseScene(const struct aiScene *scene, unsigned int indexSceneBase, const struct aiNode* node);
-
-  static void calculateTangents(std::vector<TriangleAttributes>& attributes, const std::vector<unsigned int>& indices);
-
-  void guiRenderingIndicator(bool isRendering);
-
-  void createMeshLights();
-  void traverseGraph(const std::shared_ptr<sg::Node> &node, InstanceData& instanceData, float matrix[12]);
-  int createMeshLight(const std::shared_ptr<sg::Triangles> &geometry, int indexMaterial, const float matrix[12]);
-
-  static bool loadString(const std::string& filename, std::string& text);
-  static bool saveString(const std::string& filename, const std::string& text);
-  static std::string getDateTime();
-  static void convertPath(std::string& path);
-  static void convertPath(char* path);
+	void guiNewFrame();
+	void guiWindow();
+	void guiEventHandler();
+	void guiReferenceManual(); // The ImGui "programming manual" in form of a live window.
+	void guiRender();
 
 private:
-  GLFWwindow* m_window;
-  bool        m_isValid;
+	bool loadSystemDescription(const std::string& filename);
+	bool saveSystemDescription();
 
-  GuiState m_guiState;
-  bool     m_isVisibleGUI;
+	[[nodiscard]] TypeBXDF determineTypeBXDF(const std::string& token) const;
+	[[nodiscard]] TypeEDF  determineTypeEDF(const std::string& token) const;
+	bool loadSceneDescription(const std::string& filename);
 
-  // Command line options:
-  int         m_width;    // Client window size.
-  int         m_height;
-  int         m_mode;     // Application mode 0 = interactive, 1 = batched benchmark (single shot).
-  bool        m_optimize; // Command line option to let the assimp importer optimize the graph (sorts by material).
+	void restartRendering();
 
-  // System options:
-  int         m_strategy;    // "strategy"    // Ignored in this renderer. Always behaves like RS_INTERACTIVE_MULTI_GPU_LOCAL_COPY.
-  int         m_maskDevices; // "devicesMask" // Bitmask with enabled devices, default 0x00FFFFFF for max 24 devices. Only the visible ones will be used.
-  size_t      m_sizeArena;   // "arenaSize"   // Default size for Arena allocations in mega-bytes.
-  int         m_interop;     // "interop"     // 0 = none all through host, 1 = register texture image, 2 = register pixel buffer
-  int         m_peerToPeer;  // "peerToPeer   // Bitfield controlling P2P resource sharing:
-                                              // Bit 0 = Allow peer-to-peer access via PCI-E (default off)
-                                              // Bit 1 = Share material textures (default on)
-                                              // Bit 2 = Share GAS (default on)
-                                              // Bit 3 = Share environment texture and CDFs (default off)
-  bool        m_present;     // "present"
-  bool        m_presentNext;      // (derived)
-  double      m_presentAtSecond;  // (derived)
-  bool        m_previousComplete; // (derived) // Prevents spurious benchmark prints and image updates.
+	bool screenshot(bool tonemap);
 
-  // GUI Data representing raytracer settings.
-  TypeLens   m_typeLens;            // "lensShader"
-  int2       m_pathLengths;         // "pathLengths"   // min, max
-  int        m_walkLength;          // "walkLength"    // Number of volume scattering random walk steps until the maximum distance is to try gettting out of the volumes. Minimum 1 for single scattering.
-  int2       m_resolution;          // "resolution"    // The actual size of the rendering, independent of the window's client size. (Preparation for final frame rendering.)
-  int2       m_tileSize;            // "tileSize"      // Multi-GPU distribution tile size. Must be power-of-two values.
-  int        m_samplesSqrt;         // "sampleSqrt"
-  float      m_epsilonFactor;       // "epsilonFactor"
-  float      m_clockFactor;         // "clockFactor"
-  bool       m_useDirectLighting; 
+	//void createPictures();
+	void createCameras();
 
-  std::string m_prefixScreenshot;   // "prefixScreenshot", allows to set a path and the prefix for the screenshot filename. spp, data, time and extension will be appended.
-  
-  TonemapperGUI m_tonemapperGUI;    // "gamma", "whitePoint", "burnHighlights", "crushBlacks", "saturation", "brightness"
-  
-  Camera m_camera;                  // "center", "camera"
+	[[nodiscard]] int findMaterial(const std::string& reference) const;
 
-  float m_mouseSpeedRatio;
-  
-  Timer m_timer;
+	void appendInstance(std::shared_ptr<sg::Group>& group,
+		std::shared_ptr<sg::Node> geometry, // Baseclass Node to be prepared for different geometric primitives.
+		const dp::math::Mat44f& matrix,
+		int indexMaterial,
+		int indexLight);
 
-  std::map<std::string, KeywordScene> m_mapKeywordScene;
+	std::shared_ptr<sg::Group> createASSIMP(const std::string& filename);
+	std::shared_ptr<sg::Group> traverseScene(const struct aiScene* scene, unsigned int indexSceneBase, const struct aiNode* node);
 
-  std::unique_ptr<Rasterizer> m_rasterizer;
-  
-  std::unique_ptr<Raytracer> m_raytracer;
+	static void calculateTangents(std::vector<TriangleAttributes>& attributes, const std::vector<unsigned int>& indices);
 
-  DeviceState m_state;
+	void guiRenderingIndicator(bool isRendering);
 
-  // The scene description:
-  // Unique identifiers per host scene node.
-  unsigned int m_idGroup;
-  unsigned int m_idInstance;
-  unsigned int m_idGeometry;
+	void createMeshLights();
+	void traverseGraph(const std::shared_ptr<sg::Node>& node, InstanceData& instanceData, float matrix[12]);
+	int createMeshLight(const std::shared_ptr<sg::Triangles>& geometry, int indexMaterial, const float matrix[12]);
 
-  std::shared_ptr<sg::Group> m_scene; // Root group node of the scene.
-  
-  std::vector< std::shared_ptr<sg::Node> > m_geometries; // All geometries in the scene. Baseclass Node to be prepared for different geometric primitives.
+	static bool loadString(const std::string& filename, std::string& text);
+	static bool saveString(const std::string& filename, const std::string& text);
+	static std::string getDateTime();
+	static void convertPath(std::string& path);
+	static void convertPath(char* path);
 
-  // For the runtime generated objects, this allows to find geometries with the same type and construction parameters.
-  std::map<std::string, unsigned int> m_mapGeometries;
+private:
+	GLFWwindow* m_window;
+	bool        m_isValid;
 
-  // For all model file format loaders. Allows instancing of full models in the host side scene graph.
-  std::map< std::string, std::shared_ptr<sg::Group> > m_mapGroups;
+	GuiState m_guiState;
+	bool     m_isVisibleGUI;
 
-  std::vector<CameraDefinition> m_cameras;
-  std::vector<LightGUI>         m_lightsGUI;
-  std::vector<MaterialGUI>      m_materialsGUI;
+	// Command line options:
+	int         m_width;    // Client window size.
+	int         m_height;
+	int         m_mode;     // Application mode 0 = interactive, 1 = batched benchmark (single shot).
+	bool        m_optimize; // Command line option to let the assimp importer optimize the graph (sorts by material).
 
-  // Map of local reference names to indices in the m_materialsGUI vector.
-  std::map<std::string, int> m_mapMaterialReferences; 
+	// System options:
+	int         m_strategy;    // "strategy"    // Ignored in this renderer. Always behaves like RS_INTERACTIVE_MULTI_GPU_LOCAL_COPY.
+	int         m_maskDevices; // "devicesMask" // Bitmask with enabled devices, default 0x00FFFFFF for max 24 devices. Only the visible ones will be used.
+	size_t      m_sizeArena;   // "arenaSize"   // Default size for Arena allocations in mega-bytes.
+	int         m_interop;     // "interop"     // 0 = none all through host, 1 = register texture image, 2 = register pixel buffer
+	int         m_peerToPeer;  // "peerToPeer   // Bitfield controlling P2P resource sharing:
+	// Bit 0 = Allow peer-to-peer access via PCI-E (default off)
+	// Bit 1 = Share material textures (default on)
+	// Bit 2 = Share GAS (default on)
+	// Bit 3 = Share environment texture and CDFs (default off)
+	bool        m_present;     // "present"
+	bool        m_presentNext;      // (derived)
+	double      m_presentAtSecond;  // (derived)
+	bool        m_previousComplete; // (derived) // Prevents spurious benchmark prints and image updates.
 
-  std::map<std::string, Picture*> m_mapPictures;
+	// GUI Data representing raytracer settings.
+	TypeLens   m_typeLens;            // "lensShader"
+	int2       m_pathLengths;         // "pathLengths"   // min, max
+	int        m_walkLength;          // "walkLength"    // Number of volume scattering random walk steps until the maximum distance is to try gettting out of the volumes. Minimum 1 for single scattering.
+	int2       m_resolution;          // "resolution"    // The actual size of the rendering, independent of the window's client size. (Preparation for final frame rendering.)
+	int2       m_tileSize;            // "tileSize"      // Multi-GPU distribution tile size. Must be power-of-two values.
+	int        m_samplesSqrt;         // "sampleSqrt"
+	float      m_epsilonFactor;       // "epsilonFactor"
+	float      m_clockFactor;         // "clockFactor"
+	bool       m_useDirectLighting;
 
-  std::vector<unsigned int> m_remappedMeshIndices; 
+	std::string m_prefixScreenshot;   // "prefixScreenshot", allows to set a path and the prefix for the screenshot filename. spp, data, time and extension will be appended.
+
+	TonemapperGUI m_tonemapperGUI;    // "gamma", "whitePoint", "burnHighlights", "crushBlacks", "saturation", "brightness"
+
+	Camera m_camera;                  // "center", "camera"
+
+	float m_mouseSpeedRatio;
+
+	Timer m_timer;
+
+	std::map<std::string, KeywordScene> m_mapKeywordScene;
+
+	std::unique_ptr<Rasterizer> m_rasterizer;
+
+	std::unique_ptr<Raytracer> m_raytracer;
+
+	DeviceState m_state;
+
+	// The scene description:
+	// Unique identifiers per host scene node.
+	unsigned int m_idGroup;
+	unsigned int m_idInstance;
+	unsigned int m_idGeometry;
+
+	std::shared_ptr<sg::Group> m_scene; // Root group node of the scene.
+
+	std::vector< std::shared_ptr<sg::Node> > m_geometries; // All geometries in the scene. Baseclass Node to be prepared for different geometric primitives.
+
+	// For the runtime generated objects, this allows to find geometries with the same type and construction parameters.
+	std::map<std::string, unsigned int> m_mapGeometries;
+
+	// For all model file format loaders. Allows instancing of full models in the host side scene graph.
+	std::map< std::string, std::shared_ptr<sg::Group> > m_mapGroups;
+
+	std::vector<CameraDefinition> m_cameras;
+	std::vector<LightGUI>         m_lightsGUI;
+	std::vector<MaterialGUI>      m_materialsGUI;
+
+	// Map of local reference names to indices in the m_materialsGUI vector.
+	std::map<std::string, int> m_mapMaterialReferences;
+
+	std::map<std::string, std::unique_ptr<Picture>> m_mapPictures;
+
+	std::vector<unsigned int> m_remappedMeshIndices;
 };
 
 #endif // APPLICATION_H

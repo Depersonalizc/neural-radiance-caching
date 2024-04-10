@@ -36,8 +36,6 @@
 #include <iostream>
 
 
-static Application *g_app = nullptr;
-
 static void callbackError(int error, const char *description)
 {
     std::cerr << "ERROR: " << error << ": " << description << '\n';
@@ -57,6 +55,9 @@ static int runApp(const Options &options)
 
     glfwMakeContextCurrent(window);
 
+    // Disable VSync
+    glfwSwapInterval(0);
+
     if (glewInit() != GL_NO_ERROR) {
         callbackError(APP_ERROR_GLEW_INIT, "GLEW failed to initialize.");
         return APP_ERROR_GLEW_INIT;
@@ -64,9 +65,9 @@ static int runApp(const Options &options)
 
     ilInit(); // Initialize DevIL once.
 
-    g_app = new Application(window, options);
+    Application app(window, options);
 
-    if (!g_app->isValid()) {
+    if (!app.isValid()) {
         std::cerr << "ERROR: Application() failed to initialize successfully.\n";
         ilShutDown();
         return APP_ERROR_APP_INIT;
@@ -83,26 +84,24 @@ static int runApp(const Options &options)
 
             glfwGetFramebufferSize(window, &width, &height);
 
-            g_app->reshape(width, height);
-            g_app->guiNewFrame();
-            //g_app->guiReferenceManual();  // HACK The ImGUI "Programming Manual" as example code.
-            g_app->guiWindow();             // This application's GUI window rendering commands.
-            g_app->guiEventHandler();       // SPACE to toggle the GUI windows and all mouse tracking via GuiState.
-            finish = g_app->render();       // OptiX rendering, returns true when benchmark is enabled and the samples per pixel have been rendered.
-            g_app->display();               // OpenGL display always required to lay the background for the GUI.
-            g_app->guiRender();             // Render all ImGUI elements at last.
+            app.reshape(width, height);
+            app.guiNewFrame();
+            //app.guiReferenceManual();  // HACK The ImGUI "Programming Manual" as example code.
+            app.guiWindow();             // This application's GUI window rendering commands.
+            app.guiEventHandler();       // SPACE to toggle the GUI windows and all mouse tracking via GuiState.
+            finish = app.render();       // OptiX rendering, returns true when benchmark is enabled and the samples per pixel have been rendered.
+            app.display();               // OpenGL display always required to lay the background for the GUI.
+            app.guiRender();             // Render all ImGUI elements at last.
 
             glfwSwapBuffers(window);
 
             //glfwWaitEvents(); // Render only when an event is happening. Needs some glfwPostEmptyEvent() to prevent GUI lagging one frame behind when ending an action.
         }
-    } else if (mode ==
-               1) // Batched benchmark single shot. // FIXME When not using anything OpenGL, the whole window and OpenGL setup could be removed.
-    {
-        g_app->benchmark();
     }
-
-    delete g_app;
+    else if (mode == 1) // Batched benchmark single shot. // FIXME When not using anything OpenGL, the whole window and OpenGL setup could be removed.
+    {
+        app.benchmark();
+    }
 
     ilShutDown();
 
@@ -111,20 +110,26 @@ static int runApp(const Options &options)
 
 
 int main(int argc, char *argv[])
-{
+{    
     glfwSetErrorCallback(callbackError);
-
     if (!glfwInit()) {
         callbackError(APP_ERROR_GLFW_INIT, "GLFW failed to initialize.");
         return APP_ERROR_GLFW_INIT;
     }
 
-    int result = APP_ERROR_UNKNOWN;
-
-    Options options;
-
-    if (options.parseCommandLine(argc, argv)) {
-        result = runApp(options);
+    int result;
+    try {
+        Options options;
+        if (options.parseCommandLine(argc, argv)) {
+            result = runApp(options);
+        }
+        else {
+            result = APP_ERROR_PARSE_COMMAND_LINE;
+        }
+    }
+    catch (const std::exception& e) {
+        std::cerr << e.what() << '\n';
+        result = APP_ERROR_UNKNOWN;
     }
 
     glfwTerminate();
