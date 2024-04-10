@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,10 +33,10 @@
 
 struct CameraDefinition
 {
-  float3 P;
-  float3 U;
-  float3 V;
-  float3 W;
+	float3 P;
+	float3 U;
+	float3 V;
+	float3 W;
 };
 
 #endif // CAMERA_DEFINITION_H

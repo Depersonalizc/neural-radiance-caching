@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// This header with defines is included in all shaders
-// to be able to switch different code paths at a central location.
-// Changing any setting here will rebuild the whole solution.
+ // This header with defines is included in all shaders
+ // to be able to switch different code paths at a central location.
+ // Changing any setting here will rebuild the whole solution.
 
 #pragma once
 

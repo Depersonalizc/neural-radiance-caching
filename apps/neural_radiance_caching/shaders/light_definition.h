@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,60 +35,60 @@
 
 struct LightDefinition
 {
-  // 16 byte alignment
-  // These are used for rectangle lights and arbitrary mesh lights.
-  float4 matrix[3];    // Object to world coordinates.
-  float4 matrixInv[3]; // World to object coordinates.
-  
-  // 8 byte alignment
-  CUdeviceptr attributes; // VertexAttribtues for triangles for mesh lights.
-  CUdeviceptr indices;    // unsigned int triangle indices for mesh lights.
+	// 16 byte alignment
+	// These are used for rectangle lights and arbitrary mesh lights.
+	float4 matrix[3];    // Object to world coordinates.
+	float4 matrixInv[3]; // World to object coordinates.
 
-  // Importance sampling information for the emission texture.
-  // Used by environment and rectangle lights when textured.
-  CUdeviceptr cdfU; // float 2D, (width  + 1) * height elements.
-  CUdeviceptr cdfV; // float 1D, (height + 1) elements.
+	// 8 byte alignment
+	CUdeviceptr attributes; // VertexAttribtues for triangles for mesh lights.
+	CUdeviceptr indices;    // unsigned int triangle indices for mesh lights.
 
-  // Emisson texture. If not zero, scales emission.
-  cudaTextureObject_t textureEmission;
-  cudaTextureObject_t textureProfile; // The IES light profile as luminance float texture.
+	// Importance sampling information for the emission texture.
+	// Used by environment and rectangle lights when textured.
+	CUdeviceptr cdfU; // float 2D, (width  + 1) * height elements.
+	CUdeviceptr cdfV; // float 1D, (height + 1) elements.
 
-  // 4 byte alignment
-  // These are only used in the spherical texture environment light and singular point, spot, and IES lights.
-  // They are not used in the rectangle lights and arbitrary mesh lights.
-  // Note that these will contain the identity matrix for mesh lights!
-  float3 ori[3];    // Object to world orientation (rotational part of matrix).
-  float3 oriInv[3]; // World to object orientation (rotational part of matrixInv).
+	// Emisson texture. If not zero, scales emission.
+	cudaTextureObject_t textureEmission;
+	cudaTextureObject_t textureProfile; // The IES light profile as luminance float texture.
 
-  float3 emission; // Emission of the light. (The multiplier is applied on the host.)
+	// 4 byte alignment
+	// These are only used in the spherical texture environment light and singular point, spot, and IES lights.
+	// They are not used in the rectangle lights and arbitrary mesh lights.
+	// Note that these will contain the identity matrix for mesh lights!
+	float3 ori[3];    // Object to world orientation (rotational part of matrix).
+	float3 oriInv[3]; // World to object orientation (rotational part of matrixInv).
 
-  TypeLight typeLight;
-  //TypeEDF  typeEDF; // FIXME Currently unused. All positional lights use a diffuse EDF.
-  
-  float area;        // The world space area of rectangle or arbitrary mesh lights. Unused for other lights.
-  float invIntegral; // The inverse of the spherical environment map or rectangle light texture map integral over the whole texture.
+	float3 emission; // Emission of the light. (The multiplier is applied on the host.)
 
-  // Emission texture width and height. Used to index the CDFs, see above.
-  // For mesh lights the width matches the number of triangles and the cdfU is over the triangle areas.
-  unsigned int width; 
-  unsigned int height;
+	TypeLight typeLight;
+	//TypeEDF  typeEDF; // FIXME Currently unused. All positional lights use a diffuse EDF.
 
-  float spotAngleHalf; // Spot light cone half angle in radians, max. PI/2 (MaterialGUI has full angle in degrees.)
-  float spotExponent;  // Affects the falloff from cone center to cone edge of the spot light.
+	float area;        // The world space area of rectangle or arbitrary mesh lights. Unused for other lights.
+	float invIntegral; // The inverse of the spherical environment map or rectangle light texture map integral over the whole texture.
 
-  // Structure size padding to multiple of 16 bytes.
-  //int pad0;
-  //int pad1;
-  //int pad2;
+	// Emission texture width and height. Used to index the CDFs, see above.
+	// For mesh lights the width matches the number of triangles and the cdfU is over the triangle areas.
+	unsigned int width;
+	unsigned int height;
+
+	float spotAngleHalf; // Spot light cone half angle in radians, max. PI/2 (MaterialGUI has full angle in degrees.)
+	float spotExponent;  // Affects the falloff from cone center to cone edge of the spot light.
+
+	// Structure size padding to multiple of 16 bytes.
+	//int pad0;
+	//int pad1;
+	//int pad2;
 };
 
 
 struct LightSample // In world space coordinates.
 {
-  float3 direction;          // Direction from surface to light sampling position.
-  float  distance;           // Distance between surface and light sample positon, RT_DEFAULT_MAX for environment light.
-  float3 radiance_over_pdf;  // Radiance of this light sample divided by the pdf.
-  float  pdf;                // Probability density for this light sample projected to solid angle. 1.0 when singular light.
+	float3 direction;          // Direction from surface to light sampling position.
+	float  distance;           // Distance between surface and light sample positon, RT_DEFAULT_MAX for environment light.
+	float3 radiance_over_pdf;  // Radiance of this light sample divided by the pdf.
+	float  pdf;                // Probability density for this light sample projected to solid angle. 1.0 when singular light.
 };
 
 #endif // LIGHT_DEFINITION_H

@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,10 +32,10 @@
 #define VERTEX_ATTRIBUTES_H
 
 struct TriangleAttributes {
-    float3 vertex;
-    float3 tangent;
-    float3 normal;
-    float3 texcoord;
+	float3 vertex;
+	float3 tangent;
+	float3 normal;
+	float3 texcoord;
 };
 
 #endif // VERTEX_ATTRIBUTES_H

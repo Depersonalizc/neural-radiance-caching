@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,7 +35,7 @@
 
 #include <optix.h>
 
-// Set when reaching a closesthit program.
+ // Set when reaching a closesthit program.
 #define FLAG_HIT        0x00000001
 
 // Pass down material.flags through to the BSDFs.
@@ -52,64 +52,64 @@
 
 // The type of events created by BSDF importance sampling.
 enum Bsdf_event_type {
-  BSDF_EVENT_ABSORB       = 0,
+	BSDF_EVENT_ABSORB = 0,
 
-  BSDF_EVENT_DIFFUSE      = 1,
-  BSDF_EVENT_GLOSSY       = 1 << 1,
-  BSDF_EVENT_SPECULAR     = 1 << 2,
-  BSDF_EVENT_REFLECTION   = 1 << 3,
-  BSDF_EVENT_TRANSMISSION = 1 << 4,
+	BSDF_EVENT_DIFFUSE = 1,
+	BSDF_EVENT_GLOSSY = 1 << 1,
+	BSDF_EVENT_SPECULAR = 1 << 2,
+	BSDF_EVENT_REFLECTION = 1 << 3,
+	BSDF_EVENT_TRANSMISSION = 1 << 4,
 
-  BSDF_EVENT_DIFFUSE_REFLECTION    = BSDF_EVENT_DIFFUSE  | BSDF_EVENT_REFLECTION,
-  BSDF_EVENT_DIFFUSE_TRANSMISSION  = BSDF_EVENT_DIFFUSE  | BSDF_EVENT_TRANSMISSION,
-  BSDF_EVENT_GLOSSY_REFLECTION     = BSDF_EVENT_GLOSSY   | BSDF_EVENT_REFLECTION,
-  BSDF_EVENT_GLOSSY_TRANSMISSION   = BSDF_EVENT_GLOSSY   | BSDF_EVENT_TRANSMISSION,
-  BSDF_EVENT_SPECULAR_REFLECTION   = BSDF_EVENT_SPECULAR | BSDF_EVENT_REFLECTION,
-  BSDF_EVENT_SPECULAR_TRANSMISSION = BSDF_EVENT_SPECULAR | BSDF_EVENT_TRANSMISSION,
+	BSDF_EVENT_DIFFUSE_REFLECTION = BSDF_EVENT_DIFFUSE | BSDF_EVENT_REFLECTION,
+	BSDF_EVENT_DIFFUSE_TRANSMISSION = BSDF_EVENT_DIFFUSE | BSDF_EVENT_TRANSMISSION,
+	BSDF_EVENT_GLOSSY_REFLECTION = BSDF_EVENT_GLOSSY | BSDF_EVENT_REFLECTION,
+	BSDF_EVENT_GLOSSY_TRANSMISSION = BSDF_EVENT_GLOSSY | BSDF_EVENT_TRANSMISSION,
+	BSDF_EVENT_SPECULAR_REFLECTION = BSDF_EVENT_SPECULAR | BSDF_EVENT_REFLECTION,
+	BSDF_EVENT_SPECULAR_TRANSMISSION = BSDF_EVENT_SPECULAR | BSDF_EVENT_TRANSMISSION,
 
-  BSDF_EVENT_FORCE_32_BIT = 0xffffffffU
+	BSDF_EVENT_FORCE_32_BIT = 0xffffffffU
 };
 
 
 struct MaterialStack
 {
-  float4 absorption_ior;  // .xyz = absorption coefficient (sigma_a), .w = index of refraction.
-  float4 scattering_bias; // .xyz = scattering coefficient (sigma_s), .w = directional bias.
+	float4 absorption_ior;  // .xyz = absorption coefficient (sigma_a), .w = index of refraction.
+	float4 scattering_bias; // .xyz = scattering coefficient (sigma_s), .w = directional bias.
 };
 
 
 // Note that the fields are ordered by CUDA alignment restrictions.
 struct PerRayData
 {
-  // 16-byte alignment
-  // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
-  MaterialStack stack[MATERIAL_STACK_SIZE];
-  
-  // 8-byte alignment
-  
-  // 4-byte alignment
-  int    idxStack;    // Top of material stack index.
-  
-  float3 pos;         // Current surface hit point or volume sample point, in world space
-  float  distance;    // Distance from the ray origin to the current position, in world space. Needed for absorption of nested materials.
-  
-  float3 wo;          // Outgoing direction, to observer, in world space.
-  float3 wi;          // Incoming direction, to light, in world space.
+	// 16-byte alignment
+	// Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
+	MaterialStack stack[MATERIAL_STACK_SIZE];
 
-  float3 radiance;    // Radiance along the current path segment.
-  float  pdf;         // The last BSDF sample's pdf, tracked for multiple importance sampling.
-  
-  float3 throughput;  // The current path troughput. Starts white and gets modulated with bsdf_over_pdf with each sample.
-  
-  unsigned int flags; // Bitfield with flags. See FLAG_* defines above for its contents.
+	// 8-byte alignment
 
-  float3 sigma_t;     // Extinction coefficient (sigma_a + sigma_s) in a homogeneous medium.
-  int    walk;        // Number of random walk steps done through scattering volume.
-  float3 pdfVolume;   // Volume extinction sample pdf. Used to adjust the throughput along the random walk.
+	// 4-byte alignment
+	int    idxStack;    // Top of material stack index.
 
-  Bsdf_event_type eventType; // The type of events created by BSDF importance sampling.
+	float3 pos;         // Current surface hit point or volume sample point, in world space
+	float  distance;    // Distance from the ray origin to the current position, in world space. Needed for absorption of nested materials.
 
-  unsigned int seed;  // Random number generator input.
+	float3 wo;          // Outgoing direction, to observer, in world space.
+	float3 wi;          // Incoming direction, to light, in world space.
+
+	float3 radiance;    // Radiance along the current path segment.
+	float  pdf;         // The last BSDF sample's pdf, tracked for multiple importance sampling.
+
+	float3 throughput;  // The current path troughput. Starts white and gets modulated with bsdf_over_pdf with each sample.
+
+	unsigned int flags; // Bitfield with flags. See FLAG_* defines above for its contents.
+
+	float3 sigma_t;     // Extinction coefficient (sigma_a + sigma_s) in a homogeneous medium.
+	int    walk;        // Number of random walk steps done through scattering volume.
+	float3 pdfVolume;   // Volume extinction sample pdf. Used to adjust the throughput along the random walk.
+
+	Bsdf_event_type eventType; // The type of events created by BSDF importance sampling.
+
+	unsigned int seed;  // Random number generator input.
 };
 
 
@@ -118,27 +118,27 @@ struct PerRayData
 // is undefined behavior in C++ but compilers usually do the necessary memory aliasing.)
 typedef union
 {
-  PerRayData* ptr;
-  uint2       dat;
+	PerRayData* ptr;
+	uint2       dat;
 } Payload;
 
 __forceinline__ __device__ uint2 splitPointer(PerRayData* ptr)
 {
-  Payload payload;
+	Payload payload;
 
-  payload.ptr = ptr;
+	payload.ptr = ptr;
 
-  return payload.dat;
+	return payload.dat;
 }
 
 __forceinline__ __device__ PerRayData* mergePointer(unsigned int p0, unsigned int p1)
 {
-  Payload payload;
+	Payload payload;
 
-  payload.dat.x = p0;
-  payload.dat.y = p1;
+	payload.dat.x = p0;
+	payload.dat.y = p1;
 
-  return payload.ptr;
+	return payload.ptr;
 }
 
 #endif // PER_RAY_DATA_H

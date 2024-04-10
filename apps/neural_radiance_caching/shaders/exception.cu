@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,15 +36,15 @@ extern "C" __constant__ SystemData sysData;
 
 extern "C" __global__ void __exception__all()
 {
-  //const uint3 theLaunchDim     = optixGetLaunchDimensions(); 
-  const uint3 theLaunchIndex   = optixGetLaunchIndex();
-  const int   theExceptionCode = optixGetExceptionCode();
+	//const uint3 theLaunchDim     = optixGetLaunchDimensions(); 
+	const uint3 theLaunchIndex = optixGetLaunchIndex();
+	const int   theExceptionCode = optixGetExceptionCode();
 
-  printf("Exception %d at (%u, %u)\n", theExceptionCode, theLaunchIndex.x, theLaunchIndex.y);
+	printf("Exception %d at (%u, %u)\n", theExceptionCode, theLaunchIndex.x, theLaunchIndex.y);
 
-  // FIXME This only works for render strategies where the launch dimension matches the outputBuffer resolution.
-  //float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
-  //const unsigned int index = theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x;
+	// FIXME This only works for render strategies where the launch dimension matches the outputBuffer resolution.
+	//float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
+	//const unsigned int index = theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x;
 
-  //buffer[index] = make_float4(1000000.0f, 0.0f, 1000000.0f, 1.0f); // super magenta
+	//buffer[index] = make_float4(1000000.0f, 0.0f, 1000000.0f, 1.0f); // super magenta
 }

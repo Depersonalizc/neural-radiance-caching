@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,89 +37,89 @@
 
 #include "vector_math.h"
 
-// Get the 3x4 object to world transform and its inverse.
-__forceinline__ __device__ void getTransforms(const OptixTraversableHandle handle, float4* mW, float4* mO) 
+ // Get the 3x4 object to world transform and its inverse.
+__forceinline__ __device__ void getTransforms(const OptixTraversableHandle handle, float4* mW, float4* mO)
 {
-  const float4* tW = optixGetInstanceTransformFromHandle(handle);
-  const float4* tO = optixGetInstanceInverseTransformFromHandle(handle);
+	const float4* tW = optixGetInstanceTransformFromHandle(handle);
+	const float4* tO = optixGetInstanceInverseTransformFromHandle(handle);
 
-  mW[0] = tW[0];
-  mW[1] = tW[1];
-  mW[2] = tW[2];
+	mW[0] = tW[0];
+	mW[1] = tW[1];
+	mW[2] = tW[2];
 
-  mO[0] = tO[0];
-  mO[1] = tO[1];
-  mO[2] = tO[2];
+	mO[0] = tO[0];
+	mO[1] = tO[1];
+	mO[2] = tO[2];
 }
 
 // Functions to get the individual transforms in case only one of them is needed.
-__forceinline__ __device__ void getTransformObjectToWorld(const OptixTraversableHandle handle, float4* mW) 
+__forceinline__ __device__ void getTransformObjectToWorld(const OptixTraversableHandle handle, float4* mW)
 {
-  const float4* tW = optixGetInstanceTransformFromHandle(handle);
+	const float4* tW = optixGetInstanceTransformFromHandle(handle);
 
-  mW[0] = tW[0];
-  mW[1] = tW[1];
-  mW[2] = tW[2];
+	mW[0] = tW[0];
+	mW[1] = tW[1];
+	mW[2] = tW[2];
 }
 
-__forceinline__ __device__ void getTransformWorldToObject(const OptixTraversableHandle handle, float4* mO) 
+__forceinline__ __device__ void getTransformWorldToObject(const OptixTraversableHandle handle, float4* mO)
 {
-  const float4* tO = optixGetInstanceInverseTransformFromHandle(handle);
+	const float4* tO = optixGetInstanceInverseTransformFromHandle(handle);
 
-  mO[0] = tO[0];
-  mO[1] = tO[1];
-  mO[2] = tO[2];
+	mO[0] = tO[0];
+	mO[1] = tO[1];
+	mO[2] = tO[2];
 }
 
 
 // Matrix3x4 * point. v.w == 1.0f
 __forceinline__ __device__ float3 transformPoint(const float4* m, const float3& v)
 {
-  float3 r;
+	float3 r;
 
-  r.x = m[0].x * v.x + m[0].y * v.y + m[0].z * v.z + m[0].w;
-  r.y = m[1].x * v.x + m[1].y * v.y + m[1].z * v.z + m[1].w;
-  r.z = m[2].x * v.x + m[2].y * v.y + m[2].z * v.z + m[2].w;
+	r.x = m[0].x * v.x + m[0].y * v.y + m[0].z * v.z + m[0].w;
+	r.y = m[1].x * v.x + m[1].y * v.y + m[1].z * v.z + m[1].w;
+	r.z = m[2].x * v.x + m[2].y * v.y + m[2].z * v.z + m[2].w;
 
-  return r;
+	return r;
 }
 
 // Matrix3x4 * vector. v.w == 0.0f
 __forceinline__ __device__ float3 transformVector(const float4* m, const float3& v)
 {
-  float3 r;
+	float3 r;
 
-  r.x = m[0].x * v.x + m[0].y * v.y + m[0].z * v.z;
-  r.y = m[1].x * v.x + m[1].y * v.y + m[1].z * v.z;
-  r.z = m[2].x * v.x + m[2].y * v.y + m[2].z * v.z;
+	r.x = m[0].x * v.x + m[0].y * v.y + m[0].z * v.z;
+	r.y = m[1].x * v.x + m[1].y * v.y + m[1].z * v.z;
+	r.z = m[2].x * v.x + m[2].y * v.y + m[2].z * v.z;
 
-  return r;
+	return r;
 }
 
 // (Matrix3x4^-1)^T * normal. v.w == 0.0f
 // Takes the inverse matrix as input and applies it transposed.
 __forceinline__ __device__ float3 transformNormal(const float4* m, const float3& v)
 {
-  float3 r;
+	float3 r;
 
-  r.x = m[0].x * v.x + m[1].x * v.y + m[2].x * v.z;
-  r.y = m[0].y * v.x + m[1].y * v.y + m[2].y * v.z;
-  r.z = m[0].z * v.x + m[1].z * v.y + m[2].z * v.z;
+	r.x = m[0].x * v.x + m[1].x * v.y + m[2].x * v.z;
+	r.y = m[0].y * v.x + m[1].y * v.y + m[2].y * v.z;
+	r.z = m[0].z * v.x + m[1].z * v.y + m[2].z * v.z;
 
-  return r;
+	return r;
 }
 
 // Matrix3x3 * vector.
 // Used with light orientation matrices.
 __forceinline__ __device__ float3 transformVector(const float3* m, const float3& v)
 {
-  float3 r;
+	float3 r;
 
-  r.x = m[0].x * v.x + m[0].y * v.y + m[0].z * v.z;
-  r.y = m[1].x * v.x + m[1].y * v.y + m[1].z * v.z;
-  r.z = m[2].x * v.x + m[2].y * v.y + m[2].z * v.z;
+	r.x = m[0].x * v.x + m[0].y * v.y + m[0].z * v.z;
+	r.y = m[1].x * v.x + m[1].y * v.y + m[1].z * v.z;
+	r.z = m[2].x * v.x + m[2].y * v.y + m[2].z * v.z;
 
-  return r;
+	return r;
 }
 
 #endif // TRANSFORM_H

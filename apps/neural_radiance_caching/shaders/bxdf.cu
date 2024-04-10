@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -46,19 +46,19 @@ extern "C" __constant__ SystemData sysData;
 
 extern "C" __global__ void __closesthit__bxdf()
 {
-  // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
-  PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+	// Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
+	PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
-  thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
+	thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
 
-  // FIXME PERF This shouldn't be required either.
-  thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
-  
-  thePrd->pos += thePrd->wi * thePrd->distance; 
+	// FIXME PERF This shouldn't be required either.
+	thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
 
-  // bxdf() is just a black hole.
-  // No need to calculate extinction.
-  // No need to set throughput or pdf. The path ends here.
-  thePrd->radiance  = make_float3(0.0f); 
-  thePrd->eventType = BSDF_EVENT_ABSORB;
+	thePrd->pos += thePrd->wi * thePrd->distance;
+
+	// bxdf() is just a black hole.
+	// No need to calculate extinction.
+	// No need to set throughput or pdf. The path ends here.
+	thePrd->radiance = make_float3(0.0f);
+	thePrd->eventType = BSDF_EVENT_ABSORB;
 }
