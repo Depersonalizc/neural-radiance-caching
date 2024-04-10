@@ -17,6 +17,8 @@
 
 #include "inc/MyAssert.h"
 
+std::filesystem::path Application::m_assetDir{ "./data/" };
+
 Application::Application(GLFWwindow* window, const Options& options)
 	: m_window(window), m_isValid(false), m_guiState(GUI_STATE_NONE), m_isVisibleGUI(true), m_width(512),
 	m_height(512), m_mode(0),
@@ -550,7 +552,7 @@ void Application::guiEventHandler()
 		m_isVisibleGUI = !m_isVisibleGUI;
 	}
 	if (ImGui::IsKeyPressed('S',
-		false)) // Key S: Save the current system options to a file "system_neural_radiance_caching_<year><month><day>_<hour><minute><second>_<millisecond>.txt"
+		false)) // Key S: Save the current system options to a file "system_neural_radiance_caching_rtigo12_<year><month><day>_<hour><minute><second>_<millisecond>.txt"
 	{
 		MY_VERIFY(saveSystemDescription());
 	}
@@ -637,7 +639,7 @@ void Application::guiWindow()
 	ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiSetCond_FirstUseEver);
 
 	ImGuiWindowFlags window_flags = 0;
-	if (!ImGui::Begin("neural_radiance_caching", nullptr, window_flags)) // No bool flag to omit the close button.
+	if (!ImGui::Begin("neural_radiance_caching_rtigo12", nullptr, window_flags)) // No bool flag to omit the close button.
 	{
 		// Early out if the window is collapsed, as an optimization.
 		ImGui::End();
@@ -1140,7 +1142,7 @@ bool Application::saveSystemDescription()
 	description << "saturation " << m_tonemapperGUI.saturation << '\n';
 	description << "brightness " << m_tonemapperGUI.brightness << '\n';
 
-	const std::string filename = std::string("system_neural_radiance_caching_") + getDateTime() + std::string(".txt");
+	const std::string filename = std::string("system_neural_radiance_caching_rtigo12_") + getDateTime() + std::string(".txt");
 	const bool success = saveString(filename, description.str());
 	if (success) {
 		std::cout << filename << '\n'; // Print out the filename to indicate success.
@@ -1542,6 +1544,10 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 				m_mapMaterialReferences[cur.material.name] = indexMaterial;
 
+				auto getMaterialPathStr = [&](const auto &matName) {
+					return (m_assetDir / matName).string();
+				};
+
 				// Cache the referenced pictures to load them only once.
 				// FIXME Put this into a helper function.
 				// FIXME Only load textures actually referenced inside the scene.
@@ -1549,7 +1555,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 					auto [it, ok] = m_mapPictures.try_emplace(cur.material.nameAlbedo, nullptr);
 					if (ok) {
 						it->second = std::make_unique<Picture>();
-						it->second->load(cur.material.nameAlbedo, IMAGE_FLAG_2D);
+						it->second->load(getMaterialPathStr(cur.material.nameAlbedo), IMAGE_FLAG_2D);
 					}
 				}
 
@@ -1557,7 +1563,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 					auto [it, ok] = m_mapPictures.try_emplace(cur.material.nameEmission, nullptr);
 					if (ok) {
 						it->second = std::make_unique<Picture>();
-						it->second->load(cur.material.nameEmission,
+						it->second->load(getMaterialPathStr(cur.material.nameEmission),
 							IMAGE_FLAG_2D); // Load as 2D by default. env or rect will be ORed into the flags later.
 					}
 				}
@@ -1570,7 +1576,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 					auto [it, ok] = m_mapPictures.try_emplace(cur.material.nameProfile, nullptr);
 					if (ok) {
 						LoaderIES loaderIES;
-						if (loaderIES.load(cur.material.nameProfile) && loaderIES.parse()) {
+						if (loaderIES.load(getMaterialPathStr(cur.material.nameProfile)) && loaderIES.parse()) {
 							it->second = std::make_unique<Picture>();
 							it->second->createIES(
 								loaderIES.getData()); // This generates the 2D 1-component luminance float image.
@@ -2259,7 +2265,7 @@ bool Application::loadString(const std::string& filename, std::string& text)
 		return false;
 	}
 
-	text = data.str();
+	text = std::move(data.str());
 	return true;
 }
 

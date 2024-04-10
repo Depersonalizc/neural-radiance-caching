@@ -77,5 +77,5 @@ else()
 endif()
 
 
-# Neural Radiance Caching demo
-add_subdirectory( neural_radiance_caching )
+# Neural Radiance Caching demos
+add_subdirectory( neural_radiance_caching_rtigo12 )

@@ -70,6 +70,7 @@
 #include <assimp/DefaultLogger.hpp>
 #include <assimp/LogStream.hpp>
 
+#include <filesystem>
 #include <map>
 #include <memory>
 
@@ -342,6 +343,8 @@ private:
 	std::map<std::string, std::unique_ptr<Picture>> m_mapPictures;
 
 	std::vector<unsigned int> m_remappedMeshIndices;
+
+	static std::filesystem::path m_assetDir;
 };
 
 #endif // APPLICATION_H

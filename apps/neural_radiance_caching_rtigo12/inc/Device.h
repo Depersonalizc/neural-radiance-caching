@@ -261,11 +261,10 @@ enum PrimitiveType {
 
 struct GeometryData {
 	GeometryData()
-		: primitiveType(PT_UNKNOWN), owner(-1), traversable(0), d_attributes(0), d_indices(0), numAttributes(0),
-		numIndices(0), d_gas(0)
-	{
-		info = {};
-	}
+		: primitiveType(PT_UNKNOWN), owner(-1), 
+		traversable(0), d_attributes(0), d_indices(0), numAttributes(0),
+		numIndices(0), d_gas(0), info{}
+	{}
 
 	PrimitiveType primitiveType; // In preparation for more geometric primitive types in a renderer. Used during SBT creation to assign the proper hit records.
 	int owner;         // The device index which originally allocated all device side memory below. Needed when sharing GeometryData, resp. when freeing it.

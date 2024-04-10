@@ -31,18 +31,21 @@
 #include "inc/CheckMacros.h"
 
 
-#ifdef _WIN32
-#if !defined WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN 1
-#endif
-
-#include <windows.h>
- // The cfgmgr32 header is necessary for interrogating driver information in the registry.
-#include <cfgmgr32.h>
-// For convenience the library is also linked in automatically using the #pragma command.
-#pragma comment(lib, "Cfgmgr32.lib")
+#if defined(_WIN32)
+	#ifndef WIN32_LEAN_AND_MEAN
+	#define WIN32_LEAN_AND_MEAN 1
+	#endif
+	#include <windows.h>
+	 // The cfgmgr32 header is necessary for interrogating driver information in the registry.
+	#include <cfgmgr32.h>
+	// For convenience the library is also linked in automatically using the #pragma command.
+	#pragma comment(lib, "Cfgmgr32.lib")
+#elif defined(__linux__)
+	#include <dlfcn.h>
+	#include <stdlib.h> /* realpath */
+	#include <limits.h> /* PATH_MAX */
 #else
-#include <dlfcn.h>
+	#error Platform not supported.
 #endif
 
 //#include <GL/glew.h>
@@ -61,9 +64,9 @@
 #include <iostream>
 #include <mutex>
 #include <cstring>
+#include <filesystem>
 
-#ifdef _WIN32
-
+#if defined(_WIN32)
 // Original code from optix_stubs.h
 static void* optixLoadWindowsDll()
 {
@@ -174,6 +177,19 @@ static void* optixLoadWindowsDll()
 	return handle;
 }
 
+static std::filesystem::path getExecuatablePath()
+{
+	std::array<char, MAX_PATH> rawPathName;
+	GetModuleFileNameA(NULL, rawPathName.data(), MAX_PATH);
+	return rawPathName.data();
+}
+#else // __linux__
+static std::filesystem::path getExecuatablePath()
+{
+	std::array<char, PATH_MAX> rawPathName;
+	realpath("/proc/self/exe", rawPathName.data());
+	return rawPathName.data();
+}
 #endif
 
 
@@ -254,8 +270,11 @@ Device::Device(const int ordinal,
 	CU_CHECK(cuDeviceGetLuid(m_deviceLUID, &m_nodeMask, m_cudaDevice));
 #endif
 
-	CU_CHECK(cuModuleLoad(&m_moduleCompositor,
-		"./neural_radiance_caching_core/compositor.ptx")); // FIXME Only load this on the primary device!
+	// NOTE: We assume all shader code lives in this folder:
+	const auto ShadersDir = getExecuatablePath().parent_path() / "neural_radiance_caching_rtigo12_core";
+
+	CU_CHECK(cuModuleLoad(&m_moduleCompositor, 
+						  (ShadersDir/"compositor.ptx").string().c_str())); // FIXME Only load this on the primary device!
 	CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
 
 	const OptixDeviceContextOptions options = {
@@ -283,20 +302,20 @@ Device::Device(const int ordinal,
 	const std::string ext(".ptx");
 #endif
 
-	(m_moduleFilenames[MODULE_ID_RAYGENERATION]  = "./neural_radiance_caching_core/raygeneration")  += ext;
-	(m_moduleFilenames[MODULE_ID_EXCEPTION]      = "./neural_radiance_caching_core/exception")      += ext;
-	(m_moduleFilenames[MODULE_ID_MISS]           = "./neural_radiance_caching_core/miss")           += ext;
-	(m_moduleFilenames[MODULE_ID_LENS_SHADER]    = "./neural_radiance_caching_core/lens_shader")    += ext;
-	(m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]   = "./neural_radiance_caching_core/light_sample")   += ext;
-	(m_moduleFilenames[MODULE_ID_BXDF]           = "./neural_radiance_caching_core/bxdf")           += ext;
-	(m_moduleFilenames[MODULE_ID_BRDF_DIFFUSE]   = "./neural_radiance_caching_core/brdf_diffuse")   += ext;
-	(m_moduleFilenames[MODULE_ID_BRDF_SPECULAR]  = "./neural_radiance_caching_core/brdf_specular")  += ext;
-	(m_moduleFilenames[MODULE_ID_BTDF_SPECULAR]  = "./neural_radiance_caching_core/btdf_specular")  += ext;
-	(m_moduleFilenames[MODULE_ID_BSDF_SPECULAR]  = "./neural_radiance_caching_core/bsdf_specular")  += ext;
-	(m_moduleFilenames[MODULE_ID_BRDF_GGX_SMITH] = "./neural_radiance_caching_core/brdf_ggx_smith") += ext;
-	(m_moduleFilenames[MODULE_ID_BTDF_GGX_SMITH] = "./neural_radiance_caching_core/btdf_ggx_smith") += ext;
-	(m_moduleFilenames[MODULE_ID_BSDF_GGX_SMITH] = "./neural_radiance_caching_core/bsdf_ggx_smith") += ext;
-	(m_moduleFilenames[MODULE_ID_EDF_DIFFUSE]    = "./neural_radiance_caching_core/edf_diffuse")    += ext;
+	(m_moduleFilenames[MODULE_ID_RAYGENERATION]  = (ShadersDir/"raygeneration").string())  += ext;
+	(m_moduleFilenames[MODULE_ID_EXCEPTION]      = (ShadersDir/"exception").string())      += ext;
+	(m_moduleFilenames[MODULE_ID_MISS]           = (ShadersDir/"miss").string())           += ext;
+	(m_moduleFilenames[MODULE_ID_LENS_SHADER]    = (ShadersDir/"lens_shader").string())    += ext;
+	(m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]   = (ShadersDir/"light_sample").string())   += ext;
+	(m_moduleFilenames[MODULE_ID_BXDF]           = (ShadersDir/"bxdf").string())           += ext;
+	(m_moduleFilenames[MODULE_ID_BRDF_DIFFUSE]   = (ShadersDir/"brdf_diffuse").string())   += ext;
+	(m_moduleFilenames[MODULE_ID_BRDF_SPECULAR]  = (ShadersDir/"brdf_specular").string())  += ext;
+	(m_moduleFilenames[MODULE_ID_BTDF_SPECULAR]  = (ShadersDir/"btdf_specular").string())  += ext;
+	(m_moduleFilenames[MODULE_ID_BSDF_SPECULAR]  = (ShadersDir/"bsdf_specular").string())  += ext;
+	(m_moduleFilenames[MODULE_ID_BRDF_GGX_SMITH] = (ShadersDir/"brdf_ggx_smith").string()) += ext;
+	(m_moduleFilenames[MODULE_ID_BTDF_GGX_SMITH] = (ShadersDir/"btdf_ggx_smith").string()) += ext;
+	(m_moduleFilenames[MODULE_ID_BSDF_GGX_SMITH] = (ShadersDir/"bsdf_ggx_smith").string()) += ext;
+	(m_moduleFilenames[MODULE_ID_EDF_DIFFUSE]    = (ShadersDir/"edf_diffuse").string())    += ext;
 
 	initPipeline();
 }

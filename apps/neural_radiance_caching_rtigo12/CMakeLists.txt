@@ -28,7 +28,7 @@
 # Use FindCUDAToolkit.cmake added in CMake 3.17 instead.
 cmake_minimum_required(VERSION 3.17)
 
-project( neural_radiance_caching )
+project( neural_radiance_caching_rtigo12 )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 
 find_package(OpenGL REQUIRED)
@@ -204,20 +204,20 @@ set( SHADERS_HEADERS
 NVCUDA_COMPILE_MODULE(
   SOURCES ${SHADERS}
   DEPENDENCIES ${SHADERS_HEADERS}
-  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_core"
+  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_rtigo12_core"
   EXTENSION "${OPTIX_MODULE_EXTENSION}"
   GENERATED_FILES PROGRAM_MODULES
-  NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+  NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "-gencode=arch=compute_89,code=sm_89" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 )
 
 # The native CUDA Kernels will be translated to *.ptx unconditionally.
 NVCUDA_COMPILE_MODULE(
   SOURCES ${KERNELS}
   DEPENDENCIES ${SHADERS_HEADERS}
-  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_core"
+  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_rtigo12_core"
   EXTENSION ".ptx"
   GENERATED_FILES KERNEL_MODULES
-  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+  NVCC_OPTIONS "--ptx" "--machine=64" "-gencode=arch=compute_89,code=sm_89" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 )
 
 source_group( "imgui"           FILES ${IMGUI} )
@@ -253,7 +253,7 @@ add_definitions(
 )
 endif()
 
-add_executable( neural_radiance_caching
+add_executable( neural_radiance_caching_rtigo12
   ${IMGUI}
   ${NVPRO_MATH}
   ${HEADERS}
@@ -264,7 +264,7 @@ add_executable( neural_radiance_caching
   ${KERNEL_MODULES}
 )
 
-target_link_libraries( neural_radiance_caching
+target_link_libraries( neural_radiance_caching_rtigo12
   OpenGL::GL
   ${GLEW_LIBRARIES}
   ${GLFW_LIBRARIES}
@@ -276,8 +276,8 @@ target_link_libraries( neural_radiance_caching
 )
 
 if (UNIX)
-  target_link_libraries( neural_radiance_caching dl )
+  target_link_libraries( neural_radiance_caching_rtigo12 dl )
 endif()
 
-set_target_properties( neural_radiance_caching PROPERTIES FOLDER "apps")
+set_target_properties( neural_radiance_caching_rtigo12 PROPERTIES FOLDER "apps")
 
