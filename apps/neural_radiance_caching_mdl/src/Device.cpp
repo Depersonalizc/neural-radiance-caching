@@ -292,19 +292,22 @@ Device::Device(const int ordinal,
 	CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
 
 	// Create Optix context
-	OptixDeviceContextOptions options = {};
-	options.logCallbackFunction = &callbackLogger;
-	options.logCallbackData = this; // This allows per device logs. It's currently printing the device ordinal.
-	options.logCallbackLevel = 3;    // Keep at warning level (3) to suppress the disk cache messages.
+	{
+		OptixDeviceContextOptions options = {};
+
+		options.logCallbackFunction = &callbackLogger;
+		options.logCallbackData = this; // This allows per device logs. It's currently printing the device ordinal.
+		options.logCallbackLevel = 3;    // Keep at warning level (3) to suppress the disk cache messages.
 #if USE_DEBUG_EXCEPTIONS
-	options.validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL;
+		options.validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL;
 #endif
 
-	OPTIX_CHECK(m_api.optixDeviceContextCreate(m_cudaContext, &options, &m_optixContext));
+		OPTIX_CHECK(m_api.optixDeviceContextCreate(m_cudaContext, &options, &m_optixContext));
+	}
 
-	initDeviceProperties(); // OptiX
+	initDeviceProperties(); // OptiX, m_deviceProperty
 
-	m_d_systemData = reinterpret_cast<SystemData*>(memAlloc(sizeof(SystemData), 16)); // Currently 8 byte alignment would be enough.
+	m_d_systemData = reinterpret_cast<SystemData *>(memAlloc(sizeof(SystemData), 16)); // Currently 8 byte alignment would be enough.
 
 	// Initialize all renderer system data.
 	m_systemData.deviceCount = m_count; // The number of active devices.
@@ -313,60 +316,55 @@ Device::Device(const int ordinal,
 	// Starting with OptiX SDK 7.5.0 and CUDA 11.7 either PTX or OptiX IR input can be used to create modules.
 	// Just initialize the m_moduleFilenames depending on the definition of USE_OPTIX_IR.
 	// That is added to the project definitions inside the CMake script when OptiX SDK 7.5.0 and CUDA 11.7 or newer are found.
-#if defined(USE_OPTIX_IR)
-	m_moduleFilenames[MODULE_ID_RAYGENERATION] = std::string("./MDL_renderer_core/raygeneration.optixir");
-	m_moduleFilenames[MODULE_ID_EXCEPTION]     = std::string("./MDL_renderer_core/exception.optixir");
-	m_moduleFilenames[MODULE_ID_MISS]          = std::string("./MDL_renderer_core/miss.optixir");
-	m_moduleFilenames[MODULE_ID_HIT]           = std::string("./MDL_renderer_core/hit.optixir");
-	m_moduleFilenames[MODULE_ID_LENS_SHADER]   = std::string("./MDL_renderer_core/lens_shader.optixir");
-	m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]  = std::string("./MDL_renderer_core/light_sample.optixir");
+#ifdef USE_OPTIX_IR
+#define MODULE_EXT ".optixir"
 #else
-	m_moduleFilenames[MODULE_ID_RAYGENERATION] = std::string("./MDL_renderer_core/raygeneration.ptx");
-	m_moduleFilenames[MODULE_ID_EXCEPTION]     = std::string("./MDL_renderer_core/exception.ptx");
-	m_moduleFilenames[MODULE_ID_MISS]          = std::string("./MDL_renderer_core/miss.ptx");
-	m_moduleFilenames[MODULE_ID_HIT]           = std::string("./MDL_renderer_core/hit.ptx");
-	m_moduleFilenames[MODULE_ID_LENS_SHADER]   = std::string("./MDL_renderer_core/lens_shader.ptx");
-	m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]  = std::string("./MDL_renderer_core/light_sample.ptx");
+#define MODULE_EXT ".ptx"
 #endif
+	m_moduleFilenames[MODULE_ID_RAYGENERATION] = "./MDL_renderer_core/raygeneration" MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_EXCEPTION]     = "./MDL_renderer_core/exception"     MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_MISS]          = "./MDL_renderer_core/miss"          MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_HIT]           = "./MDL_renderer_core/hit"           MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_LENS_SHADER]   = "./MDL_renderer_core/lens_shader"   MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]  = "./MDL_renderer_core/light_sample"  MODULE_EXT;
 
 	// OptixModuleCompileOptions
-	m_mco = {};
-
 	m_mco.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
 #if USE_DEBUG_EXCEPTIONS
-	m_mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0; // No optimizations.
-	m_mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;     // Full debug. Never profile kernels with this setting!
+	// No optimizations.
+	m_mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+	// Full debug. Never profile kernels with this setting!
+	m_mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
 #else
-	m_mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3; // All optimizations, is the default.
+	// All optimizations, is the default.
+	m_mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
 	// Keep generated line info. (NVCC_OPTIONS use --generate-line-info in CMakeLists.txt)
 #if (OPTIX_VERSION >= 70400)
-	m_mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL; // PERF Must use OPTIX_COMPILE_DEBUG_LEVEL_MODERATE to profile code with Nsight Compute!
+	// PERF Must use OPTIX_COMPILE_DEBUG_LEVEL_MODERATE to profile code with Nsight Compute!
+	m_mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
 #else
 	m_mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
 #endif
 #endif // USE_DEBUG_EXCEPTIONS
 
 	// OptixPipelineCompileOptions
-	m_pco = {};
-
-	m_pco.usesMotionBlur = 0;
+	m_pco.usesMotionBlur        = 0;
 	m_pco.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-	m_pco.numPayloadValues = 2;  // I need two to encode a 64-bit pointer to the per ray payload structure.
-	m_pco.numAttributeValues = 2;  // The minimum is two for the triangle barycentrics.
+	m_pco.numPayloadValues      = 2;  // I need two to encode a 64-bit pointer to the per ray payload structure.
+	m_pco.numAttributeValues    = 2;  // The minimum is two for the triangle barycentrics.
+	m_pco.exceptionFlags        = OPTIX_EXCEPTION_FLAG_NONE
 #if USE_DEBUG_EXCEPTIONS
-	m_pco.exceptionFlags =
-		OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW
+		| OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW
 		| OPTIX_EXCEPTION_FLAG_TRACE_DEPTH
 		| OPTIX_EXCEPTION_FLAG_USER
 #if (OPTIX_VERSION < 80000)
 		// Removed in OptiX SDK 8.0.0.
-		// Use OptixDeviceContextOptions validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL instead.
+		// Use OptixDeviceContextOptions validationMode 
+		//   = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL instead.
 		| OPTIX_EXCEPTION_FLAG_DEBUG
 #endif
-		;
-#else
-	m_pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 #endif
+		;
 	m_pco.pipelineLaunchParamsVariableName = "sysData";
 #if (OPTIX_VERSION >= 70100)
 	// New in OptiX 7.1.0.
@@ -376,15 +374,14 @@ Device::Device(const int ordinal,
 #endif
 
 	// OptixPipelineLinkOptions
-	m_plo = {};
-
 	m_plo.maxTraceDepth = 2;
-#if (OPTIX_VERSION < 70700)
-	// OptixPipelineLinkOptions debugLevel is only present in OptiX SDK versions before 7.7.0.
+#if (OPTIX_VERSION < 70700) // OptixPipelineLinkOptions debugLevel is only present in OptiX SDK versions before 7.7.0.
 #if USE_DEBUG_EXCEPTIONS
-	m_plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL; // Full debug. Never profile kernels with this setting!
+	// Full debug. Never profile kernels with this setting!
+	m_plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
 #else
-  // Keep generated line info for Nsight Compute profiling. (NVCC_OPTIONS use --generate-line-info in CMakeLists.txt)
+    // Keep generated line info for Nsight Compute profiling. 
+	// (NVCC_OPTIONS use --generate-line-info in CMakeLists.txt)
 #if (OPTIX_VERSION >= 70400)
 	m_plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
 #else
@@ -394,7 +391,7 @@ Device::Device(const int ordinal,
 #endif // 70700
 
 	// OptixProgramGroupOptions
-	m_pgo = {}; // This is a just placeholder.
+	//m_pgo = {}; // This is a just placeholder.
 }
 
 

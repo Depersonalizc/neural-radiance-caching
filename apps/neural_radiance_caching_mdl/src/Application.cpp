@@ -1400,6 +1400,10 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 	cur.reset(); // Reset state to identity transforms and default material parameters.
 
+	auto getAssetPathStr = [&](const auto& name) {
+		return (s_assetDir / name).string();
+	};
+
 	while ((tokenType = parser.getNextToken(token)) != PTT_EOF)
 	{
 		if (tokenType == PTT_UNKNOWN)
@@ -1741,7 +1745,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					const int indexMaterial = findMaterial(nameMaterialReference);
 
-					appendInstance(m_scene, geometry, cur.matrix, indexMaterial, -1);
+					appendInstance(m_scene, std::move(geometry), cur.matrix, indexMaterial, -1);
 				}
 				else if (token == "box")
 				{
@@ -1770,7 +1774,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					const int indexMaterial = findMaterial(nameMaterialReference);
 
-					appendInstance(m_scene, geometry, cur.matrix, indexMaterial, -1);
+					appendInstance(m_scene, std::move(geometry), cur.matrix, indexMaterial, -1);
 				}
 				else if (token == "sphere")
 				{
@@ -1812,7 +1816,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					const int indexMaterial = findMaterial(nameMaterialReference);
 
-					appendInstance(m_scene, geometry, cur.matrix, indexMaterial, -1);
+					appendInstance(m_scene, std::move(geometry), cur.matrix, indexMaterial, -1);
 				}
 				else if (token == "torus")
 				{
@@ -1857,7 +1861,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					const int indexMaterial = findMaterial(nameMaterialReference);
 
-					appendInstance(m_scene, geometry, cur.matrix, indexMaterial, -1);
+					appendInstance(m_scene, std::move(geometry), cur.matrix, indexMaterial, -1);
 				}
 				else if (token == "hair") // model hair scale material filename
 				{
@@ -1885,7 +1889,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 						m_mapGeometries[keyGeometry.str()] = m_idGeometry;
 
 						geometry = std::make_shared<sg::Curves>(m_idGeometry++);
-						geometry->createHair(filename, scale);
+						geometry->createHair(getAssetPathStr(filename), scale);
 
 						m_geometries.push_back(geometry);
 					}
@@ -1896,7 +1900,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					const int indexMaterial = findMaterial(nameMaterialReference);
 
-					appendInstance(m_scene, geometry, cur.matrix, indexMaterial, -1);
+					appendInstance(m_scene, std::move(geometry), cur.matrix, indexMaterial, -1);
 				}
 				else if (token == "assimp")
 				{
@@ -1905,7 +1909,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 					MY_ASSERT(tokenType == PTT_STRING);
 					convertPath(filenameModel);
 
-					std::shared_ptr<sg::Group> model = createASSIMP(filenameModel);
+					std::shared_ptr<sg::Group> model = createASSIMP(getAssetPathStr(filenameModel));
 
 					// nvpro-pipeline matrices are row-major multiplied from the right, means the translation is in the last row. Transpose!
 					const float trafo[12] =
@@ -1922,7 +1926,7 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					std::shared_ptr<sg::Instance> instance(new sg::Instance(m_idInstance++));
 					instance->setTransform(trafo);
-					instance->setChild(model);
+					instance->setChild(std::move(model));
 
 					m_scene->addChild(instance);
 				}
@@ -1955,10 +1959,6 @@ bool Application::loadSceneDescription(const std::string& filename)
 				lightGUI.multiplierEmission = cur.multiplierEmission;
 				lightGUI.spotAngle = cur.spotAngle;
 				lightGUI.spotExponent = cur.spotExponent;
-
-				auto getAssetPathStr = [&](const auto& name) {
-					return (s_assetDir / name).string();
-					};
 
 				// FIXME Use the m_mapKeywords and a switch here.
 				if (token == "env") // Constant or spherical texture map environment light.

@@ -135,6 +135,8 @@ bool Curves::createHair(std::string const& filename, const float scale)
 
   if (!hair.load(filename))
   {
+    std::cerr << "Failed to load hair file " << filename << '\n';
+    MY_ASSERT(!"Failed to load hair file");
     return false;
   }
   

@@ -537,10 +537,10 @@ public:
 	std::vector<std::string> m_moduleFilenames;
 
 	// These are used in different Device functions. Set them once inside the constructor.
-	OptixModuleCompileOptions   m_mco;
-	OptixPipelineCompileOptions m_pco;
-	OptixPipelineLinkOptions    m_plo;
-	OptixProgramGroupOptions    m_pgo; // This is a just placeholder.
+	OptixModuleCompileOptions   m_mco{};
+	OptixPipelineCompileOptions m_pco{};
+	OptixPipelineLinkOptions    m_plo{};
+	OptixProgramGroupOptions    m_pgo{}; // This is a just placeholder.
 
 	OptixPipeline m_pipeline{};
 
@@ -557,6 +557,7 @@ public:
 	std::vector<GeometryInstanceData> m_geometryInstanceData;
 	GeometryInstanceData* m_d_geometryInstanceData;
 
+	// This contains the root traversable handle as well.
 	SystemData m_systemData{
 		.resolution     = {1, 1},
 		.tileSize       = {8, 8},
@@ -566,7 +567,7 @@ public:
 		.sceneEpsilon   = 500.0f * SCENE_EPSILON_SCALE,
 		.clockScale     = 1000.0f * CLOCK_FACTOR_SCALE,
 		.directLighting = 1,
-	};   // This contains the root traversable handle as well.
+	};   
 	SystemData* m_d_systemData; // Device side CUdeviceptr of the system data.
 
 	std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
