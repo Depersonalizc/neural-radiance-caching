@@ -114,7 +114,7 @@ Image::Image(unsigned int width,
 
 Image::~Image()
 {
-	if (m_pixels != nullptr)
+	//if (m_pixels != nullptr)
 	{
 		delete[] m_pixels;
 		m_pixels = nullptr;

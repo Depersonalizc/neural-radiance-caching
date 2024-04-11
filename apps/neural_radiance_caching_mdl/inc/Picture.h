@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,8 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Code in these classes is based on the ILTexLoader.h/.cpp routines inside the NVIDIA nvpro-pipeline ILTexLoader plugin:
-// https://github.com/nvpro-pipeline/pipeline/blob/master/dp/sg/io/IL/Loader/ILTexLoader.cpp
+ // Code in these classes is based on the ILTexLoader.h/.cpp routines inside the NVIDIA nvpro-pipeline ILTexLoader plugin:
+ // https://github.com/nvpro-pipeline/pipeline/blob/master/dp/sg/io/IL/Loader/ILTexLoader.cpp
 
 #pragma once
 
@@ -70,82 +70,82 @@
 
 struct Image
 {
-  Image(unsigned int width, unsigned int height, unsigned int depth, int format, int type);
-  ~Image();
+	Image(unsigned int width, unsigned int height, unsigned int depth, int format, int type);
+	~Image();
 
-  unsigned int m_width;
-  unsigned int m_height;
-  unsigned int m_depth;
+	unsigned int m_width;
+	unsigned int m_height;
+	unsigned int m_depth;
 
-  int          m_format; // DevIL image format.
-  int          m_type;   // DevIL image component type.
+	int          m_format; // DevIL image format.
+	int          m_type;   // DevIL image component type.
 
-  // Derived values.
-  unsigned int m_bpp; // bytes per pixel
-  unsigned int m_bpl; // bytes per scanline
-  unsigned int m_bps; // bytes per slice (plane)
-  unsigned int m_nob; // number of bytes (complete image)
+	// Derived values.
+	unsigned int m_bpp; // bytes per pixel
+	unsigned int m_bpl; // bytes per scanline
+	unsigned int m_bps; // bytes per slice (plane)
+	unsigned int m_nob; // number of bytes (complete image)
 
-  unsigned char* m_pixels; // The pixel data of one image.
+	unsigned char* m_pixels; // The pixel data of one image.
 };
 
 
 class Picture
 {
 public:
-  Picture();
-  ~Picture();
+	Picture();
+	~Picture();
 
-  bool load(const std::string& filename, const unsigned int flags);
-  void clear();
-  
-  // Add an empty new vector of images. Each vector can hold one mipmap chain. Returns the new image index.
-  unsigned int addImages();
-  
-  // Add a mipmap chain as new vector of images. Returns the new image index.
-  // pixels and extents are for the LOD 0. mipmaps can be empty.
-  unsigned int addImages(const void* pixels, 
-                         const unsigned int width, const unsigned int height, const unsigned int depth,
-                         const int format, const int type,
-                         const std::vector<const void*>& mipmaps, const unsigned int flags); 
+	bool load(const std::string& filename, const unsigned int flags);
+	void clear();
 
-  // Append a new image LOD to the existing vector of images building a mipmap chain. (No mipmap consistency check here.)
-  unsigned int addLevel(const unsigned int index, 
-                        const void* pixels, 
-                        const unsigned int width, const unsigned int height, const unsigned int depth, 
-                        const int format, const int type);
+	// Add an empty new vector of images. Each vector can hold one mipmap chain. Returns the new image index.
+	unsigned int addImages();
 
-  unsigned int getFlags() const;
-  void setFlags(const unsigned int flags);
-  void addFlags(const unsigned int flags); 
+	// Add a mipmap chain as new vector of images. Returns the new image index.
+	// pixels and extents are for the LOD 0. mipmaps can be empty.
+	unsigned int addImages(const void* pixels,
+						   const unsigned int width, const unsigned int height, const unsigned int depth,
+						   const int format, const int type,
+						   const std::vector<const void*>& mipmaps, const unsigned int flags);
 
-  unsigned int getNumberOfImages() const;
-  unsigned int getNumberOfLevels(unsigned int indexImage) const;
-  const Image* getImageLevel(unsigned int indexImage, unsigned int indexLevel) const;
-  bool         isCubemap() const;
+	// Append a new image LOD to the existing vector of images building a mipmap chain. (No mipmap consistency check here.)
+	unsigned int addLevel(const unsigned int index,
+						  const void* pixels,
+						  const unsigned int width, const unsigned int height, const unsigned int depth,
+						  const int format, const int type);
 
-  // This is needed when generating cubemaps without loading them via DevIL.
-  void setIsCubemap(const bool isCube);
+	unsigned int getFlags() const;
+	void setFlags(const unsigned int flags);
+	void addFlags(const unsigned int flags);
 
-  bool createIES(const IESData& iesData);
+	unsigned int getNumberOfImages() const;
+	unsigned int getNumberOfLevels(unsigned int indexImage) const;
+	const Image* getImageLevel(unsigned int indexImage, unsigned int indexLevel) const;
+	bool         isCubemap() const;
 
-  // DEBUG Function to generate all 14 texture targets with RGBA8 images.
-  void generateRGBA8(unsigned int width, unsigned int height, unsigned int depth, const unsigned int flags);
+	// This is needed when generating cubemaps without loading them via DevIL.
+	void setIsCubemap(const bool isCube);
 
-private:
-  void mirrorX(unsigned int index);
-  void mirrorY(unsigned int index);
-  
-  void clearImages(); // Delete all pixel data, all Image pointers and clear the m_images vector.
-  
-  bool generateIES(const IESData& ies,
-                   const std::vector<float>& horizontalAngles,
-                   const std::vector<float>& candelas);
+	bool createIES(const IESData& iesData);
+
+	// DEBUG Function to generate all 14 texture targets with RGBA8 images.
+	void generateRGBA8(unsigned int width, unsigned int height, unsigned int depth, const unsigned int flags);
 
 private:
-  unsigned int m_flags;  // The image flags with which this Picture has been loaded. 
-  bool         m_isCube; // Track if the picture is a cube map.
-  std::vector<std::vector<std::unique_ptr<Image>>> m_images;
+	void mirrorX(unsigned int index);
+	void mirrorY(unsigned int index);
+
+	void clearImages(); // Delete all pixel data, all Image pointers and clear the m_images vector.
+
+	bool generateIES(const IESData& ies,
+					 const std::vector<float>& horizontalAngles,
+					 const std::vector<float>& candelas);
+
+private:
+	unsigned int m_flags;  // The image flags with which this Picture has been loaded. 
+	bool         m_isCube; // Track if the picture is a cube map.
+	std::vector<std::vector<std::unique_ptr<Image>>> m_images;
 };
 
 #endif // PICTURE_H
