@@ -443,7 +443,7 @@ Device::~Device()
 
   CU_CHECK_NO_THROW( cuModuleUnload(m_moduleCompositor) );
 
-  for (std::map<std::string, Texture*>::const_iterator it = m_mapTextures.begin(); it != m_mapTextures.end(); ++it)
+  for (auto it = m_mapTextures.begin(); it != m_mapTextures.end(); ++it)
   {
     if (it->second)
     {
