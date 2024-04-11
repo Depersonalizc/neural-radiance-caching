@@ -3298,14 +3298,14 @@ static int numberOfBits(unsigned int num)
 }
 
 
-void Device::initTextureHandler(std::vector<MaterialMDL*>& materialsMDL)
+void Device::initTextureHandler(std::vector<std::unique_ptr<MaterialMDL>> &materialsMDL)
 {
   activateContext();
   synchronizeStream(); // PERF Required here?
 
   const size_t numMaterialReferences = materialsMDL.size();
 
-  for (MaterialMDL* material : materialsMDL)
+  for (const auto &material : materialsMDL)
   {
     MaterialDefinitionMDL materialDefinition = {}; // Set everything to zero.
 

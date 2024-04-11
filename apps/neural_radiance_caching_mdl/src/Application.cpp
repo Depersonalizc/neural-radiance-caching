@@ -44,7 +44,7 @@
 
 #include "inc/MyAssert.h"
 
- // Make sure the working directory contains (symlink of) the `data` folder
+ // Make sure the working directory contains (a symlink of) the `data` folder
 std::filesystem::path Application::s_assetDir{ "./data/" };
 
 Application::Application(GLFWwindow* window, const Options& options)
@@ -372,11 +372,6 @@ Application::~Application()
 	if (m_raytracer != nullptr)
 	{
 		m_raytracer->shutdownMDL();
-	}
-
-	for (MaterialMDL* material : m_materialsMDL)
-	{
-		delete material;
 	}
 
 	for (auto it = m_mapPictures.begin(); it != m_mapPictures.end(); ++it)
@@ -849,7 +844,7 @@ void Application::guiWindow()
 			ImGui::EndCombo();
 		}
 
-		MaterialMDL* material = m_materialsMDL[m_indexMaterialGUI];
+		const auto &material = m_materialsMDL[m_indexMaterialGUI];
 
 		const char* group_name = nullptr;
 
@@ -991,7 +986,7 @@ void Application::guiWindow()
 
 		if (changed)
 		{
-			m_raytracer->updateMaterial(m_indexMaterialGUI, material);
+			m_raytracer->updateMaterial(m_indexMaterialGUI, material.get());
 			refresh = true;
 		}
 	}
@@ -1337,12 +1332,9 @@ int Application::findMaterial(const std::string& reference)
 		{
 			// Only material declarations which are referenced inside the scene will be loaded later.
 			indexMaterial = static_cast<int>(m_materialsMDL.size());
-
 			m_mapReferenceToMaterialIndex[reference] = indexMaterial;
 
-			MaterialMDL* materialMDL = new MaterialMDL(itd->second);
-
-			m_materialsMDL.push_back(materialMDL);
+			m_materialsMDL.push_back(std::make_unique<MaterialMDL>(itd->second));
 		}
 		else if (reference != std::string("default")) // Prevent infinite recursion.
 		{

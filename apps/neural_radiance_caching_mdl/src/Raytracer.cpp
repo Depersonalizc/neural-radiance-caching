@@ -2081,13 +2081,13 @@ void Raytracer::determineShaderConfiguration(const Compile_result& res, ShaderCo
 }
 
 
-void Raytracer::initMaterialsMDL(std::vector<MaterialMDL*>& materialsMDL)
+void Raytracer::initMaterialsMDL(std::vector<std::unique_ptr<MaterialMDL>> &materialsMDL)
 {
   // This will compile the material to OptiX PTX code and build the OptiX program and texture data on all devices
   // and track the material configuration and parameters stored inside the Application class to be able to build the GUI.
-  for (MaterialMDL* materialMDL : materialsMDL)
+  for (auto &materialMDL : materialsMDL)
   {
-    initMaterialMDL(materialMDL);
+    initMaterialMDL(materialMDL.get());
   }
 
   // After all MDL material references have been handled and the device side data has been allocated, upload the necessary data to the GPU.

@@ -466,7 +466,7 @@ public:
                                         int index);
   void shareLightprofile(const LightprofileHost* shared);
 
-  void initTextureHandler(std::vector<MaterialMDL*>& materialsMDL);
+  void initTextureHandler(std::vector<std::unique_ptr<MaterialMDL>> &materialsMDL);
 
 private:
   OptixResult initFunctionTable();

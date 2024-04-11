@@ -327,7 +327,7 @@ private:
   std::map<std::string, int> m_mapReferenceToMaterialIndex;
   
   // Vector of MaterialMDL pointers, one per unique material reference name inside the scene description.
-  std::vector<MaterialMDL*> m_materialsMDL;
+  std::vector<std::unique_ptr<MaterialMDL>> m_materialsMDL;
 
   // This tracks which material is selected inside the GUI combo box.
   int m_indexMaterialGUI;

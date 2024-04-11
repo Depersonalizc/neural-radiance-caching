@@ -102,7 +102,7 @@ public:
 
   bool initMDL(const std::vector<std::string>& searchPaths);
   void shutdownMDL();
-  void initMaterialsMDL(std::vector<MaterialMDL*>& materialsMDL);
+  void initMaterialsMDL(std::vector<std::unique_ptr<MaterialMDL>> &materialsMDL);
 
   bool isEmissiveShader(const int indexShader) const;
 
