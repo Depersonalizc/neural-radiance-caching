@@ -11,6 +11,7 @@
 /3rdparty/glew
 /3rdparty/glfw
 /3rdparty/optix-toolkit
+/3rdparty/MDL_SDK
 
 /.idea
 /cmake-build*
