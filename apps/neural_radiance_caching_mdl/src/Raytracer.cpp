@@ -212,11 +212,6 @@ Raytracer::~Raytracer()
     {
       m_devicesActive[data.owner]->destroyGeometry(data);
     }
-
-    for (size_t i = 0; i < m_devicesActive.size(); ++i)
-    {
-      delete m_devicesActive[i];
-    }
   }
   catch (const std::exception& e)
   {
@@ -786,7 +781,7 @@ void Raytracer::updateDisplayTexture()
   if (1 < m_devicesActive.size()) 
   {
     // First, copy the texelBuffer of the primary device into its tileBuffer and then place the tiles into the outputBuffer.
-    m_devicesActive[index]->compositor(m_devicesActive[index]);
+    m_devicesActive[index]->compositor(m_devicesActive[index].get());
 
     // Now copy the other devices' texelBuffers over to the main tileBuffer and repeat the compositing for that other device.
     // The cuMemcpyPeerAsync done in that case is fast when the devices are in the same peer island, otherwise it's copied via PCI-E, but only N-1 copies of 1/N size are done.
@@ -797,7 +792,7 @@ void Raytracer::updateDisplayTexture()
     {
     if (index != static_cast<int>(i))
       {
-        m_devicesActive[index]->compositor(m_devicesActive[i]);
+        m_devicesActive[index]->compositor(m_devicesActive[i].get());
       }
     }
   }
@@ -816,14 +811,14 @@ const void* Raytracer::getOutputBufferHost()
   if (1 < m_devicesActive.size()) 
   {
     // First, copy the texelBuffer of the primary device into its tileBuffer and then place the tiles into the outputBuffer.
-    m_devicesActive[index]->compositor(m_devicesActive[index]);
+    m_devicesActive[index]->compositor(m_devicesActive[index].get());
 
     // Now copy the other devices' texelBuffers over to the main tileBuffer and repeat the compositing for that other device.
     for (size_t i = 0; i < m_devicesActive.size(); ++i) 
     {
     if (index != static_cast<int>(i))
       {
-        m_devicesActive[index]->compositor(m_devicesActive[i]);
+        m_devicesActive[index]->compositor(m_devicesActive[i].get());
       }
     }
   }  
@@ -864,9 +859,8 @@ void Raytracer::selectDevices()
     {
       const int index = static_cast<int>(m_devicesActive.size());
 
-      Device* device = new Device(ordinal, index, count, m_typeEnv, m_interop, m_tex, m_pbo, m_sizeArena);
-
-      m_devicesActive.push_back(device);
+      const auto &device = m_devicesActive.emplace_back(
+          std::make_unique<Device>(ordinal, index, count, m_typeEnv, m_interop, m_tex, m_pbo, m_sizeArena));
 
       std::cout << "Device ordinal " << ordinal << ": " << device->m_deviceName << " selected as active device index " << index << '\n';
     }

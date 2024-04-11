@@ -140,7 +140,7 @@ public:
   int                  m_numDevicesVisible; // The number of visible CUDA devices. (What you can control via the CUDA_VISIBLE_DEVICES environment variable.)
   int                  m_indexDeviceOGL;    // The first device which matches with the OpenGL LUID and node mask. -1 when there was no match.
   unsigned int         m_maskDevicesActive; // The bitmask marking the actually enabled devices.
-  std::vector<Device*> m_devicesActive;
+  std::vector<std::unique_ptr<Device>> m_devicesActive;
 
   unsigned int m_iterationIndex;  // Tracks which sub-frame is currently raytraced.
   unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.
