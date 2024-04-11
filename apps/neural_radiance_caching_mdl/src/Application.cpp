@@ -319,8 +319,9 @@ Application::Application(GLFWwindow* window, const Options& options)
 		{
 			if (m_interop == INTEROP_MODE_TEX)
 			{
+				std::cerr << "ERROR: Application() OpenGL texture image interop without OpenGL device in active devices will not display the image!\n";
 				MY_ASSERT(!"ERROR: Application() OpenGL texture image interop without OpenGL device in active devices will not display the image!");
-				throw std::runtime_error{ "Application() OpenGL texture image interop without OpenGL device in active devices will not display the image!" };
+				throw std::runtime_error{ "Application() OpenGL texture image interop without OpenGL device in active devices will not display the image" };
 			}
 			if (m_interop == INTEROP_MODE_PBO)
 			{

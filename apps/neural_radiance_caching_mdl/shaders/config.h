@@ -35,6 +35,15 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#ifdef __INTELLISENSE__
+#define __CUDACC__
+#define __NVCC__
+#define __CUDA_ARCH__ 890
+#include <cuda_runtime.h>
+#include <optix_host.h>
+#include <optix_device.h>
+#endif
+
 // Used to shoot rays without distance limit.
 #define RT_DEFAULT_MAX 1.e27f
 
