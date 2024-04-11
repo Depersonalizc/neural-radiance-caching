@@ -83,7 +83,7 @@ public:
   
   void synchronize();        // Needed for the benchmark to wait for all asynchronous rendering to have finished.
 
-  void initTextures(const std::map<std::string, Picture*>& mapOfPictures);
+  void initTextures(const std::map<std::string, std::unique_ptr<Picture>> &mapPictures);
   void initCameras(const std::vector<CameraDefinition>& cameras);
   void initLights(const std::vector<LightGUI>& lights);
   void initScene(std::shared_ptr<sg::Group> root, const unsigned int numGeometries);

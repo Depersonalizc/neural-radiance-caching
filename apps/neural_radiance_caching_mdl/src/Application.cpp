@@ -374,11 +374,6 @@ Application::~Application()
 		m_raytracer->shutdownMDL();
 	}
 
-	for (auto it = m_mapPictures.begin(); it != m_mapPictures.end(); ++it)
-	{
-		delete it->second;
-	}
-
 	ImGui_ImplGlfwGL3_Shutdown();
 	ImGui::DestroyContext();
 }
@@ -1979,14 +1974,11 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 						if (!cur.nameEmission.empty())
 						{
-							auto it = m_mapPictures.find(cur.nameEmission);
-							if (it == m_mapPictures.end())
+							auto [it, ok] = m_mapPictures.try_emplace(cur.nameEmission, nullptr);
+							if (ok) 
 							{
-								Picture* picture = new Picture();
-
-								picture->load(getAssetPathStr(cur.nameEmission), IMAGE_FLAG_2D | IMAGE_FLAG_ENV);
-
-								m_mapPictures[cur.nameEmission] = picture;
+								it->second = std::make_unique<Picture>();
+								it->second->load(getAssetPathStr(cur.nameEmission), IMAGE_FLAG_2D | IMAGE_FLAG_ENV);
 							}
 							else
 							{
@@ -2011,14 +2003,11 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					if (!cur.nameEmission.empty())
 					{
-						auto it = m_mapPictures.find(cur.nameEmission);
-						if (it == m_mapPictures.end())
+						auto [it, ok] = m_mapPictures.try_emplace(cur.nameEmission, nullptr);
+						if (ok) 
 						{
-							Picture* picture = new Picture();
-
-							picture->load(getAssetPathStr(cur.nameEmission), IMAGE_FLAG_2D | IMAGE_FLAG_POINT);
-
-							m_mapPictures[cur.nameEmission] = picture;
+							it->second = std::make_unique<Picture>();
+							it->second->load(getAssetPathStr(cur.nameEmission), IMAGE_FLAG_2D | IMAGE_FLAG_POINT);
 						}
 						else
 						{
@@ -2039,14 +2028,11 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					if (!cur.nameEmission.empty())
 					{
-						auto it = m_mapPictures.find(cur.nameEmission);
-						if (it == m_mapPictures.end())
+						auto [it, ok] = m_mapPictures.try_emplace(cur.nameEmission, nullptr);
+						if (ok)
 						{
-							Picture* picture = new Picture();
-
-							picture->load(getAssetPathStr(cur.nameEmission), IMAGE_FLAG_2D | IMAGE_FLAG_SPOT);
-
-							m_mapPictures[cur.nameEmission] = picture;
+							it->second = std::make_unique<Picture>();
+							it->second->load(getAssetPathStr(cur.nameEmission), IMAGE_FLAG_2D | IMAGE_FLAG_ENV);
 						}
 						else
 						{
@@ -2069,15 +2055,11 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					if (!cur.nameEmission.empty())
 					{
-						auto it = m_mapPictures.find(cur.nameEmission);
-						if (it == m_mapPictures.end())
+						auto [it, ok] = m_mapPictures.try_emplace(cur.nameEmission, nullptr);
+						if (ok)
 						{
-							Picture* picture = new Picture();
-
-							picture->load(getAssetPathStr(cur.nameEmission),
-								IMAGE_FLAG_2D | IMAGE_FLAG_POINT);
-
-							m_mapPictures[cur.nameEmission] = picture;
+							it->second = std::make_unique<Picture>();
+							it->second->load(getAssetPathStr(cur.nameEmission), IMAGE_FLAG_2D | IMAGE_FLAG_POINT);
 						}
 						else
 						{
@@ -2087,20 +2069,22 @@ bool Application::loadSceneDescription(const std::string& filename)
 
 					if (!cur.nameProfile.empty())
 					{
-						auto it = m_mapPictures.find(cur.nameProfile);
-						if (it == m_mapPictures.end())
+						auto [it, ok] = m_mapPictures.try_emplace(cur.nameProfile, nullptr);
+						if (ok)
 						{
 							// Load the IES profile and convert it to an omnidirectional projection texture for a point light. 
 							LoaderIES loaderIES;
 
 							if (loaderIES.load(getAssetPathStr(cur.nameProfile)) && loaderIES.parse())
 							{
-								Picture* picture = new Picture();
-
+								auto& picture = it->second;
+								picture = std::make_unique<Picture>();
 								picture->createIES(loaderIES.getData()); // This generates the 2D 1-component luminance float image.
 								picture->addFlags(IMAGE_FLAG_IES);
-
-								m_mapPictures[cur.nameProfile] = picture;
+							}
+							else 
+							{
+								m_mapPictures.erase(it);
 							}
 						}
 					}

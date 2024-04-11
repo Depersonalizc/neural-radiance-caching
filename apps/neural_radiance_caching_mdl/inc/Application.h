@@ -306,7 +306,7 @@ private:
 
   // Map picture file paths to their loaded data on the host. 
   // (This is not including the texture images loaded by MDL, only the ones usded for hardcoded lights.)
-  std::map<std::string, Picture*> m_mapPictures;
+  std::map<std::string, std::unique_ptr<Picture>> m_mapPictures;
 
   // A temporary vector of mesh indices used inside the ASSIMP loader to handle the triangle meshes inside a model.
   std::vector<unsigned int> m_remappedMeshIndices; 

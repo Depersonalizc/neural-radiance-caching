@@ -554,14 +554,14 @@ void Raytracer::synchronize()
 }
 
 // FIXME This cannot handle cases where the same Picture would be used for different texture objects, but that is not happening in this example.
-void Raytracer::initTextures(const std::map<std::string, Picture*>& mapPictures)
+void Raytracer::initTextures(const std::map<std::string, std::unique_ptr<Picture>> &mapPictures)
 {
   const bool allowSharingTex = ((m_peerToPeer & P2P_TEX) != 0); // Material texture sharing (very cheap).
   const bool allowSharingEnv = ((m_peerToPeer & P2P_ENV) != 0); // HDR Environment and CDF sharing (CDF binary search is expensive).
   
-  for (std::map<std::string, Picture*>::const_iterator it = mapPictures.begin(); it != mapPictures.end(); ++it)
+  for (auto it = mapPictures.begin(); it != mapPictures.end(); ++it)
   {
-    const Picture* picture = it->second;
+    const auto &picture = it->second;
 
     const bool isEnv = ((picture->getFlags() & IMAGE_FLAG_ENV) != 0);
 
@@ -571,7 +571,7 @@ void Raytracer::initTextures(const std::map<std::string, Picture*>& mapPictures)
       {
         const int deviceHome = getDeviceHome(island);
 
-        const Texture* texture = m_devicesActive[deviceHome]->initTexture(it->first, picture, picture->getFlags());
+        const Texture* texture = m_devicesActive[deviceHome]->initTexture(it->first, picture.get(), picture->getFlags());
 
         for (auto device : island)
         {
@@ -588,7 +588,7 @@ void Raytracer::initTextures(const std::map<std::string, Picture*>& mapPictures)
 
       for (unsigned int device = 0; device < numDevices; ++device)
       {
-        (void) m_devicesActive[device]->initTexture(it->first, picture, picture->getFlags());
+        (void) m_devicesActive[device]->initTexture(it->first, picture.get(), picture->getFlags());
       }
     }
   }
