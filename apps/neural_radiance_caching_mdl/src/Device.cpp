@@ -231,6 +231,13 @@ static std::vector<char> readData(std::string const& filename)
 	return data;
 }
 
+static void context_log_cb(unsigned int level,
+						   const char* tag,
+						   const char* message,
+						   void*)
+{
+	fprintf(stderr, "[%2d][%12s]: %s\n", (int)level, tag, message);
+}
 
 Device::Device(const int ordinal,
 	const int index,
@@ -303,6 +310,7 @@ Device::Device(const int ordinal,
 #endif
 
 		OPTIX_CHECK(m_api.optixDeviceContextCreate(m_cudaContext, &options, &m_optixContext));
+		OPTIX_CHECK(m_api.optixDeviceContextSetLogCallback(m_optixContext, context_log_cb, nullptr, 4));
 	}
 
 	initDeviceProperties(); // OptiX, m_deviceProperty
@@ -325,7 +333,6 @@ Device::Device(const int ordinal,
 	m_moduleFilenames[MODULE_ID_EXCEPTION]     = "./neural_radiance_caching_mdl_core/exception"     MODULE_EXT;
 	m_moduleFilenames[MODULE_ID_MISS]          = "./neural_radiance_caching_mdl_core/miss"          MODULE_EXT;
 	m_moduleFilenames[MODULE_ID_HIT]           = "./neural_radiance_caching_mdl_core/hit"           MODULE_EXT;
-	//m_moduleFilenames[MODULE_ID_HIT] = "./MDL_renderer_core/hit" MODULE_EXT;
 	m_moduleFilenames[MODULE_ID_LENS_SHADER]   = "./neural_radiance_caching_mdl_core/lens_shader"   MODULE_EXT;
 	m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]  = "./neural_radiance_caching_mdl_core/light_sample"  MODULE_EXT;
 
@@ -709,9 +716,12 @@ void Device::initPipeline()
 	}();
 
 	// Create pipeline by linking all program groups together
+	char log[2048];
+	size_t sizeLog = sizeof(log);
 	OPTIX_CHECK(m_api.optixPipelineCreate(m_optixContext, 
 		&m_pco, &m_plo, programGroups.data(), (unsigned int)programGroups.size(), 
-		nullptr, nullptr, &m_pipeline));
+		log, &sizeLog, &m_pipeline));
+	if (sizeLog > 1) std::cerr << log << '\n';
 
 	// Set pipeline stack sizes
 	const auto pss = estimatePipelineStackSizes(programGroups);
@@ -763,11 +773,14 @@ std::vector<OptixModule> Device::buildModules() const
 	std::vector<OptixModule> modules(NUM_MODULE_IDENTIFIERS);
 	
 	// Create custom modules
+	char log[2048];
+	size_t sizeLog = sizeof(log);
 	for (int i = MODULE_ID_FIRST_CUSTOM; i <= MODULE_ID_LAST_CUSTOM; i++) {
 		const auto programData = readData(m_moduleFilenames[i]);
 		OPTIX_CHECK(optixModuleCreateFn(m_optixContext,
 			&m_mco, &m_pco, programData.data(), programData.size(),
-			nullptr, nullptr, &modules[i]));
+			log, &sizeLog, &modules[i]));
+		if (sizeLog > 1) std::cerr << log << '\n';
 	}
 	
 	// Get the built-in Cubic B-Spline intersection module
@@ -975,9 +988,13 @@ std::vector<OptixProgramGroup> Device::buildProgramGroups(const std::vector<Opti
 {
 	std::vector<OptixProgramGroup> programGroups(programGroupDescs.size());
 
+	char log[2048];
+	size_t sizeLog = sizeof(log);
 	OPTIX_CHECK(m_api.optixProgramGroupCreate(m_optixContext,
 		programGroupDescs.data(), (unsigned int)programGroupDescs.size(),
-		&m_pgo, nullptr, nullptr, programGroups.data()));
+		&m_pgo, log, &sizeLog, programGroups.data()));
+
+	if (sizeLog > 1) std::cerr << log << '\n';
 
 	return programGroups;
 }
@@ -1059,7 +1076,8 @@ void Device::initSBT(const std::vector<OptixProgramGroup>& programGroups)
 
 		m_sbt.callablesRecordBase = m_d_sbtRecordHeaders + sizeof(SbtRecordHeader) * PGID_FIRST_DIRECT_CALLABLE; /*=PGID_LENS_PINHOLE*/
 		m_sbt.callablesRecordStrideInBytes = (unsigned int)sizeof(SbtRecordHeader);
-		m_sbt.callablesRecordCount = PGID_LAST_DIRECT_CALLABLE - PGID_FIRST_DIRECT_CALLABLE + 1;
+		// Note that programGroups include more direct callables from MDL
+		m_sbt.callablesRecordCount = programGroups.size() - PGID_FIRST_DIRECT_CALLABLE + 1;
 	}
 }
 
@@ -2212,7 +2230,10 @@ unsigned int Device::appendProgramGroupMDL(const int indexModule, const std::str
 
 	OptixProgramGroup pg = {};
 
-	OPTIX_CHECK(m_api.optixProgramGroupCreate(m_optixContext, &pgd, 1u, &m_pgo, nullptr, nullptr, &pg));
+	char log[2048];
+	size_t sizeLog = sizeof(log);
+	OPTIX_CHECK(m_api.optixProgramGroupCreate(m_optixContext, &pgd, 1u, &m_pgo, log, &sizeLog, &pg));
+	if (sizeLog > 1) std::cerr << log << '\n';
 
 	// Add the call offset skipping the lens shader and light sample callables on the host.
 	const unsigned int idx = static_cast<unsigned int>(m_programGroupsMDL.size()) + CALL_OFFSET;
@@ -2298,6 +2319,9 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 	if (indexShader == m_modulesMDL.size())
 	{
 		OptixModule moduleMDL = {};
+
+		//char log[2048];
+		//size_t sizeof_log = sizeof(log);
 
 #if (OPTIX_VERSION >= 70700)
 		OPTIX_CHECK(m_api.optixModuleCreate(m_optixContext, &m_mco, &m_pco, res.target_code->get_code(), res.target_code->get_code_size(), nullptr, nullptr, &moduleMDL));
