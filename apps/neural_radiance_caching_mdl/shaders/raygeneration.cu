@@ -108,21 +108,21 @@ __forceinline__ __device__ void sampleVolumeScattering(const float2 xi, const fl
 __forceinline__ __device__ float3 integrator(PerRayData& prd)
 {
 	// The integrator starts with black radiance and full path throughput.
-	prd.radiance   = make_float3(0.0f);
-	prd.pdf        = 0.0f;
+	prd.radiance = make_float3(0.0f);
+	prd.pdf = 0.0f;
 	prd.throughput = make_float3(1.0f);
-	prd.flags      = 0;
-	prd.sigma_t    = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
-	prd.walk       = 0;                 // Number of random walk steps taken through volume scattering. 
-	prd.eventType  = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
-	
+	prd.flags = 0;
+	prd.sigma_t = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
+	prd.walk = 0;                 // Number of random walk steps taken through volume scattering. 
+	prd.eventType = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
+
 	// Nested material handling.
 	// Small stack of MATERIAL_STACK_SIZE = 4 entries of which the first is vacuum.
-	prd.idxStack         = 0;
-	prd.stack[0].ior     = make_float3(1.0f); // No effective IOR.
+	prd.idxStack = 0;
+	prd.stack[0].ior = make_float3(1.0f); // No effective IOR.
 	prd.stack[0].sigma_a = make_float3(0.0f); // No volume absorption.
 	prd.stack[0].sigma_s = make_float3(0.0f); // No volume scattering.
-	prd.stack[0].bias    = 0.0f;              // Isotropic volume scattering.
+	prd.stack[0].bias = 0.0f;              // Isotropic volume scattering.
 
 	// Put payload pointer into two unsigned integers. Actually const, but that's not what optixTrace() expects.
 	uint2 payload = splitPointer(&prd);
@@ -137,9 +137,9 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd)
 		// Primary rays and volume scattering miss events will not offset the ray t_min.
 		const float epsilon = (prd.flags & FLAG_HIT) ? sysData.sceneEpsilon : 0.0f;
 
-		prd.wo       = -prd.wi;        // Direction to observer.
+		prd.wo = -prd.wi;        // Direction to observer.
 		prd.distance = RT_DEFAULT_MAX; // Shoot the next ray with maximum length.
-		prd.flags    = 0;              // reset flags
+		prd.flags = 0;              // reset flags
 
 		// Special cases for volume scattering!
 #if 1
@@ -147,7 +147,7 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd)
 		{
 			// Note that this only supports homogeneous volumes so far! 
 			// No change in sigma_s along the random walk here.
-			const float3 &sigma_s = prd.stack[prd.idxStack].sigma_s;
+			const float3& sigma_s = prd.stack[prd.idxStack].sigma_s;
 
 			if (isNotNull(sigma_s)) // We're inside a volume and it has volume scattering?
 			{
@@ -249,10 +249,10 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
 #endif
 
 	const uint2 theLaunchIndex = make_uint2(optixGetLaunchIndex());
-	const uint2 theLaunchDim   = make_uint2(optixGetLaunchDimensions()); // For multi-GPU tiling this is (resolution + deviceCount - 1) / deviceCount.
+	const uint2 theLaunchDim = make_uint2(optixGetLaunchDimensions()); // For multi-GPU tiling this is (resolution + deviceCount - 1) / deviceCount.
 
-	unsigned int launchRow     = theLaunchIndex.y;
-	unsigned int launchColumn  = theLaunchIndex.x;
+	unsigned int launchRow = theLaunchIndex.y;
+	unsigned int launchColumn = theLaunchIndex.x;
 	if (sysData.deviceCount > 1) // Multi-GPU distribution required?
 	{
 		launchColumn = distribute(theLaunchIndex); // Calculate mapping from launch index to pixel index.
@@ -263,21 +263,21 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
 	}
 
 	PerRayData prd;
-	
+
 	// Initialize the random number generator seed from the linear pixel index and the iteration index.
-	prd.seed = tea<4>(launchRow*theLaunchDim.x + launchColumn, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
+	prd.seed = tea<4>(launchRow * theLaunchDim.x + launchColumn, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
 
 	// Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
 	// Resolution is the actual full rendering resolution and for the single GPU strategy, theLaunchDim == resolution.
 	const float2 screen = make_float2(sysData.resolution); // == theLaunchDim for rendering strategy RS_SINGLE_GPU.
-	const float2 pixel  = make_float2(launchColumn, launchRow);
+	const float2 pixel = make_float2(launchColumn, launchRow);
 	const float2 sample = rng2(prd.seed);
 
 	// Lens shaders
 	const LensRay ray = optixDirectCall<LensRay, const float2, const float2, const float2>(sysData.typeLens, screen, pixel, sample);
 
 	prd.pos = ray.org;
-	prd.wi  = ray.dir;
+	prd.wi = ray.dir;
 
 	float3 radiance = integrator(prd);
 
@@ -324,7 +324,7 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
 #else
 		//if (sysData.iterationIndex > 0)
 		{
-			const float4 &dst = buffer[index]; // RGBA32F
+			const float4& dst = buffer[index]; // RGBA32F
 			radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
 		}
 		buffer[index] = make_float4(radiance, 1.0f);
@@ -385,16 +385,14 @@ extern "C" __global__ void __raygen__path_tracer()
 	// Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
 	// Resolution is the actual full rendering resolution and for the single GPU strategy, theLaunchDim == resolution.
 	const float2 screen = make_float2(sysData.resolution); // == theLaunchDim for rendering strategy RS_SINGLE_GPU.
-	const float2 pixel  = make_float2(theLaunchIndex);
+	const float2 pixel = make_float2(theLaunchIndex);
 	const float2 sample = rng2(prd.seed);
 
 	// Lens shaders
-	printf("%u, %u\n", theLaunchIndex.x, theLaunchIndex.y);
-	printf("%d\n", sysData.typeLens);
 	const LensRay ray = optixDirectCall<LensRay, const float2, const float2, const float2>(sysData.typeLens, screen, pixel, sample);
 
 	prd.pos = ray.org;
-	prd.wi  = ray.dir;
+	prd.wi = ray.dir;
 
 	float3 radiance = integrator(prd);
 
@@ -440,7 +438,7 @@ extern "C" __global__ void __raygen__path_tracer()
 #else // if !USE_TIME_VIEW
 		//if (sysData.iterationIndex > 0)
 		{
-			const float4 &dst = buffer[index]; // RGBA32F
+			const float4& dst = buffer[index]; // RGBA32F
 			radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
 		}
 		buffer[index] = make_float4(radiance, 1.0f);
@@ -483,4 +481,3 @@ extern "C" __global__ void __raygen__path_tracer()
 #endif // USE_FP32_OUTPUT
 	}
 }
-

@@ -288,7 +288,7 @@ Device::Device(const int ordinal,
 #endif
 
 	// FIXME Only load this on the primary device.
-	CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./MDL_renderer_core/compositor.ptx"));
+	CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./neural_radiance_caching_mdl_core/compositor.ptx"));
 	CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
 
 	// Create Optix context
@@ -321,12 +321,13 @@ Device::Device(const int ordinal,
 #else
 #define MODULE_EXT ".ptx"
 #endif
-	m_moduleFilenames[MODULE_ID_RAYGENERATION] = "./MDL_renderer_core/raygeneration" MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_EXCEPTION]     = "./MDL_renderer_core/exception"     MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_MISS]          = "./MDL_renderer_core/miss"          MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_HIT]           = "./MDL_renderer_core/hit"           MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_LENS_SHADER]   = "./MDL_renderer_core/lens_shader"   MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]  = "./MDL_renderer_core/light_sample"  MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_RAYGENERATION] = "./neural_radiance_caching_mdl_core/raygeneration" MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_EXCEPTION]     = "./neural_radiance_caching_mdl_core/exception"     MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_MISS]          = "./neural_radiance_caching_mdl_core/miss"          MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_HIT]           = "./neural_radiance_caching_mdl_core/hit"           MODULE_EXT;
+	//m_moduleFilenames[MODULE_ID_HIT] = "./MDL_renderer_core/hit" MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_LENS_SHADER]   = "./neural_radiance_caching_mdl_core/lens_shader"   MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]  = "./neural_radiance_caching_mdl_core/light_sample"  MODULE_EXT;
 
 	// OptixModuleCompileOptions
 	m_mco.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
