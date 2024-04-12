@@ -206,7 +206,7 @@ enum ModuleIdentifier
 	MODULE_ID_LIGHT_SAMPLE,
 	MODULE_ID_LAST_CUSTOM = MODULE_ID_LIGHT_SAMPLE,
 
-	MODULE_ID_BUILTIN_CUBIC_BSPLINE_HIT,
+	MODULE_ID_BUILTIN_CUBIC_BSPLINE_IS,
 
 	NUM_MODULE_IDENTIFIERS
 };
@@ -218,32 +218,26 @@ enum ProgramGroupId
 
 	PGID_EXCEPTION,
 
-	PGID_MISS_RADIANCE,
-	PGID_MISS_SHADOW,
+	PGID_MISS_RADIANCE, PGID_MISS_SHADOW,
 
 	// Hit records for triangles:
 	// 0 = no emission, no cutout
-	PGID_HIT_RADIANCE_0,
-	PGID_FIRST_HIT_GROUP = PGID_HIT_RADIANCE_0,
-	PGID_HIT_SHADOW_0,
+	PGID_HIT_RADIANCE_0, PGID_HIT_SHADOW_0,
 	// 1 = emission, no cutout
-	PGID_HIT_RADIANCE_1,
-	PGID_HIT_SHADOW_1,
+	PGID_HIT_RADIANCE_1, PGID_HIT_SHADOW_1,
 	// 2 = no emission, cutout
-	PGID_HIT_RADIANCE_2,
-	PGID_HIT_SHADOW_2,
+	PGID_HIT_RADIANCE_2, PGID_HIT_SHADOW_2,
 	// 3 = emission, cutout
-	PGID_HIT_RADIANCE_3,
-	PGID_HIT_SHADOW_3,
+	PGID_HIT_RADIANCE_3, PGID_HIT_SHADOW_3,
 	// 4 = cubic B-spline curves.
-	PGID_HIT_CURVES,
-	PGID_HIT_CURVES_SHADOW,
-	PGID_LAST_HIT_GROUP = PGID_HIT_CURVES_SHADOW,
+	PGID_HIT_CURVES,     PGID_HIT_CURVES_SHADOW,
+
+	PGID_FIRST_HIT_GROUP = PGID_HIT_RADIANCE_0,
+	PGID_LAST_HIT_GROUP  = PGID_HIT_CURVES_SHADOW,
 
 	// Direct Callables
 	// Lens shader
 	PGID_LENS_PINHOLE,
-	PGID_FIRST_DIRECT_CALLABLE = PGID_LENS_PINHOLE,
 	PGID_LENS_FISHEYE,
 	PGID_LENS_SPHERE,
 	// Light sample
@@ -253,7 +247,9 @@ enum ProgramGroupId
 	PGID_LIGHT_POINT, // singular
 	PGID_LIGHT_SPOT,  // singular
 	PGID_LIGHT_IES,   // singular (same as point light but with additional IES light profile luminance texture.)
-	PGID_LAST_DIRECT_CALLABLE = PGID_LIGHT_IES,
+
+	PGID_FIRST_DIRECT_CALLABLE = PGID_LENS_PINHOLE,
+	PGID_LAST_DIRECT_CALLABLE  = PGID_LIGHT_IES,
 
 	// Number of all hardcoded program group entries. 
 	// There are more direct callables appended by the MDL materials.
@@ -400,9 +396,9 @@ struct LightprofileHost
 
 struct PipelineStackSizes {
 	unsigned int directCallableStackSizeFromTraversal,
-		directCallableStackSizeFromState,
-		continuationStackSize,
-		maxTraversableGraphDepth;
+				 directCallableStackSizeFromState,
+				 continuationStackSize,
+				 maxTraversableGraphDepth;
 };
 
 class Device

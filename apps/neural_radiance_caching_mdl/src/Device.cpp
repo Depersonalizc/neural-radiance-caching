@@ -633,7 +633,7 @@ void Device::initDeviceProperties()
 	OPTIX_CHECK(getProperty(OPTIX_DEVICE_PROPERTY_SHADER_EXECUTION_REORDERING, m_deviceProperty.shaderExecutionReordering));
 #endif
 
-#if 0
+#if 1
 	std::cout << "OPTIX_DEVICE_PROPERTY_RTCORE_VERSION                          = " << m_deviceProperty.rtcoreVersion << '\n';
 	std::cout << "OPTIX_DEVICE_PROPERTY_LIMIT_MAX_TRACE_DEPTH                   = " << m_deviceProperty.limitMaxTraceDepth << '\n';
 	std::cout << "OPTIX_DEVICE_PROPERTY_LIMIT_MAX_TRAVERSABLE_GRAPH_DEPTH       = " << m_deviceProperty.limitMaxTraversableGraphDepth << '\n';
@@ -692,21 +692,11 @@ void Device::initPipeline()
 
 	MY_ASSERT(NUM_RAY_TYPES == 2); // The following code only works for two raytypes.
 
-	// Build modules from source files
+	// Build modules from source files.
+	// Also get the OptiX internal module with the IS program for cubic B-spline curves
 	const auto modules = buildModules();
 
-	//// Get the OptiX internal module with the intersection program for cubic B-spline curves;
-	//const auto moduleIntersectionCubicCurves = [this]() {
-	//	OptixModule module;
-	//	static constexpr OptixBuiltinISOptions builtinISOptions = {
-	//		.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE,
-	//	};
-	//	OPTIX_CHECK(m_api.optixBuiltinISModuleGet(m_optixContext, 
-	//		&m_mco, &m_pco, &builtinISOptions, &module));
-	//	return module;
-	//}();
-
-	// Build program group descriptions
+	// Build program group descriptions. References modules
 	const auto pgds = buildProgramGroupDescs(modules);
 
 	// Create all program groups
@@ -722,7 +712,7 @@ void Device::initPipeline()
 		&m_pco, &m_plo, programGroups.data(), (unsigned int)programGroups.size(), 
 		nullptr, nullptr, &m_pipeline));
 
-	// Set up pipeline stack sizes
+	// Set pipeline stack sizes
 	const auto pss = estimatePipelineStackSizes(programGroups);
 	OPTIX_CHECK(m_api.optixPipelineSetStackSize(m_pipeline,
 		pss.directCallableStackSizeFromTraversal,
@@ -785,7 +775,7 @@ std::vector<OptixModule> Device::buildModules() const
 	};
 	OPTIX_CHECK(m_api.optixBuiltinISModuleGet(m_optixContext,
 		&m_mco, &m_pco, &builtinISOptions, 
-		&modules[MODULE_ID_BUILTIN_CUBIC_BSPLINE_HIT]));
+		&modules[MODULE_ID_BUILTIN_CUBIC_BSPLINE_IS]));
 
 	return modules;
 }
@@ -796,12 +786,12 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 
 	OptixProgramGroupDesc* pgd;
 
-	// All of these first because they are SbtRecordHeader and put into a single CUDA memory block.
+	// Raygen
 	pgd = &pgds[PGID_RAYGENERATION];
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->raygen.module = modules[MODULE_ID_RAYGENERATION];
-	if (1 < m_count)
+	if (m_count > 1)
 	{
 		// Only use the multi-GPU specific raygen program when there are multiple devices enabled.
 		pgd->raygen.entryFunctionName = "__raygen__path_tracer_local_copy";
@@ -812,12 +802,14 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 		pgd->raygen.entryFunctionName = "__raygen__path_tracer";
 	}
 
+	// Exception
 	pgd = &pgds[PGID_EXCEPTION];
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_EXCEPTION;
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->exception.module = modules[MODULE_ID_EXCEPTION];
 	pgd->exception.entryFunctionName = "__exception__all";
 
+	// Miss (radiance)
 	pgd = &pgds[PGID_MISS_RADIANCE];
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
@@ -835,13 +827,14 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 		break;
 	}
 
+	// Miss (shadow)
 	pgd = &pgds[PGID_MISS_SHADOW];
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->miss.module = nullptr;
 	pgd->miss.entryFunctionName = nullptr; // No miss program for shadow rays. 
 
-	// The hit records for the radiance and shadow ray for opaque (instance sbtOffset 0) and cutout opacity (instance sbtOffset 1) hit records.
+	// The hit groups for the radiance and shadow ray for opaque (instance sbtOffset 0) and cutout opacity (instance sbtOffset 1) hit records.
 	// 0 = no emission, no cutout
 	pgd = &pgds[PGID_HIT_RADIANCE_0];
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
@@ -898,13 +891,13 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 	pgd->hitgroup.moduleAH = modules[MODULE_ID_HIT];
 	pgd->hitgroup.entryFunctionNameAH = "__anyhit__shadow_cutout";
 
-	// Cubic B-Splines
+	// Cubic B-spline
 	pgd = &pgds[PGID_HIT_CURVES];
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->hitgroup.moduleCH = modules[MODULE_ID_HIT];
 	pgd->hitgroup.entryFunctionNameCH = "__closesthit__curves";
-	pgd->hitgroup.moduleIS = modules[MODULE_ID_BUILTIN_CUBIC_BSPLINE_HIT];
+	pgd->hitgroup.moduleIS = modules[MODULE_ID_BUILTIN_CUBIC_BSPLINE_IS];
 	pgd->hitgroup.entryFunctionNameIS = nullptr; // Uses built-in IS for cubic curves.
 
 	pgd = &pgds[PGID_HIT_CURVES_SHADOW];
@@ -912,7 +905,7 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->hitgroup.moduleAH = modules[MODULE_ID_HIT];
 	pgd->hitgroup.entryFunctionNameAH = "__anyhit__shadow";
-	pgd->hitgroup.moduleIS = modules[MODULE_ID_BUILTIN_CUBIC_BSPLINE_HIT];
+	pgd->hitgroup.moduleIS = modules[MODULE_ID_BUILTIN_CUBIC_BSPLINE_IS];
 	pgd->hitgroup.entryFunctionNameIS = nullptr; // Uses built-in IS for cubic curves.
 
 	// CALLABLES

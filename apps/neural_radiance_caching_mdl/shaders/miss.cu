@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,116 +37,116 @@
 #include "transform.h"
 
 extern "C" __constant__ SystemData sysData;
- 
+
 
 // Take the step along the volume scattering random walk.
 __forceinline__ __device__ void stepVolume(PerRayData* thePrd)
 {
-  // Calculate the new position at the end of the random walk ray segment.
-  thePrd->pos += thePrd->wi * thePrd->distance;
+	// Calculate the new position at the end of the random walk ray segment.
+	thePrd->pos += thePrd->wi * thePrd->distance;
 
-  // Change the throughput along the random walk according to the current extinction and the sampled density.
-  const float3 transmittance = expf(thePrd->sigma_t * -thePrd->distance);
-  const float pdf = dot(thePrd->pdfVolume, thePrd->sigma_t * transmittance);
-  
-  thePrd->throughput *= thePrd->stack[thePrd->idxStack].sigma_s * transmittance / pdf;
+	// Change the throughput along the random walk according to the current extinction and the sampled density.
+	const float3 transmittance = expf(thePrd->sigma_t * -thePrd->distance);
+	const float pdf = dot(thePrd->pdfVolume, thePrd->sigma_t * transmittance);
 
-  // Indicate that the random walk missed.
-  thePrd->flags |= FLAG_VOLUME_SCATTERING_MISS;
+	thePrd->throughput *= thePrd->stack[thePrd->idxStack].sigma_s * transmittance / pdf;
 
-  // Increment the number of steps done for the random walk
-  ++thePrd->walk;
+	// Indicate that the random walk missed.
+	thePrd->flags |= FLAG_VOLUME_SCATTERING_MISS;
+
+	// Increment the number of steps done for the random walk
+	++thePrd->walk;
 }
 
 
 // Not actually a light. Never appears inside the sysLightDefinitions.
 extern "C" __global__ void __miss__env_null()
 {
-  // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
-  PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+	// Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
+	PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
-  if (thePrd->flags & FLAG_VOLUME_SCATTERING)
-  {
-    stepVolume(thePrd);
-    
-    return; // Continue the random walk.
-  }
+	if (thePrd->flags & FLAG_VOLUME_SCATTERING)
+	{
+		stepVolume(thePrd);
 
-  // The null environment adds nothing to the radiance.
-  thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+		return; // Continue the random walk.
+	}
+
+	// The null environment adds nothing to the radiance.
+	thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
 }
 
 
 extern "C" __global__ void __miss__env_constant()
 {
-  // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
-  PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+	// Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
+	PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
-  if (thePrd->flags & FLAG_VOLUME_SCATTERING)
-  {
-    stepVolume(thePrd);
-    
-    return; // Continue the random walk.
-  }
+	if (thePrd->flags & FLAG_VOLUME_SCATTERING)
+	{
+		stepVolume(thePrd);
 
-  // The environment light is always in the first element.
-  float3 emission = sysData.lightDefinitions[0].emission; // Constant emission.
+		return; // Continue the random walk.
+	}
 
-  if (sysData.directLighting)
-  {
-    // If the last surface intersection was diffuse or glossy which was directly lit with multiple importance sampling,
-    // then calculate implicit light emission with multiple importance sampling as well.
-    const float weightMIS = (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY))
-                          ? balanceHeuristic(thePrd->pdf, 0.25f * M_1_PIf)
-                          : 1.0f;
+	// The environment light is always in the first element.
+	float3 emission = sysData.lightDefinitions[0].emission; // Constant emission.
 
-    emission *= weightMIS;
-  }
+	if (sysData.directLighting)
+	{
+		// If the last surface intersection was diffuse or glossy which was directly lit with multiple importance sampling,
+		// then calculate implicit light emission with multiple importance sampling as well.
+		const float weightMIS = (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY))
+			? balanceHeuristic(thePrd->pdf, 0.25f * M_1_PIf)
+			: 1.0f;
 
-  thePrd->radiance += thePrd->throughput * emission; 
-  thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+		emission *= weightMIS;
+	}
+
+	thePrd->radiance += thePrd->throughput * emission;
+	thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
 }
 
 
 extern "C" __global__ void __miss__env_sphere()
 {
-  // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
-  PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+	// Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
+	PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
-  if (thePrd->flags & FLAG_VOLUME_SCATTERING)
-  {
-    stepVolume(thePrd);
-    
-    return; // Continue the random walk.
-  }
+	if (thePrd->flags & FLAG_VOLUME_SCATTERING)
+	{
+		stepVolume(thePrd);
 
-  // The environment light is always in the first element.
-  const LightDefinition& light = sysData.lightDefinitions[0];
+		return; // Continue the random walk.
+	}
 
-  // Transform the ray.direction from world space to light object space.
-  const float3 R = transformVector(light.oriInv, thePrd->wi);
+	// The environment light is always in the first element.
+	const LightDefinition& light = sysData.lightDefinitions[0];
 
-  // All lights shine down the positive z-axis in this renderer.
-  const float u = (atan2f(-R.x, R.z) + M_PIf) * 0.5f * M_1_PIf;
-  // Texture is with origin at lower left, v == 0.0f is south pole.
-  const float v = acosf(-R.y) * M_1_PIf;
+	// Transform the ray.direction from world space to light object space.
+	const float3 R = transformVector(light.oriInv, thePrd->wi);
 
-  float3 emission = make_float3(tex2D<float4>(light.textureEmission, u, v));
+	// All lights shine down the positive z-axis in this renderer.
+	const float u = (atan2f(-R.x, R.z) + M_PIf) * 0.5f * M_1_PIf;
+	// Texture is with origin at lower left, v == 0.0f is south pole.
+	const float v = acosf(-R.y) * M_1_PIf;
 
-  if (sysData.directLighting)
-  {
-    // If the last surface intersection was a diffuse event which was directly lit with multiple importance sampling,
-    // then calculate implicit light emission with multiple importance sampling as well.
-    if (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY))
-    {
-      // For simplicity we pretend that we perfectly importance-sampled the actual texture-filtered environment map
-      // and not the Gaussian smoothed one used to actually generate the CDFs.
-      const float pdfLight = intensity(emission) * light.invIntegral;
-      
-      emission *= balanceHeuristic(thePrd->pdf, pdfLight);
-    }
-  }
-  
-  thePrd->radiance += thePrd->throughput * emission * light.emission;
-  thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+	float3 emission = make_float3(tex2D<float4>(light.textureEmission, u, v));
+
+	if (sysData.directLighting)
+	{
+		// If the last surface intersection was a diffuse event which was directly lit with multiple importance sampling,
+		// then calculate implicit light emission with multiple importance sampling as well.
+		if (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY))
+		{
+			// For simplicity we pretend that we perfectly importance-sampled the actual texture-filtered environment map
+			// and not the Gaussian smoothed one used to actually generate the CDFs.
+			const float pdfLight = intensity(emission) * light.invIntegral;
+
+			emission *= balanceHeuristic(thePrd->pdf, pdfLight);
+		}
+	}
+
+	thePrd->radiance += thePrd->throughput * emission * light.emission;
+	thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
 }

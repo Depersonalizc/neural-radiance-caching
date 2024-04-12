@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2013-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -60,7 +60,7 @@
 
 #include <dp/math/Matmnt.h>
 
-// This include gl.h and needs to be done after glew.h
+ // This include gl.h and needs to be done after glew.h
 #include <GLFW/glfw3.h>
 
 #include <filesystem>
@@ -70,95 +70,95 @@
 #include <vector>
 
 
-static constexpr inline int APP_EXIT_SUCCESS             =  0;
-static constexpr inline int APP_ERROR_GENERAL            = -1;
-static constexpr inline int APP_ERROR_CREATE_WINDOW      = -2;
-static constexpr inline int APP_ERROR_GLFW_INIT          = -3;
-static constexpr inline int APP_ERROR_GLEW_INIT          = -4;
-static constexpr inline int APP_ERROR_APP_INIT           = -5;
+static constexpr inline int APP_EXIT_SUCCESS = 0;
+static constexpr inline int APP_ERROR_GENERAL = -1;
+static constexpr inline int APP_ERROR_CREATE_WINDOW = -2;
+static constexpr inline int APP_ERROR_GLFW_INIT = -3;
+static constexpr inline int APP_ERROR_GLEW_INIT = -4;
+static constexpr inline int APP_ERROR_APP_INIT = -5;
 static constexpr inline int APP_ERROR_PARSE_COMMAND_LINE = -6;
 
 
 enum GuiState
 {
-  GUI_STATE_NONE,
-  GUI_STATE_ORBIT,
-  GUI_STATE_PAN,
-  GUI_STATE_DOLLY,
-  GUI_STATE_FOCUS
+	GUI_STATE_NONE,
+	GUI_STATE_ORBIT,
+	GUI_STATE_PAN,
+	GUI_STATE_DOLLY,
+	GUI_STATE_FOCUS
 };
 
 
 enum KeywordScene
 {
-  KS_LENS_SHADER,
-  KS_CENTER,
-  KS_CAMERA,
-  KS_GAMMA,
-  KS_COLOR_BALANCE,
-  KS_WHITE_POINT,
-  KS_BURN_HIGHLIGHTS,
-  KS_CRUSH_BLACKS,
-  KS_SATURATION,
-  KS_BRIGHTNESS,
-  KS_EMISSION,
-  KS_EMISSION_MULTIPLIER,
-  KS_EMISSION_PROFILE,
-  KS_EMISSION_TEXTURE,
-  KS_SPOT_ANGLE,
-  KS_SPOT_EXPONENT,
-  KS_IDENTITY,
-  KS_PUSH,
-  KS_POP,
-  KS_ROTATE,
-  KS_SCALE,
-  KS_TRANSLATE,
-  //KS_PLANE,
-  //KS_BOX,
-  //KS_SPHERE,
-  //KS_TORUS,
-  //KS_ASSIMP,
-  KS_MDL,
-  KS_LIGHT,
-  KS_MODEL
+	KS_LENS_SHADER,
+	KS_CENTER,
+	KS_CAMERA,
+	KS_GAMMA,
+	KS_COLOR_BALANCE,
+	KS_WHITE_POINT,
+	KS_BURN_HIGHLIGHTS,
+	KS_CRUSH_BLACKS,
+	KS_SATURATION,
+	KS_BRIGHTNESS,
+	KS_EMISSION,
+	KS_EMISSION_MULTIPLIER,
+	KS_EMISSION_PROFILE,
+	KS_EMISSION_TEXTURE,
+	KS_SPOT_ANGLE,
+	KS_SPOT_EXPONENT,
+	KS_IDENTITY,
+	KS_PUSH,
+	KS_POP,
+	KS_ROTATE,
+	KS_SCALE,
+	KS_TRANSLATE,
+	//KS_PLANE,
+	//KS_BOX,
+	//KS_SPHERE,
+	//KS_TORUS,
+	//KS_ASSIMP,
+	KS_MDL,
+	KS_LIGHT,
+	KS_MODEL
 };
 
 
 struct SceneState
 {
-  void reset()
-  {
-    matrix    = dp::math::cIdentity44f;
-    matrixInv = dp::math::cIdentity44f;
+	void reset()
+	{
+		matrix = dp::math::cIdentity44f;
+		matrixInv = dp::math::cIdentity44f;
 
-    orientation    = dp::math::Quatf(0.0f, 0.0f, 0.0f, 1.0f);
-    orientationInv = dp::math::Quatf(0.0f, 0.0f, 0.0f, 1.0f);
+		orientation = dp::math::Quatf(0.0f, 0.0f, 0.0f, 1.0f);
+		orientationInv = dp::math::Quatf(0.0f, 0.0f, 0.0f, 1.0f);
 
-    nameEmission.clear();
-    nameProfile.clear();
+		nameEmission.clear();
+		nameProfile.clear();
 
-    colorEmission      = make_float3(0.0f); // Default black
-    multiplierEmission = 1.0f;
+		colorEmission = make_float3(0.0f); // Default black
+		multiplierEmission = 1.0f;
 
-    spotAngle    = 45.0f;
-    spotExponent = 0.0f; // No cosine falloff.
-  }
+		spotAngle = 45.0f;
+		spotExponent = 0.0f; // No cosine falloff.
+	}
 
-  // Transformation state
-  dp::math::Mat44f matrix;
-  dp::math::Mat44f matrixInv;
-  // The orientation (the pure rotational part of the above matrices).
-  dp::math::Quatf  orientation;
-  dp::math::Quatf  orientationInv;
+	// Transformation state
+	dp::math::Mat44f matrix;
+	dp::math::Mat44f matrixInv;
+	// The orientation (the pure rotational part of the above matrices).
+	dp::math::Quatf  orientation;
+	dp::math::Quatf  orientationInv;
 
-  std::string nameEmission; // The filename of the emission texture. Empty when none.
-  std::string nameProfile;  // The filename of the IES light profile. Empty when none.
+	std::string nameEmission; // The filename of the emission texture. Empty when none.
+	std::string nameProfile;  // The filename of the IES light profile. Empty when none.
 
-  float3 colorEmission;      // The emission base color.
-  float  multiplierEmission; // A multiplier on top of colorEmission to get HDR lights.
+	float3 colorEmission;      // The emission base color.
+	float  multiplierEmission; // A multiplier on top of colorEmission to get HDR lights.
 
-  float spotAngle;    // Full cone angle in degrees, means max. 180 degrees is a hemispherical distribution.
-  float spotExponent; // Exponent on the cosine of the sotAngle, used to generate intensity falloff from spot cone center to outer angle. Set to 0.0 for no falloff.
+	float spotAngle;    // Full cone angle in degrees, means max. 180 degrees is a hemispherical distribution.
+	float spotExponent; // Exponent on the cosine of the sotAngle, used to generate intensity falloff from spot cone center to outer angle. Set to 0.0 for no falloff.
 };
 
 
@@ -166,174 +166,174 @@ class Application
 {
 public:
 
-  Application(GLFWwindow* window, const Options& options);
-  ~Application();
+	Application(GLFWwindow* window, const Options& options);
+	~Application();
 
-  void reshape(const int w, const int h);
-  bool render();
-  void benchmark();
+	void reshape(const int w, const int h);
+	bool render();
+	void benchmark();
 
-  void display();
+	void display();
 
-  void guiNewFrame();
-  void guiWindow();
-  void guiEventHandler();
-  void guiReferenceManual(); // The ImGui "programming manual" in form of a live window.
-  void guiRender();
-
-private:
-  bool loadSystemDescription(const std::string& filename);
-  bool saveSystemDescription();
-
-  //TypeBXDF determineTypeBXDF(const std::string& token) const;
-  //TypeEDF  determineTypeEDF(const std::string& token) const;
-  bool loadSceneDescription(const std::string& filename);
-
-  void restartRendering();
-
-  bool screenshot(const bool tonemap);
-
-  void createCameras();
-  
-  int findMaterial(const std::string& reference);
-
-  void appendInstance(std::shared_ptr<sg::Group>& group,
-                      std::shared_ptr<sg::Node> geometry, // Baseclass Node to be prepared for different geometric primitives.
-                      const dp::math::Mat44f& matrix, 
-                      const int indexMaterial,
-                      const int indexLight);
-
-  std::shared_ptr<sg::Group> createASSIMP(const std::string& filename);
-  std::shared_ptr<sg::Group> traverseScene(const struct aiScene *scene, const unsigned int indexSceneBase, const struct aiNode* node);
-
-  void calculateTangents(std::vector<TriangleAttributes>& attributes, const std::vector<unsigned int>& indices);
-
-  void guiRenderingIndicator(const bool isRendering);
-
-  void createMeshLights();
-  void traverseGraph(std::shared_ptr<sg::Node> node, InstanceData& instanceData, float matrix[12]);
-  int createMeshLight(const std::shared_ptr<sg::Triangles> geometry, const InstanceData& instanceData, const float matrix[12]);
-
-  bool loadString(const std::string& filename, std::string& text);
-  bool saveString(const std::string& filename, const std::string& text);
-  std::string getDateTime();
-  void convertPath(std::string& path);
-  void convertPath(char* path);
-
-  void addSearchPath(const std::string& path);
-
-  bool isEmissiveMaterial(const int indexMaterial) const;
+	void guiNewFrame();
+	void guiWindow();
+	void guiEventHandler();
+	void guiReferenceManual(); // The ImGui "programming manual" in form of a live window.
+	void guiRender();
 
 private:
-  GLFWwindow* m_window;
+	bool loadSystemDescription(const std::string& filename);
+	bool saveSystemDescription();
 
-  GuiState m_guiState;
-  bool     m_isVisibleGUI;
+	//TypeBXDF determineTypeBXDF(const std::string& token) const;
+	//TypeEDF  determineTypeEDF(const std::string& token) const;
+	bool loadSceneDescription(const std::string& filename);
 
-  // Command line options:
-  int         m_width;    // Client window size.
-  int         m_height;
-  int         m_mode;     // Application mode 0 = interactive, 1 = batched benchmark (single shot).
-  bool        m_optimize; // Command line option to let the assimp importer optimize the graph (sorts by material).
+	void restartRendering();
 
-  // System options:
-  int         m_strategy;    // "strategy"    // Ignored in this renderer. Always behaves like RS_INTERACTIVE_MULTI_GPU_LOCAL_COPY.
-  int         m_maskDevices; // "devicesMask" // Bitmask with enabled devices, default 0x00FFFFFF for max 24 devices. Only the visible ones will be used.
-  size_t      m_sizeArena;   // "arenaSize"   // Default size for Arena allocations in mega-bytes.
-  int         m_interop;     // "interop"     // 0 = none all through host, 1 = register texture image, 2 = register pixel buffer
-  int         m_peerToPeer;  // "peerToPeer   // Bitfield controlling P2P resource sharing:
-                                              // Bit 0 = Allow sharing via PCI-E bus. Only share across NVLINK bridges when off (default off)
-                                              // Bit 1 = Allow sharing of texture CUarray or CUmipmappedArray data (legacy and MDL) (fast) (default on)
-                                              // Bit 2 = Allow sharing of geometry acceleration structures and vertex attributes (slowest) (default off)
-                                              // Bit 3 = Allow sharing of spherical environment light texture and CDFs (slow) (default off)
-                                              // Bit 4 = Allow sharing of MDL Measured BSDF and their CDFs (slow) (default off)
-                                              // Bit 5 = Allow sharing of MDL Lightprofiles and their CDFs (slow) (default off)
-  bool        m_present;     // "present"
-  bool        m_presentNext;      // (derived)
-  double      m_presentAtSecond;  // (derived)
-  bool        m_previousComplete; // (derived) // Prevents spurious benchmark prints and image updates.
+	bool screenshot(const bool tonemap);
 
-  // GUI Data representing raytracer settings.
-  TypeLens   m_typeLens;            // "lensShader"
-  int2       m_pathLengths;         // "pathLengths"   // min, max
-  int        m_walkLength;          // "walkLength"    // Number of volume scattering random walk steps until the maximum distance is to try gettting out of the volumes. Minimum 1 for single scattering.
-  int2       m_resolution;          // "resolution"    // The actual size of the rendering, independent of the window's client size. (Preparation for final frame rendering.)
-  int2       m_tileSize;            // "tileSize"      // Multi-GPU distribution tile size. Must be power-of-two values.
-  int        m_samplesSqrt;         // "sampleSqrt"
-  float      m_epsilonFactor;       // "epsilonFactor"
-  float      m_clockFactor;         // "clockFactor"
-  bool       m_useDirectLighting; 
+	void createCameras();
 
-  TypeLight m_typeEnv;                // The type of the light in m_lightsGUI[0]. Used to determine the miss shader.
-  float     m_rotationEnvironment[3]; // The Euler rotation angles for the spherical environment light.
+	int findMaterial(const std::string& reference);
 
-  std::string m_prefixScreenshot;   // "prefixScreenshot", allows to set a path and the prefix for the screenshot filename. spp, data, time and extension will be appended.
-  
-  TonemapperGUI m_tonemapperGUI;    // "gamma", "whitePoint", "burnHighlights", "crushBlacks", "saturation", "brightness"
-  
-  Camera m_camera;                  // "center", "camera"
+	void appendInstance(std::shared_ptr<sg::Group>& group,
+						std::shared_ptr<sg::Node> geometry, // Baseclass Node to be prepared for different geometric primitives.
+						const dp::math::Mat44f& matrix,
+						const int indexMaterial,
+						const int indexLight);
 
-  float m_mouseSpeedRatio;
-  
-  Timer m_timer;
+	std::shared_ptr<sg::Group> createASSIMP(const std::string& filename);
+	std::shared_ptr<sg::Group> traverseScene(const struct aiScene* scene, const unsigned int indexSceneBase, const struct aiNode* node);
 
-  std::map<std::string, KeywordScene> m_mapKeywordScene;
+	void calculateTangents(std::vector<TriangleAttributes>& attributes, const std::vector<unsigned int>& indices);
 
-  std::unique_ptr<Rasterizer> m_rasterizer;
-  
-  std::unique_ptr<Raytracer> m_raytracer;
+	void guiRenderingIndicator(const bool isRendering);
 
-  DeviceState                m_state;
+	void createMeshLights();
+	void traverseGraph(std::shared_ptr<sg::Node> node, InstanceData& instanceData, float matrix[12]);
+	int createMeshLight(const std::shared_ptr<sg::Triangles> geometry, const InstanceData& instanceData, const float matrix[12]);
 
-  // The scene description:
-  // Unique identifiers per host scene node.
-  unsigned int m_idGroup;
-  unsigned int m_idInstance;
-  unsigned int m_idGeometry;
+	bool loadString(const std::string& filename, std::string& text);
+	bool saveString(const std::string& filename, const std::string& text);
+	std::string getDateTime();
+	void convertPath(std::string& path);
+	void convertPath(char* path);
 
-  std::shared_ptr<sg::Group> m_scene; // Root group node of the scene.
-  
-  std::vector< std::shared_ptr<sg::Node> > m_geometries; // All geometries in the scene. Baseclass Node to be prepared for different geometric primitives.
+	void addSearchPath(const std::string& path);
 
-  // For the runtime generated objects, this allows to find geometries with the same type and construction parameters.
-  std::map<std::string, unsigned int> m_mapGeometries;
+	bool isEmissiveMaterial(const int indexMaterial) const;
 
-  // For all model file format loaders. Allows instancing of full models in the host side scene graph.
-  std::map< std::string, std::shared_ptr<sg::Group> > m_mapGroups;
+private:
+	GLFWwindow* m_window;
 
-  std::vector<CameraDefinition> m_cameras;
-  std::vector<LightGUI>         m_lightsGUI;
+	GuiState m_guiState;
+	bool     m_isVisibleGUI;
 
-  // Map picture file paths to their loaded data on the host. 
-  // (This is not including the texture images loaded by MDL, only the ones usded for hardcoded lights.)
-  std::map<std::string, std::unique_ptr<Picture>> m_mapPictures;
+	// Command line options:
+	int         m_width;    // Client window size.
+	int         m_height;
+	int         m_mode;     // Application mode 0 = interactive, 1 = batched benchmark (single shot).
+	bool        m_optimize; // Command line option to let the assimp importer optimize the graph (sorts by material).
 
-  // A temporary vector of mesh indices used inside the ASSIMP loader to handle the triangle meshes inside a model.
-  std::vector<unsigned int> m_remappedMeshIndices; 
+	// System options:
+	int         m_strategy;    // "strategy"    // Ignored in this renderer. Always behaves like RS_INTERACTIVE_MULTI_GPU_LOCAL_COPY.
+	int         m_maskDevices; // "devicesMask" // Bitmask with enabled devices, default 0x00FFFFFF for max 24 devices. Only the visible ones will be used.
+	size_t      m_sizeArena;   // "arenaSize"   // Default size for Arena allocations in mega-bytes.
+	int         m_interop;     // "interop"     // 0 = none all through host, 1 = register texture image, 2 = register pixel buffer
+	int         m_peerToPeer;  // "peerToPeer   // Bitfield controlling P2P resource sharing:
+	// Bit 0 = Allow sharing via PCI-E bus. Only share across NVLINK bridges when off (default off)
+	// Bit 1 = Allow sharing of texture CUarray or CUmipmappedArray data (legacy and MDL) (fast) (default on)
+	// Bit 2 = Allow sharing of geometry acceleration structures and vertex attributes (slowest) (default off)
+	// Bit 3 = Allow sharing of spherical environment light texture and CDFs (slow) (default off)
+	// Bit 4 = Allow sharing of MDL Measured BSDF and their CDFs (slow) (default off)
+	// Bit 5 = Allow sharing of MDL Lightprofiles and their CDFs (slow) (default off)
+	bool        m_present;     // "present"
+	bool        m_presentNext;      // (derived)
+	double      m_presentAtSecond;  // (derived)
+	bool        m_previousComplete; // (derived) // Prevents spurious benchmark prints and image updates.
 
-  // MDL material handling.
+	// GUI Data representing raytracer settings.
+	TypeLens   m_typeLens;            // "lensShader"
+	int2       m_pathLengths;         // "pathLengths"   // min, max
+	int        m_walkLength;          // "walkLength"    // Number of volume scattering random walk steps until the maximum distance is to try gettting out of the volumes. Minimum 1 for single scattering.
+	int2       m_resolution;          // "resolution"    // The actual size of the rendering, independent of the window's client size. (Preparation for final frame rendering.)
+	int2       m_tileSize;            // "tileSize"      // Multi-GPU distribution tile size. Must be power-of-two values.
+	int        m_samplesSqrt;         // "sampleSqrt"
+	float      m_epsilonFactor;       // "epsilonFactor"
+	float      m_clockFactor;         // "clockFactor"
+	bool       m_useDirectLighting;
 
-  // This vector of search paths defines where MDL is searching for *.mdl and resource files.
-  // This is set via the "searchPath" option in the system description file.
-  // Multiple searchPaths entries are possible and define the search order.
-  std::vector<std::string> m_searchPaths;
+	TypeLight m_typeEnv;                // The type of the light in m_lightsGUI[0]. Used to determine the miss shader.
+	float     m_rotationEnvironment[3]; // The Euler rotation angles for the spherical environment light.
 
-  // This map stores all declared materials under their reference name. 
-  // Only the ones which are referenced inside the scene will be loaded 
-  // into the m_materialsMDL vector and tracked inside m_mapReferenceToMaterialIndex.
-  std::map<std::string, MaterialDeclaration> m_mapReferenceToDeclaration;
+	std::string m_prefixScreenshot;   // "prefixScreenshot", allows to set a path and the prefix for the screenshot filename. spp, data, time and extension will be appended.
 
-  // This maps a material reference name to an index into the m_materialsMDL vector.
-  std::map<std::string, int> m_mapReferenceToMaterialIndex;
-  
-  // Vector of MaterialMDL pointers, one per unique material reference name inside the scene description.
-  std::vector<std::unique_ptr<MaterialMDL>> m_materialsMDL;
+	TonemapperGUI m_tonemapperGUI;    // "gamma", "whitePoint", "burnHighlights", "crushBlacks", "saturation", "brightness"
 
-  // This tracks which material is selected inside the GUI combo box.
-  int m_indexMaterialGUI;
+	Camera m_camera;                  // "center", "camera"
 
-  // Where to find the regular asset, default as "./data"
-  static std::filesystem::path s_assetDir;
+	float m_mouseSpeedRatio;
+
+	Timer m_timer;
+
+	std::map<std::string, KeywordScene> m_mapKeywordScene;
+
+	std::unique_ptr<Rasterizer> m_rasterizer;
+
+	std::unique_ptr<Raytracer> m_raytracer;
+
+	DeviceState                m_state;
+
+	// The scene description:
+	// Unique identifiers per host scene node.
+	unsigned int m_idGroup;
+	unsigned int m_idInstance;
+	unsigned int m_idGeometry;
+
+	std::shared_ptr<sg::Group> m_scene; // Root group node of the scene.
+
+	std::vector< std::shared_ptr<sg::Node> > m_geometries; // All geometries in the scene. Baseclass Node to be prepared for different geometric primitives.
+
+	// For the runtime generated objects, this allows to find geometries with the same type and construction parameters.
+	std::map<std::string, unsigned int> m_mapGeometries;
+
+	// For all model file format loaders. Allows instancing of full models in the host side scene graph.
+	std::map< std::string, std::shared_ptr<sg::Group> > m_mapGroups;
+
+	std::vector<CameraDefinition> m_cameras;
+	std::vector<LightGUI>         m_lightsGUI;
+
+	// Map picture file paths to their loaded data on the host. 
+	// (This is not including the texture images loaded by MDL, only the ones usded for hardcoded lights.)
+	std::map<std::string, std::unique_ptr<Picture>> m_mapPictures;
+
+	// A temporary vector of mesh indices used inside the ASSIMP loader to handle the triangle meshes inside a model.
+	std::vector<unsigned int> m_remappedMeshIndices;
+
+	// MDL material handling.
+
+	// This vector of search paths defines where MDL is searching for *.mdl and resource files.
+	// This is set via the "searchPath" option in the system description file.
+	// Multiple searchPaths entries are possible and define the search order.
+	std::vector<std::string> m_searchPaths;
+
+	// This map stores all declared materials under their reference name. 
+	// Only the ones which are referenced inside the scene will be loaded 
+	// into the m_materialsMDL vector and tracked inside m_mapReferenceToMaterialIndex.
+	std::map<std::string, MaterialDeclaration> m_mapReferenceToDeclaration;
+
+	// This maps a material reference name to an index into the m_materialsMDL vector.
+	std::map<std::string, int> m_mapReferenceToMaterialIndex;
+
+	// Vector of MaterialMDL pointers, one per unique material reference name inside the scene description.
+	std::vector<std::unique_ptr<MaterialMDL>> m_materialsMDL;
+
+	// This tracks which material is selected inside the GUI combo box.
+	int m_indexMaterialGUI;
+
+	// Where to find the regular asset, default as "./data"
+	static std::filesystem::path s_assetDir;
 };
 
 

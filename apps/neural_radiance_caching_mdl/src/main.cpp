@@ -47,7 +47,7 @@ static int runApp(const Options& options)
     int width = std::max(1, options.getWidth());
     int height = std::max(1, options.getHeight());
 
-    GLFWwindow* window = glfwCreateWindow(width, height, "Neural Radiance Caching (rtigo12)", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(width, height, "Neural Radiance Caching (MDL)", nullptr, nullptr);
     if (!window) {
         callbackError(APP_ERROR_CREATE_WINDOW, "glfwCreateWindow() failed.");
         return APP_ERROR_CREATE_WINDOW;
