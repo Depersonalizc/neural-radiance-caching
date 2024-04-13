@@ -104,7 +104,6 @@ __forceinline__ __device__ void sampleVolumeScattering(const float2 xi, const fl
 	dir = tbn.transformToWorld(d);
 }
 
-#if 0
 __forceinline__ __device__ float3 integrator(PerRayData& prd)
 {
 	// The integrator starts with black radiance and full path throughput.
@@ -225,7 +224,279 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd)
 
 	return prd.radiance;
 }
+
+__forceinline__ __device__ unsigned int distribute(const uint2 launchIndex)
+{
+	// First calculate block coordinates of this launch index.
+	// That is the launch index divided by the tile dimensions. (No operator>>() on vectors?)
+	const unsigned int xBlock = launchIndex.x >> sysData.tileShift.x;
+	const unsigned int yBlock = launchIndex.y >> sysData.tileShift.y;
+
+	// Each device needs to start at a different column and each row should start with a different device.
+	const unsigned int xTile = xBlock * sysData.deviceCount + ((sysData.deviceIndex + yBlock) % sysData.deviceCount);
+
+	// The horizontal pixel coordinate is: tile coordinate * tile width + launch index % tile width.
+	return xTile * sysData.tileSize.x + (launchIndex.x & (sysData.tileSize.x - 1)); // tileSize needs to be power-of-two for this modulo operation.
+}
+
+extern "C" __global__ void __raygen__path_tracer_local_copy()
+{
+#if USE_TIME_VIEW
+	clock_t clockBegin = clock();
 #endif
+
+	const uint2 theLaunchIndex = make_uint2(optixGetLaunchIndex());
+	const uint2 theLaunchDim = make_uint2(optixGetLaunchDimensions()); // For multi-GPU tiling this is (resolution + deviceCount - 1) / deviceCount.
+
+	unsigned int launchRow = theLaunchIndex.y;
+	unsigned int launchColumn = theLaunchIndex.x;
+	if (sysData.deviceCount > 1) // Multi-GPU distribution required?
+	{
+		launchColumn = distribute(theLaunchIndex); // Calculate mapping from launch index to pixel index.
+		if (sysData.resolution.x <= launchColumn)  // Check if the launchColumn is outside the resolution.
+		{
+			return;
+		}
+	}
+
+	PerRayData prd;
+
+	// Initialize the random number generator seed from the linear pixel index and the iteration index.
+	prd.seed = tea<4>(launchRow * theLaunchDim.x + launchColumn, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
+
+	// Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
+	// Resolution is the actual full rendering resolution and for the single GPU strategy, theLaunchDim == resolution.
+	const float2 screen = make_float2(sysData.resolution); // == theLaunchDim for rendering strategy RS_SINGLE_GPU.
+	const float2 pixel = make_float2(launchColumn, launchRow);
+	const float2 sample = rng2(prd.seed);
+
+	// Lens shaders
+	const LensRay ray = optixDirectCall<LensRay, const float2, const float2, const float2>(sysData.typeLens, screen, pixel, sample);
+
+	prd.pos = ray.org;
+	prd.wi = ray.dir;
+
+	float3 radiance = integrator(prd);
+
+#if USE_DEBUG_EXCEPTIONS
+	// DEBUG Highlight numerical errors.
+	if (isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z))
+	{
+		radiance = make_float3(1000000.0f, 0.0f, 0.0f); // super red
+	}
+	else if (isinf(radiance.x) || isinf(radiance.y) || isinf(radiance.z))
+	{
+		radiance = make_float3(0.0f, 1000000.0f, 0.0f); // super green
+	}
+	else if (radiance.x < 0.0f || radiance.y < 0.0f || radiance.z < 0.0f)
+	{
+		radiance = make_float3(0.0f, 0.0f, 1000000.0f); // super blue
+	}
+#else
+	// NaN values will never go away. Filter them out before they can arrive in the output buffer.
+	// This only has an effect if the debug coloring above is off!
+	if (!(isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z)))
+#endif
+	{
+		// This renderer write the results into individual launch sized local buffers and composites them in a separate native CUDA kernel.
+		const unsigned int index = theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x;
+
+#if USE_FP32_OUTPUT
+		// The texelBuffer is a CUdeviceptr to allow different formats.
+		// This is a per device launch sized buffer in this renderer strategy.
+		float4* buffer = reinterpret_cast<float4*>(sysData.texelBuffer);
+
+#if USE_TIME_VIEW
+		clock_t clockEnd = clock();
+		const float alpha = (clockEnd - clockBegin) * sysData.clockScale;
+
+		float4 result = make_float4(radiance, alpha);
+
+		if (sysData.iterationIndex > 0)
+		{
+			const float4 dst = buffer[index]; // RGBA32F
+			result = lerp(dst, result, 1.0f / float(sysData.iterationIndex + 1)); // Accumulate the alpha as well.
+		}
+		buffer[index] = result;
+#else
+		//if (sysData.iterationIndex > 0)
+		{
+			const float4& dst = buffer[index]; // RGBA32F
+			radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
+		}
+		buffer[index] = make_float4(radiance, 1.0f);
+#endif
+
+#else // if !USE_FP32_OUTPUT
+
+		Half4* buffer = reinterpret_cast<Half4*>(sysData.texelBuffer);
+
+#if USE_TIME_VIEW
+		clock_t clockEnd = clock();
+		const float alpha = (clockEnd - clockBegin) * sysData.clockScale;
+
+		if (sysData.iterationIndex > 0)
+		{
+			const float t = 1.0f / float(sysData.iterationIndex + 1);
+
+			const Half4 dst = buffer[index]; // RGBA16F
+
+			radiance.x = lerp(__half2float(dst.x), radiance.x, t);
+			radiance.y = lerp(__half2float(dst.y), radiance.y, t);
+			radiance.z = lerp(__half2float(dst.z), radiance.z, t);
+			alpha = lerp(__half2float(dst.z), alpha, t);
+		}
+		buffer[index] = make_Half4(radiance, alpha);
+#else
+		if (sysData.iterationIndex > 0)
+		{
+			const float t = 1.0f / float(sysData.iterationIndex + 1);
+
+			const Half4 dst = buffer[index]; // RGBA16F
+
+			radiance.x = lerp(__half2float(dst.x), radiance.x, t);
+			radiance.y = lerp(__half2float(dst.y), radiance.y, t);
+			radiance.z = lerp(__half2float(dst.z), radiance.z, t);
+		}
+		buffer[index] = make_Half4(radiance, 1.0f);
+#endif
+
+#endif // USE_FP32_OUTPUT
+	}
+}
+
+extern "C" __global__ void __raygen__path_tracer()
+{
+#if USE_TIME_VIEW
+	clock_t clockBegin = clock();
+#endif
+
+	const uint2 theLaunchDim = make_uint2(optixGetLaunchDimensions()); // For multi-GPU tiling this is (resolution + deviceCount - 1) / deviceCount.
+	const uint2 theLaunchIndex = make_uint2(optixGetLaunchIndex());
+
+	PerRayData prd;
+
+	// Initialize the random number generator seed from the linear pixel index and the iteration index.
+	prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
+
+	// Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
+	// Resolution is the actual full rendering resolution and for the single GPU strategy, theLaunchDim == resolution.
+	const float2 screen = make_float2(sysData.resolution); // == theLaunchDim for rendering strategy RS_SINGLE_GPU.
+	const float2 pixel = make_float2(theLaunchIndex);
+	const float2 sample = rng2(prd.seed);
+
+	// Lens shaders
+	const LensRay ray = optixDirectCall<LensRay, const float2, const float2, const float2>(sysData.typeLens, screen, pixel, sample);
+
+	prd.pos = ray.org;
+	prd.wi = ray.dir;
+
+	float3 radiance = integrator(prd);
+
+#if USE_DEBUG_EXCEPTIONS
+	// DEBUG Highlight numerical errors.
+	if (isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z))
+	{
+		radiance = make_float3(1000000.0f, 0.0f, 0.0f); // super red
+	}
+	else if (isinf(radiance.x) || isinf(radiance.y) || isinf(radiance.z))
+	{
+		radiance = make_float3(0.0f, 1000000.0f, 0.0f); // super green
+	}
+	else if (radiance.x < 0.0f || radiance.y < 0.0f || radiance.z < 0.0f)
+	{
+		radiance = make_float3(0.0f, 0.0f, 1000000.0f); // super blue
+	}
+#else
+	// NaN values will never go away. Filter them out before they can arrive in the output buffer.
+	// This only has an effect if the debug coloring above is off!
+	if (!(isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z)))
+#endif
+	{
+		const unsigned int index = theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x;
+
+#if USE_FP32_OUTPUT
+
+		float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
+
+#if USE_TIME_VIEW
+		clock_t clockEnd = clock();
+		const float alpha = (clockEnd - clockBegin) * sysData.clockScale;
+
+		float4 result = make_float4(radiance, alpha);
+
+		if (sysData.iterationIndex > 0)
+		{
+			const float4 dst = buffer[index]; // RGBA32F
+
+			result = lerp(dst, result, 1.0f / float(sysData.iterationIndex + 1)); // Accumulate the alpha as well.
+		}
+		buffer[index] = result;
+#else // if !USE_TIME_VIEW
+		//if (sysData.iterationIndex > 0)
+		{
+			const float4& dst = buffer[index]; // RGBA32F
+			radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
+		}
+		buffer[index] = make_float4(radiance, 1.0f);
+#endif // USE_TIME_VIEW
+
+#else // if !USE_FP32_OUPUT
+
+		Half4* buffer = reinterpret_cast<Half4*>(sysData.outputBuffer);
+
+#if USE_TIME_VIEW
+		clock_t clockEnd = clock();
+		float alpha = (clockEnd - clockBegin) * sysData.clockScale;
+
+		if (sysData.iterationIndex > 0)
+		{
+			const float t = 1.0f / float(sysData.iterationIndex + 1);
+
+			const Half4 dst = buffer[index]; // RGBA16F
+
+			radiance.x = lerp(__half2float(dst.x), radiance.x, t);
+			radiance.y = lerp(__half2float(dst.y), radiance.y, t);
+			radiance.z = lerp(__half2float(dst.z), radiance.z, t);
+			alpha = lerp(__half2float(dst.z), alpha, t);
+		}
+		buffer[index] = make_Half4(radiance, alpha);
+#else // if !USE_TIME_VIEW
+		if (sysData.iterationIndex > 0)
+		{
+			const float t = 1.0f / float(sysData.iterationIndex + 1);
+
+			const Half4 dst = buffer[index]; // RGBA16F
+
+			radiance.x = lerp(__half2float(dst.x), radiance.x, t);
+			radiance.y = lerp(__half2float(dst.y), radiance.y, t);
+			radiance.z = lerp(__half2float(dst.z), radiance.z, t);
+		}
+		buffer[index] = make_Half4(radiance, 1.0f);
+#endif // USE_TIME_VIEW
+
+#endif // USE_FP32_OUTPUT
+	}
+}
+
+namespace {
+
+__forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
+{
+	// Discard boundary tile
+	if (launchIndex.x + sysData.tileSize.x > sysData.resolution.x ||
+		launchIndex.y + sysData.tileSize.y > sysData.resolution.y)
+	{
+		return false;
+	}
+
+	// Compute the local index within tile
+	const auto xLocal = launchIndex.x - (launchIndex.x >> sysData.tileShift.x << sysData.tileShift.x);
+	const auto yLocal = launchIndex.y - (launchIndex.y >> sysData.tileShift.y << sysData.tileShift.y);
+	const auto idxLocal = (yLocal << sysData.tileShift.x) + xLocal;
+
+	return idxLocal == sysData.tileTrainingIndex;
+}
 
 #define VOLUME_RENDER 0
 __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
@@ -347,278 +618,6 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 
 	return prd.radiance;
 }
-
-
-__forceinline__ __device__ unsigned int distribute(const uint2 launchIndex)
-{
-	// First calculate block coordinates of this launch index.
-	// That is the launch index divided by the tile dimensions. (No operator>>() on vectors?)
-	const unsigned int xBlock = launchIndex.x >> sysData.tileShift.x;
-	const unsigned int yBlock = launchIndex.y >> sysData.tileShift.y;
-
-	// Each device needs to start at a different column and each row should start with a different device.
-	const unsigned int xTile = xBlock * sysData.deviceCount + ((sysData.deviceIndex + yBlock) % sysData.deviceCount);
-
-	// The horizontal pixel coordinate is: tile coordinate * tile width + launch index % tile width.
-	return xTile * sysData.tileSize.x + (launchIndex.x & (sysData.tileSize.x - 1)); // tileSize needs to be power-of-two for this modulo operation.
-}
-
-extern "C" __global__ void __raygen__path_tracer_local_copy()
-{
-#if USE_TIME_VIEW
-	clock_t clockBegin = clock();
-#endif
-
-	const uint2 theLaunchIndex = make_uint2(optixGetLaunchIndex());
-	const uint2 theLaunchDim = make_uint2(optixGetLaunchDimensions()); // For multi-GPU tiling this is (resolution + deviceCount - 1) / deviceCount.
-
-	unsigned int launchRow = theLaunchIndex.y;
-	unsigned int launchColumn = theLaunchIndex.x;
-	if (sysData.deviceCount > 1) // Multi-GPU distribution required?
-	{
-		launchColumn = distribute(theLaunchIndex); // Calculate mapping from launch index to pixel index.
-		if (sysData.resolution.x <= launchColumn)  // Check if the launchColumn is outside the resolution.
-		{
-			return;
-		}
-	}
-
-	PerRayData prd;
-
-	// Initialize the random number generator seed from the linear pixel index and the iteration index.
-	prd.seed = tea<4>(launchRow * theLaunchDim.x + launchColumn, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
-
-	// Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
-	// Resolution is the actual full rendering resolution and for the single GPU strategy, theLaunchDim == resolution.
-	const float2 screen = make_float2(sysData.resolution); // == theLaunchDim for rendering strategy RS_SINGLE_GPU.
-	const float2 pixel = make_float2(launchColumn, launchRow);
-	const float2 sample = rng2(prd.seed);
-
-	// Lens shaders
-	const LensRay ray = optixDirectCall<LensRay, const float2, const float2, const float2>(sysData.typeLens, screen, pixel, sample);
-
-	prd.pos = ray.org;
-	prd.wi = ray.dir;
-
-	float3 radiance = nrcIntegrator(prd);
-
-#if USE_DEBUG_EXCEPTIONS
-	// DEBUG Highlight numerical errors.
-	if (isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z))
-	{
-		radiance = make_float3(1000000.0f, 0.0f, 0.0f); // super red
-	}
-	else if (isinf(radiance.x) || isinf(radiance.y) || isinf(radiance.z))
-	{
-		radiance = make_float3(0.0f, 1000000.0f, 0.0f); // super green
-	}
-	else if (radiance.x < 0.0f || radiance.y < 0.0f || radiance.z < 0.0f)
-	{
-		radiance = make_float3(0.0f, 0.0f, 1000000.0f); // super blue
-	}
-#else
-	// NaN values will never go away. Filter them out before they can arrive in the output buffer.
-	// This only has an effect if the debug coloring above is off!
-	if (!(isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z)))
-#endif
-	{
-		// This renderer write the results into individual launch sized local buffers and composites them in a separate native CUDA kernel.
-		const unsigned int index = theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x;
-
-#if USE_FP32_OUTPUT
-		// The texelBuffer is a CUdeviceptr to allow different formats.
-		// This is a per device launch sized buffer in this renderer strategy.
-		float4* buffer = reinterpret_cast<float4*>(sysData.texelBuffer);
-
-#if USE_TIME_VIEW
-		clock_t clockEnd = clock();
-		const float alpha = (clockEnd - clockBegin) * sysData.clockScale;
-
-		float4 result = make_float4(radiance, alpha);
-
-		if (sysData.iterationIndex > 0)
-		{
-			const float4 dst = buffer[index]; // RGBA32F
-			result = lerp(dst, result, 1.0f / float(sysData.iterationIndex + 1)); // Accumulate the alpha as well.
-		}
-		buffer[index] = result;
-#else
-		//if (sysData.iterationIndex > 0)
-		{
-			const float4& dst = buffer[index]; // RGBA32F
-			radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
-		}
-		buffer[index] = make_float4(radiance, 1.0f);
-#endif
-
-#else // if !USE_FP32_OUTPUT
-
-		Half4* buffer = reinterpret_cast<Half4*>(sysData.texelBuffer);
-
-#if USE_TIME_VIEW
-		clock_t clockEnd = clock();
-		const float alpha = (clockEnd - clockBegin) * sysData.clockScale;
-
-		if (sysData.iterationIndex > 0)
-		{
-			const float t = 1.0f / float(sysData.iterationIndex + 1);
-
-			const Half4 dst = buffer[index]; // RGBA16F
-
-			radiance.x = lerp(__half2float(dst.x), radiance.x, t);
-			radiance.y = lerp(__half2float(dst.y), radiance.y, t);
-			radiance.z = lerp(__half2float(dst.z), radiance.z, t);
-			alpha = lerp(__half2float(dst.z), alpha, t);
-		}
-		buffer[index] = make_Half4(radiance, alpha);
-#else
-		if (sysData.iterationIndex > 0)
-		{
-			const float t = 1.0f / float(sysData.iterationIndex + 1);
-
-			const Half4 dst = buffer[index]; // RGBA16F
-
-			radiance.x = lerp(__half2float(dst.x), radiance.x, t);
-			radiance.y = lerp(__half2float(dst.y), radiance.y, t);
-			radiance.z = lerp(__half2float(dst.z), radiance.z, t);
-		}
-		buffer[index] = make_Half4(radiance, 1.0f);
-#endif
-
-#endif // USE_FP32_OUTPUT
-	}
-}
-
-extern "C" __global__ void __raygen__path_tracer()
-{
-#if USE_TIME_VIEW
-	clock_t clockBegin = clock();
-#endif
-
-	const uint2 theLaunchDim = make_uint2(optixGetLaunchDimensions()); // For multi-GPU tiling this is (resolution + deviceCount - 1) / deviceCount.
-	const uint2 theLaunchIndex = make_uint2(optixGetLaunchIndex());
-
-	PerRayData prd;
-
-	// Initialize the random number generator seed from the linear pixel index and the iteration index.
-	prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
-
-	// Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
-	// Resolution is the actual full rendering resolution and for the single GPU strategy, theLaunchDim == resolution.
-	const float2 screen = make_float2(sysData.resolution); // == theLaunchDim for rendering strategy RS_SINGLE_GPU.
-	const float2 pixel = make_float2(theLaunchIndex);
-	const float2 sample = rng2(prd.seed);
-
-	// Lens shaders
-	const LensRay ray = optixDirectCall<LensRay, const float2, const float2, const float2>(sysData.typeLens, screen, pixel, sample);
-
-	prd.pos = ray.org;
-	prd.wi = ray.dir;
-
-	float3 radiance = nrcIntegrator(prd);
-
-#if USE_DEBUG_EXCEPTIONS
-	// DEBUG Highlight numerical errors.
-	if (isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z))
-	{
-		radiance = make_float3(1000000.0f, 0.0f, 0.0f); // super red
-	}
-	else if (isinf(radiance.x) || isinf(radiance.y) || isinf(radiance.z))
-	{
-		radiance = make_float3(0.0f, 1000000.0f, 0.0f); // super green
-	}
-	else if (radiance.x < 0.0f || radiance.y < 0.0f || radiance.z < 0.0f)
-	{
-		radiance = make_float3(0.0f, 0.0f, 1000000.0f); // super blue
-	}
-#else
-	// NaN values will never go away. Filter them out before they can arrive in the output buffer.
-	// This only has an effect if the debug coloring above is off!
-	if (!(isnan(radiance.x) || isnan(radiance.y) || isnan(radiance.z)))
-#endif
-	{
-		const unsigned int index = theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x;
-
-#if USE_FP32_OUTPUT
-
-		float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
-
-#if USE_TIME_VIEW
-		clock_t clockEnd = clock();
-		const float alpha = (clockEnd - clockBegin) * sysData.clockScale;
-
-		float4 result = make_float4(radiance, alpha);
-
-		if (sysData.iterationIndex > 0)
-		{
-			const float4 dst = buffer[index]; // RGBA32F
-
-			result = lerp(dst, result, 1.0f / float(sysData.iterationIndex + 1)); // Accumulate the alpha as well.
-		}
-		buffer[index] = result;
-#else // if !USE_TIME_VIEW
-		//if (sysData.iterationIndex > 0)
-		{
-			const float4& dst = buffer[index]; // RGBA32F
-			radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
-		}
-		buffer[index] = make_float4(radiance, 1.0f);
-#endif // USE_TIME_VIEW
-
-#else // if !USE_FP32_OUPUT
-
-		Half4* buffer = reinterpret_cast<Half4*>(sysData.outputBuffer);
-
-#if USE_TIME_VIEW
-		clock_t clockEnd = clock();
-		float alpha = (clockEnd - clockBegin) * sysData.clockScale;
-
-		if (sysData.iterationIndex > 0)
-		{
-			const float t = 1.0f / float(sysData.iterationIndex + 1);
-
-			const Half4 dst = buffer[index]; // RGBA16F
-
-			radiance.x = lerp(__half2float(dst.x), radiance.x, t);
-			radiance.y = lerp(__half2float(dst.y), radiance.y, t);
-			radiance.z = lerp(__half2float(dst.z), radiance.z, t);
-			alpha = lerp(__half2float(dst.z), alpha, t);
-		}
-		buffer[index] = make_Half4(radiance, alpha);
-#else // if !USE_TIME_VIEW
-		if (sysData.iterationIndex > 0)
-		{
-			const float t = 1.0f / float(sysData.iterationIndex + 1);
-
-			const Half4 dst = buffer[index]; // RGBA16F
-
-			radiance.x = lerp(__half2float(dst.x), radiance.x, t);
-			radiance.y = lerp(__half2float(dst.y), radiance.y, t);
-			radiance.z = lerp(__half2float(dst.z), radiance.z, t);
-		}
-		buffer[index] = make_Half4(radiance, 1.0f);
-#endif // USE_TIME_VIEW
-
-#endif // USE_FP32_OUTPUT
-	}
-}
-
-
-__forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
-{
-	// Discard boundary tile
-	if (launchIndex.x + sysData.tileSize.x > sysData.resolution.x ||
-		launchIndex.y + sysData.tileSize.y > sysData.resolution.y)
-	{
-		return false;
-	}
-
-	// Compute the local index within tile
-	const auto xLocal = launchIndex.x - (launchIndex.x >> sysData.tileShift.x << sysData.tileShift.x);
-	const auto yLocal = launchIndex.y - (launchIndex.y >> sysData.tileShift.y << sysData.tileShift.y);
-	const auto idxLocal = (yLocal << sysData.tileShift.x) + xLocal;
-	
-	return idxLocal == sysData.tileTrainingIndex;
 }
 
 extern "C" __global__ void __raygen__nrc_path_tracer()
@@ -655,16 +654,19 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	}
 #endif
 
-	const bool training = isTrainingRay(theLaunchIndex);
+	const bool training = ::isTrainingRay(theLaunchIndex);
+
+#if 0
 	if (training)
 	{
 		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
 		buffer[index] = { 0.0f, 1000000.0f, 0.0f, 1.0f };  // super green
 		return;
 	}
+#endif
 
 	// Lens shaders
-	const LensRay ray = optixDirectCall<LensRay, const float2, const float2, const float2>(sysData.typeLens, screen, pixel, sample);
+	const LensRay ray = optixDirectCall<LensRay>(sysData.typeLens, screen, pixel, sample);
 	prd.pos = ray.org;
 	prd.wi  = ray.dir;
 
