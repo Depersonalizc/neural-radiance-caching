@@ -765,8 +765,8 @@ std::vector<OptixModule> Device::buildModules() const
 	
 	// Create custom modules
 	char log[2048];
-	size_t sizeLog = sizeof(log);
 	for (int i = MODULE_ID_FIRST_CUSTOM; i <= MODULE_ID_LAST_CUSTOM; i++) {
+		size_t sizeLog = sizeof(log);
 		const auto programData = readData(m_moduleFilenames[i]);
 		OPTIX_CHECK(optixModuleCreateFn(m_optixContext,
 			&m_mco, &m_pco, programData.data(), programData.size(),
@@ -1828,8 +1828,15 @@ void Device::render(const unsigned int iterationIndex,
 {
 	activateContext();
 
+	// PER-FRAME: Update iteration/subframe index
 	m_systemData.iterationIndex = iterationIndex;
 	m_systemData.totalSubframeIndex = totalSubframeIndex;
+
+	// PER-FRAME: Update the training index, shared across all tiles
+	{
+		const auto tileSize = 1 << (m_systemData.tileShift.x + m_systemData.tileShift.y);
+		m_systemData.tileTrainingIndex = rand() % tileSize;
+	}
 
 	if (m_isDirtyOutputBuffer)
 	{
@@ -1914,20 +1921,21 @@ void Device::render(const unsigned int iterationIndex,
 		m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
 		m_isDirtySystemData   = true;  // Now the sysData on the device needs to be updated.
 	}
-	
-	// We simpy sync here because this NRC demo only supports interactive mode.
+
+	// We simpy sync here because this NRC demo only supports interactive mode on single device
 	synchronizeStream();
 	
-	if (m_isDirtySystemData) // Update the whole SystemData block because more than the iterationIndex changed. This normally means a GUI interaction.
+	// Update the whole SystemData block because more than per-frame data has changed. This normally means a GUI interaction.
+	if (m_isDirtySystemData)
 	{
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
 		m_isDirtySystemData = false;
 	}
-	else // Just copy the new totalSubframeIndex and iterationIndex. 
+	else // Just copy the new indices
 	{
+		static constexpr auto perFrameDataSize = sizeof(SystemData) - offsetof(SystemData, iterationIndex);
 		// NOTE This won't work for async launches, but single-frame benchmarking doesn't make sense for NRC anyway.
-		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->totalSubframeIndex), &m_systemData.totalSubframeIndex, sizeof(unsigned int), m_cudaStream));
-		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_systemData.iterationIndex, sizeof(unsigned int), m_cudaStream));
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_systemData.iterationIndex, perFrameDataSize, m_cudaStream));
 	}
 
 	// Note the launch width per device to render in tiles.
