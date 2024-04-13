@@ -84,6 +84,7 @@ struct SystemData
 	// 4 byte alignment 
 	int deviceCount;   // Number of devices doing the rendering.
 	int deviceIndex;   // Device index to be able to distinguish the individual devices in a multi-GPU environment.
+	int totalSubframeIndex;  // Added: total number of subframes, counting all iterations
 	int iterationIndex;
 	int samplesSqrt;
 	int walkLength;   // Volume scattering random walk steps until the maximum distance is used to potentially exit the volume (could be TIR).

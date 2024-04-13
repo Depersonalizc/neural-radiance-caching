@@ -445,7 +445,7 @@ public:
 
 	void activateContext() const;
 	void synchronizeStream() const;
-	void render(const unsigned int iterationIndex, void** buffer, const int mode);
+	void render(unsigned int iterationIndex, unsigned int totalSubframeIndex, void** buffer, const int mode);
 	void updateDisplayTexture();
 	const void* getOutputBufferHost();
 

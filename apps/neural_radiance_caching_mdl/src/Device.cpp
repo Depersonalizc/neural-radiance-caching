@@ -231,14 +231,6 @@ static std::vector<char> readData(std::string const& filename)
 	return data;
 }
 
-static void context_log_cb(unsigned int level,
-						   const char* tag,
-						   const char* message,
-						   void*)
-{
-	fprintf(stderr, "[%2d][%12s]: %s\n", (int)level, tag, message);
-}
-
 Device::Device(const int ordinal,
 	const int index,
 	const int count,
@@ -310,7 +302,6 @@ Device::Device(const int ordinal,
 #endif
 
 		OPTIX_CHECK(m_api.optixDeviceContextCreate(m_cudaContext, &options, &m_optixContext));
-		OPTIX_CHECK(m_api.optixDeviceContextSetLogCallback(m_optixContext, context_log_cb, nullptr, 4));
 	}
 
 	initDeviceProperties(); // OptiX, m_deviceProperty
@@ -813,7 +804,8 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 	else
 	{
 		// Use a single-GPU raygen program which doesn't need compositing.
-		pgd->raygen.entryFunctionName = "__raygen__path_tracer";
+		//pgd->raygen.entryFunctionName = "__raygen__path_tracer";
+		pgd->raygen.entryFunctionName = "__raygen__nrc_path_tracer";
 	}
 
 	// Exception
@@ -1830,11 +1822,14 @@ void Device::synchronizeStream() const
 	CU_CHECK(cuStreamSynchronize(m_cudaStream));
 }
 
-void Device::render(const unsigned int iterationIndex, void** buffer, const int mode)
+void Device::render(const unsigned int iterationIndex, 
+					const unsigned int totalSubframeIndex,
+					void** buffer, const int /*mode*/)
 {
 	activateContext();
 
 	m_systemData.iterationIndex = iterationIndex;
+	m_systemData.totalSubframeIndex = totalSubframeIndex;
 
 	if (m_isDirtyOutputBuffer)
 	{
@@ -1853,7 +1848,7 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
 			m_systemData.outputBuffer = memAlloc(sizeof(Half4) * m_systemData.resolution.x * m_systemData.resolution.y, sizeof(Half4));
 #endif
 
-			* buffer = reinterpret_cast<void*>(m_systemData.outputBuffer); // Set the pointer, so that other devices don't allocate it. It's not shared!
+			*buffer = reinterpret_cast<void*>(m_systemData.outputBuffer); // Set the pointer, so that other devices don't allocate it. It's not shared!
 
 			if (1 < m_count)
 			{
@@ -1917,25 +1912,22 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
 		}
 
 		m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
-		m_isDirtySystemData = true;  // Now the sysData on the device needs to be updated, and that needs a sync!
+		m_isDirtySystemData   = true;  // Now the sysData on the device needs to be updated.
 	}
-
-	if (m_isDirtySystemData) // Update the whole SystemData block because more than the iterationIndex changed. This normally means a GUI interaction. Just sync.
+	
+	// We simpy sync here because this NRC demo only supports interactive mode.
+	synchronizeStream();
+	
+	if (m_isDirtySystemData) // Update the whole SystemData block because more than the iterationIndex changed. This normally means a GUI interaction.
 	{
-		synchronizeStream();
-
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
 		m_isDirtySystemData = false;
 	}
-	else // Just copy the new iterationIndex.
+	else // Just copy the new totalSubframeIndex and iterationIndex. 
 	{
-		if (mode == 0) // Fully asynchronous launches ruin the interactivity. Synchronize in interactive mode.
-		{
-			synchronizeStream();
-		}
-		// PERF For really asynchronous copies of the iteration indices, multiple source pointers are required. Good that I know the number of iterations upfront!
-		// Using the m_subFrames array as source pointers. Just contains the identity of the index. Updating the device side sysData.iterationIndex from there.
-		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_subFrames[m_systemData.iterationIndex], sizeof(unsigned int), m_cudaStream));
+		// NOTE This won't work for async launches, but single-frame benchmarking doesn't make sense for NRC anyway.
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->totalSubframeIndex), &m_systemData.totalSubframeIndex, sizeof(unsigned int), m_cudaStream));
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_systemData.iterationIndex, sizeof(unsigned int), m_cudaStream));
 	}
 
 	// Note the launch width per device to render in tiles.

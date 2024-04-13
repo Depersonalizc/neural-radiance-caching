@@ -142,8 +142,9 @@ public:
 	unsigned int         m_maskDevicesActive; // The bitmask marking the actually enabled devices.
 	std::vector<std::unique_ptr<Device>> m_devicesActive;
 
-	unsigned int m_iterationIndex;  // Tracks which sub-frame is currently raytraced.
-	unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.
+	unsigned int m_totalSubframeIndex; // Tracks total number of sub-frames passed.
+	unsigned int m_iterationIndex;     // Tracks which sub-frame is currently raytraced.
+	unsigned int m_samplesPerPixel;    // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.
 
 	std::vector<unsigned int>       m_peerConnections; // Bitfield indicating peer-to-peer access between devices. Indexing is m_peerConnections[home] & (1 << peer)
 	std::vector< std::vector<int> > m_islands;         // Vector with vector of active device indices (not ordinals) building a peer-to-peer island.

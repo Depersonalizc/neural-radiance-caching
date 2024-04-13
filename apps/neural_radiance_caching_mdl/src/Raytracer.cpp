@@ -170,6 +170,7 @@ Raytracer::Raytracer(const int maskDevices,
 , m_numDevicesVisible(0)
 , m_indexDeviceOGL(-1)
 , m_maskDevicesActive(0)
+, m_totalSubframeIndex(0)
 , m_iterationIndex(0)
 , m_samplesPerPixel(1)
 {
@@ -756,18 +757,19 @@ unsigned int Raytracer::render(const int mode)
     const int index = (m_indexDeviceOGL != -1) ? m_indexDeviceOGL : 0; // Destination device.
 
     // This is the device which needs to allocate the peer-to-peer buffer to reside on the same device as the PBO or Texture
-    m_devicesActive[index]->render(m_iterationIndex, &buffer, mode); // Interactive rendering. All devices work on the same iteration index.
+    m_devicesActive[index]->render(m_iterationIndex, m_totalSubframeIndex, &buffer, mode); // Interactive rendering. All devices work on the same iteration index.
 
     for (size_t i = 0; i < m_devicesActive.size(); ++i)
     {
       if (index != static_cast<int>(i))
       {
         // If buffer is still nullptr here, the first device will allocate the full resolution buffer.
-        m_devicesActive[i]->render(m_iterationIndex, &buffer, mode);
+        m_devicesActive[i]->render(m_iterationIndex, m_totalSubframeIndex, &buffer, mode);
       }
     }
     
     ++m_iterationIndex;
+    ++m_totalSubframeIndex;
   }  
   return m_iterationIndex;
 }
