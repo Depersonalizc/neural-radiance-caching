@@ -489,12 +489,6 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
 	}
 }
 
-
-//__forceinline__ __device__ unsigned int tile(const uint2& launchIndex)
-//{
-//
-//}
-
 extern "C" __global__ void __raygen__path_tracer()
 {
 #if USE_TIME_VIEW
@@ -609,6 +603,24 @@ extern "C" __global__ void __raygen__path_tracer()
 	}
 }
 
+
+__forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
+{
+	// Discard boundary tile
+	if (launchIndex.x + sysData.tileSize.x > sysData.resolution.x ||
+		launchIndex.y + sysData.tileSize.y > sysData.resolution.y)
+	{
+		return false;
+	}
+
+	// Compute the local index within tile
+	const auto xLocal = launchIndex.x - (launchIndex.x >> sysData.tileShift.x << sysData.tileShift.x);
+	const auto yLocal = launchIndex.y - (launchIndex.y >> sysData.tileShift.y << sysData.tileShift.y);
+	const auto idxLocal = (yLocal << sysData.tileShift.x) + xLocal;
+	
+	return idxLocal == sysData.tileTrainingIndex;
+}
+
 extern "C" __global__ void __raygen__nrc_path_tracer()
 {
 #if USE_TIME_VIEW
@@ -617,6 +629,11 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 
 	const uint2 theLaunchDim   = make_uint2(optixGetLaunchDimensions());
 	const uint2 theLaunchIndex = make_uint2(optixGetLaunchIndex());
+
+#if 0
+	bool DEBUG = (theLaunchIndex.x == theLaunchDim.x / 2)
+			  && (theLaunchIndex.y == theLaunchDim.y / 2);
+#endif
 
 	PerRayData prd;
 
@@ -630,15 +647,20 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	const float2 pixel  = make_float2(theLaunchIndex);
 	const float2 sample = rng2(prd.seed);
 
+#if 0
+	if (DEBUG) 
 	{
-		// TODO: Decide whether to shoot radiance or training ray
-		// Within each tile, use a common seed (say, index of the topleft corner) to randomly get the training ray
-		// 1. Compute the LaunchIndex of the top left corner.
+		printf("Tile size: (%d, %d), train index: %d\n",
+			sysData.tileSize.x, sysData.tileSize.y, sysData.tileTrainingIndex);
+	}
+#endif
 
-		// 2. Use that to seed a tea<4> and get the index of the training ray within the tile
-
-		// 3. Compare it with own index. We are training if they match.
-
+	const bool training = isTrainingRay(theLaunchIndex);
+	if (training)
+	{
+		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
+		buffer[index] = { 0.0f, 1000000.0f, 0.0f, 1.0f };  // super green
+		return;
 	}
 
 	// Lens shaders
