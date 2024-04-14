@@ -55,7 +55,7 @@
 
 // This renderer is not implementing support for derivatives (ray differentials).
 // It only needs this Shading_state_materialy structure without derivatives support.
-typedef mi::neuraylib::Shading_state_material Mdl_state;
+using Mdl_state = mi::neuraylib::Shading_state_material;
 
 
 // DEBUG Helper code.
@@ -69,14 +69,165 @@ typedef mi::neuraylib::Shading_state_material Mdl_state;
 //thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
 //return;
 
-
 extern "C" __constant__ SystemData sysData;
+
+// Helpers
+namespace {
+
+__forceinline__ __device__ Mdl_state buildMDLState(const GeometryInstanceData &theData)
+{
+    // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
+    
+    const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
+
+    // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
+    const uint3* indices = reinterpret_cast<uint3*>(theData.indices);
+    const uint3  tri = indices[thePrimitiveIndex];
+
+    const TriangleAttributes* attributes = reinterpret_cast<const TriangleAttributes*>(theData.attributes);
+
+    const TriangleAttributes& attr0 = attributes[tri.x];
+    const TriangleAttributes& attr1 = attributes[tri.y];
+    const TriangleAttributes& attr2 = attributes[tri.z];
+
+    const float2 theBarycentrics = optixGetTriangleBarycentrics(); // .x = beta, .y = gamma
+    const float  alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;
+
+    float4 objectToWorld[3];
+    float4 worldToObject[3];
+
+    getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject); // Single instance level transformation list only.
+
+    // Object space vertex attributes at the hit point.
+    float3 po = attr0.vertex * alpha + attr1.vertex * theBarycentrics.x + attr2.vertex * theBarycentrics.y;
+    float3 ns = attr0.normal * alpha + attr1.normal * theBarycentrics.x + attr2.normal * theBarycentrics.y;
+    float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
+    float3 tg = attr0.tangent * alpha + attr1.tangent * theBarycentrics.x + attr2.tangent * theBarycentrics.y;
+
+    // Transform attributes into internal space == world space.
+    po = transformPoint(objectToWorld, po);
+    ns = normalize(transformNormal(worldToObject, ns));
+    ng = normalize(transformNormal(worldToObject, ng));
+    // This is actually the geometry tangent which for the runtime generated geometry objects
+    // (plane, box, sphere, torus) match exactly with the texture space tangent.
+    // FIXME Generate these from the triangle's texture derivatives instead, but that's more expensive.
+    // Mind that tangents and bitangents are transformed as vectors, not normals, because they lie inside the surface's plane.
+    tg = normalize(transformVector(objectToWorld, tg));
+    // Calculate an ortho-normal system respective to the shading normal.
+    // Expanding the TBN tbn(tg, ns) constructor because TBN members can't be used as pointers for the Mdl_state with NUM_TEXTURE_SPACES > 1.
+    float3 bt = normalize(cross(ns, tg));
+    tg = cross(bt, ns); // Now the tangent is orthogonal to the shading normal.
+
+    // The Mdl_state holds the texture attributes per texture space in separate arrays.
+    float3 texture_coordinates[NUM_TEXTURE_SPACES];
+    float3 texture_tangents[NUM_TEXTURE_SPACES];
+    float3 texture_bitangents[NUM_TEXTURE_SPACES];
+
+    // NUM_TEXTURE_SPACES is always at least 1.
+    texture_coordinates[0] = attr0.texcoord * alpha + attr1.texcoord * theBarycentrics.x + attr2.texcoord * theBarycentrics.y;
+    texture_bitangents[0] = bt;
+    texture_tangents[0] = tg;
+
+#if NUM_TEXTURE_SPACES == 2
+    // HACK Simply copy the vertex attributes of texture space 0, simply because there is no second texcood inside TriangleAttributes.
+    texture_coordinates[1] = texture_coordinates[0];
+    texture_bitangents[1] = bt;
+    texture_tangents[1] = tg;
+#endif 
+
+    // Setup the Mdl_state.
+    Mdl_state state;
+
+    // The result of state::normal(). It represents the shading normal as determined by the renderer.
+    // This field will be updated to the result of "geometry.normal" by the material or BSDF init functions,
+    // if requested during code generation with set_option("include_geometry_normal", true) which is the default.
+    state.normal = ns;
+
+    // The result of state::geometry_normal().
+    // It represents the geometry normal as determined by the renderer.
+    state.geom_normal = ng;
+
+    // The result of state::position().
+    // It represents the position where the material should be evaluated.
+    state.position = po;
+
+    // The result of state::animation_time().
+    // It represents the time of the current sample in seconds.
+    state.animation_time = 0.0f; // This renderer implements no support for animations.
+
+    // An array containing the results of state::texture_coordinate(i).
+    // The i-th entry represents the texture coordinates of the i-th texture space at the current position.
+    // Only one element here because "num_texture_spaces" option has been set to 1.
+    state.text_coords = texture_coordinates;
+
+    // An array containing the results of state::texture_tangent_u(i).
+    // The i-th entry represents the texture tangent vector of the i-th texture space at the
+    // current position, which points in the direction of the projection of the tangent to the
+    // positive u axis of this texture space onto the plane defined by the original surface normal.
+    state.tangent_u = texture_tangents;
+
+    // An array containing the results of state::texture_tangent_v(i).
+    // The i-th entry represents the texture bitangent vector of the i-th texture space at the
+    // current position, which points in the general direction of the positive v axis of this
+    // texture space, but is orthogonal to both the original surface normal and the tangent
+    // of this texture space.
+    state.tangent_v = texture_bitangents;
+
+    // The texture results lookup table.
+    // The size must match the backend set_option("num_texture_results") value.
+    // Values will be modified by the init functions to avoid duplicate texture fetches 
+    // and duplicate calculation of values (texture coordinate system).
+    // This implementation is using the single material init function, not the individual init per distribution function.
+    // PERF This influences how many things can be precalculated inside the init() function.
+    // If the number of result elements in this array is lower than what is required,
+    // the expressions for the remaining results will be compiled into the sample() and eval() functions
+    // which will make the compilation and runtime performance slower. 
+    float4 texture_results[NUM_TEXTURE_RESULTS];
+
+    state.text_results = texture_results;
+
+    // A pointer to a read-only data segment.
+    // For "PTX", "LLVM-IR" and "native" JIT backend.
+    // For other backends, this should be NULL.
+    state.ro_data_segment = nullptr;
+
+    // A 4x4 transformation matrix in row-major order transforming from world to object coordinates.
+    // The last row is always implied to be (0, 0, 0, 1) and does not have to be provided.
+    // It is used by the state::transform_*() methods.
+    // This field is only used if the uniform state is included.
+    state.world_to_object = worldToObject;
+
+    // A 4x4 transformation matrix in row-major order transforming from object to world coordinates.
+    // The last row is always implied to be (0, 0, 0, 1) and does not have to be provided.
+    // It is used by the state::transform_*() methods.
+    // This field is only used if the uniform state is included.
+    state.object_to_world = objectToWorld;
+
+    // The result of state::object_id().
+    // It is an application-specific identifier of the hit object as provided in a scene.
+    // It can be used to make instanced objects look different in spite of the same used material.
+    // This field is only used if the uniform state is included.
+    state.object_id = theData.ids.z; // idObject, this is the sg::Instance node ID.
+
+    // The result of state::meters_per_scene_unit().
+    // The field is only used if the "fold_meters_per_scene_unit" option is set to false.
+    // Otherwise, the value of the "meters_per_scene_unit" option will be used in the code.
+    state.meters_per_scene_unit = 1.0f;
+
+    return state;
+}
+
+
+}
 
 // This shader handles every supported feature of the renderer.
 extern "C" __global__ void __closesthit__radiance()
 {
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
     PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+    
+    const GeometryInstanceData& theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
 
     thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
 
@@ -97,9 +248,7 @@ extern "C" __global__ void __closesthit__radiance()
         ++thePrd->walk;
     }
 
-    const GeometryInstanceData theData = sysData.geometryInstanceData[optixGetInstanceId()];
-    // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
-
+#if 1
     const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
 
     // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
@@ -233,6 +382,10 @@ extern "C" __global__ void __closesthit__radiance()
     // The field is only used if the "fold_meters_per_scene_unit" option is set to false.
     // Otherwise, the value of the "meters_per_scene_unit" option will be used in the code.
     state.meters_per_scene_unit = 1.0f;
+#else  // Somehow calling buildMDLState will cause sync error here. So don't use it.
+    const auto state = buildMDLState(theData);
+    thePrd->pos = state.position;
+#endif
 
     const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
 
@@ -278,22 +431,22 @@ extern "C" __global__ void __closesthit__radiance()
     // MDL Specs: There is no emission on the back-side unless an EDF is specified with the backface field and thin_walled is set to true.
     if (isFrontFace)
     {
-        idxCallEmissionEval = shaderConfiguration.idxCallSurfaceEmissionEval;
-        idxCallEmissionIntensity = shaderConfiguration.idxCallSurfaceEmissionIntensity;
+        idxCallEmissionEval          = shaderConfiguration.idxCallSurfaceEmissionEval;
+        idxCallEmissionIntensity     = shaderConfiguration.idxCallSurfaceEmissionIntensity;
         idxCallEmissionIntensityMode = shaderConfiguration.idxCallSurfaceEmissionIntensityMode;
 
-        emission_intensity = shaderConfiguration.surface_intensity;
-        emission_intensity_mode = shaderConfiguration.surface_intensity_mode;
+        emission_intensity           = shaderConfiguration.surface_intensity;
+        emission_intensity_mode      = shaderConfiguration.surface_intensity_mode;
     }
     else if (thin_walled) // && !isFrontFace
     {
         // These can be the same callable indices if the expressions from surface and backface were identical.
-        idxCallEmissionEval = shaderConfiguration.idxCallBackfaceEmissionEval;
-        idxCallEmissionIntensity = shaderConfiguration.idxCallBackfaceEmissionIntensity;
+        idxCallEmissionEval          = shaderConfiguration.idxCallBackfaceEmissionEval;
+        idxCallEmissionIntensity     = shaderConfiguration.idxCallBackfaceEmissionIntensity;
         idxCallEmissionIntensityMode = shaderConfiguration.idxCallBackfaceEmissionIntensityMode;
 
-        emission_intensity = shaderConfiguration.backface_intensity;
-        emission_intensity_mode = shaderConfiguration.backface_intensity_mode;
+        emission_intensity           = shaderConfiguration.backface_intensity;
+        emission_intensity_mode      = shaderConfiguration.backface_intensity_mode;
     }
 
     // Check if the hit geometry contains any emission.
@@ -386,10 +539,10 @@ extern "C" __global__ void __closesthit__radiance()
 
         optixDirectCall<void>(idxCallScatteringSample, &sample_data, &state, &res_data, material.arg_block);
 
-        thePrd->wi = sample_data.k2;            // Continuation direction.
+        thePrd->wi          = sample_data.k2;            // Continuation direction.
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
-        thePrd->pdf = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
-        thePrd->eventType = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
+        thePrd->pdf         = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
+        thePrd->eventType   = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
     }
     else
     {
@@ -452,11 +605,11 @@ extern "C" __global__ void __closesthit__radiance()
                 // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval 
                 // to prevent self-intersections with the actual light geometry in the scene.
                 optixTrace(sysData.topObject,
-                    thePrd->pos, lightSample.direction, // origin, direction
-                    sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                    OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                    TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                    p0, p1); // Pass through thePrd to the shadow ray.
+                           thePrd->pos, lightSample.direction, // origin, direction
+                           sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                           p0, p1); // Pass through thePrd to the shadow ray.
 
                 if ((thePrd->flags & FLAG_SHADOW) == 0) // Shadow flag not set?
                 {
@@ -497,11 +650,11 @@ extern "C" __global__ void __closesthit__radiance()
 
             const int idx = min(thePrd->idxStack + 1, MATERIAL_STACK_LAST); // Push current medium parameters.
 
-            thePrd->idxStack = idx;
-            thePrd->stack[idx].ior = ior;
+            thePrd->idxStack           = idx;
+            thePrd->stack[idx].ior     = ior;
             thePrd->stack[idx].sigma_a = absorption;
             thePrd->stack[idx].sigma_s = scattering;
-            thePrd->stack[idx].bias = bias;
+            thePrd->stack[idx].bias    = bias;
 
             thePrd->sigma_t = absorption + scattering; // Update the current extinction coefficient.
         }
@@ -544,9 +697,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         ++thePrd->walk;
     }
 
-    const GeometryInstanceData theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
     // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
 
+#if 0
     const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
 
     // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
@@ -616,6 +770,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     state.object_to_world = objectToWorld;
     state.object_id = theData.ids.z;
     state.meters_per_scene_unit = 1.0f;
+#else
+    const auto state = buildMDLState(theData);
+    thePrd->pos = state.position;
+#endif
 
     const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
 
@@ -699,10 +857,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
         optixDirectCall<void>(idxCallScatteringSample, &sample_data, &state, &res_data, material.arg_block);
 
-        thePrd->wi = sample_data.k2;            // Continuation direction.
+        thePrd->wi          = sample_data.k2;            // Continuation direction.
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
-        thePrd->pdf = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
-        thePrd->eventType = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
+        thePrd->pdf         = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
+        thePrd->eventType   = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
     }
     else
     {
@@ -765,11 +923,11 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                 // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval 
                 // to prevent self-intersections with the actual light geometry in the scene.
                 optixTrace(sysData.topObject,
-                    thePrd->pos, lightSample.direction, // origin, direction
-                    sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                    OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                    TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                    p0, p1); // Pass through thePrd to the shadow ray.
+                           thePrd->pos, lightSample.direction, // origin, direction
+                           sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                           p0, p1); // Pass through thePrd to the shadow ray.
 
                 if ((thePrd->flags & FLAG_SHADOW) == 0) // Shadow flag not set?
                 {
@@ -810,11 +968,11 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
             const int idx = min(thePrd->idxStack + 1, MATERIAL_STACK_LAST); // Push current medium parameters.
 
-            thePrd->idxStack = idx;
-            thePrd->stack[idx].ior = ior;
+            thePrd->idxStack           = idx;
+            thePrd->stack[idx].ior     = ior;
             thePrd->stack[idx].sigma_a = absorption;
             thePrd->stack[idx].sigma_s = scattering;
-            thePrd->stack[idx].bias = bias;
+            thePrd->stack[idx].bias    = bias;
 
             thePrd->sigma_t = absorption + scattering; // Update the current extinction coefficient.
         }
@@ -835,91 +993,65 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 // One anyhit program for the radiance ray for all materials with cutout opacity!
 extern "C" __global__ void __anyhit__radiance_cutout()
 {
-    const GeometryInstanceData theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    PerRayData &thePrd = *mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
-    // Cast the CUdeviceptr to the actual format for Triangles geometry.
-    const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
+    const Mdl_state state = ::buildMDLState(theData);
 
-    const uint3* indices = reinterpret_cast<uint3*>(theData.indices);
-    const uint3  tri = indices[thePrimitiveIndex];
-
-    const TriangleAttributes* attributes = reinterpret_cast<const TriangleAttributes*>(theData.attributes);
-
-    const TriangleAttributes& attr0 = attributes[tri.x];
-    const TriangleAttributes& attr1 = attributes[tri.y];
-    const TriangleAttributes& attr2 = attributes[tri.z];
-
-    const float2 theBarycentrics = optixGetTriangleBarycentrics(); // beta and gamma
-    const float  alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;
-
-    float4 objectToWorld[3];
-    float4 worldToObject[3];
-
-    getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject); // Single instance level transformation list only.
-
-    // Object space vertex attributes at the hit point.
-    float3 po = attr0.vertex * alpha + attr1.vertex * theBarycentrics.x + attr2.vertex * theBarycentrics.y;
-    float3 ns = attr0.normal * alpha + attr1.normal * theBarycentrics.x + attr2.normal * theBarycentrics.y;
-    float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
-    float3 tg = attr0.tangent * alpha + attr1.tangent * theBarycentrics.x + attr2.tangent * theBarycentrics.y;
-
-    // Transform attributes into internal space == world space.
-    po = transformPoint(objectToWorld, po);
-    ns = normalize(transformNormal(worldToObject, ns));
-    ng = normalize(transformNormal(worldToObject, ng));
-    // This is actually the geometry tangent which for the runtime generated geometry objects
-    // (plane, box, sphere, torus) match exactly with the texture space tangent.
-    // FIXME Generate these from the triangle's texture derivatives instead, but that's more expensive.
-    // Mind that tangents and bitangents are transformed as vectors, not normals, because they lie inside the surface's plane.
-    tg = normalize(transformVector(objectToWorld, tg));
-    // Calculate an ortho-normal system respective to the shading normal.
-    // Expanding the TBN tbn(tg, ns) constructor because TBN members can't be used as pointers for the Mdl_state with NUM_TEXTURE_SPACES > 1.
-    float3 bt = normalize(cross(ns, tg));
-    tg = cross(bt, ns); // Now the tangent is orthogonal to the shading normal.
-
-    // The Mdl_state holds the texture attributes per texture space in separate arrays.
-    float3 texture_coordinates[NUM_TEXTURE_SPACES];
-    float3 texture_tangents[NUM_TEXTURE_SPACES];
-    float3 texture_bitangents[NUM_TEXTURE_SPACES];
-
-    // NUM_TEXTURE_SPACES is always at least 1.
-    texture_coordinates[0] = attr0.texcoord * alpha + attr1.texcoord * theBarycentrics.x + attr2.texcoord * theBarycentrics.y;
-    texture_bitangents[0] = bt;
-    texture_tangents[0] = tg;
-
-#if NUM_TEXTURE_SPACES == 2
-    // HACK Copy the vertex attributes of texture space 0, simply because there is no second texcoord inside TriangleAttributes.
-    texture_coordinates[1] = texture_coordinates[0];
-    texture_bitangents[1] = bt;
-    texture_tangents[1] = tg;
-#endif 
-
-    // Setup the Mdl_state.
-    Mdl_state state;
-
-    float4 texture_results[NUM_TEXTURE_RESULTS];
-
-    // For explanations of these fields see comments inside __closesthit__radiance above.
-    state.normal = ns;
-    state.geom_normal = ng;
-    state.position = po;
-    state.animation_time = 0.0f;
-    state.text_coords = texture_coordinates;
-    state.tangent_u = texture_tangents;
-    state.tangent_v = texture_bitangents;
-    state.text_results = texture_results;
-    state.ro_data_segment = nullptr;
-    state.world_to_object = worldToObject;
-    state.object_to_world = objectToWorld;
-    state.object_id = theData.ids.z;
-    state.meters_per_scene_unit = 1.0f;
-
-    const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
+    const MaterialDefinitionMDL &material = sysData.materialDefinitionsMDL[theData.ids.x];
 
     mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
 
     // The cutout opacity value needs to be determined based on the ShaderConfiguration data and geometry.cutout expression when needed.
-    const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
+    const DeviceShaderConfiguration &shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
+
+    // Using a single material init function instead of per distribution init functions.
+    // PERF See how that affects cutout opacity which only needs the geometry.cutout expression.
+    float opacity = shaderConfiguration.cutout_opacity;
+    if (0 <= shaderConfiguration.idxCallGeometryCutoutOpacity)
+    {
+        // This is always present, even if it just returns.
+        optixDirectCall<void>(shaderConfiguration.idxCallInit, &state, &res_data, material.arg_block);
+
+        opacity = optixDirectCall<float>(shaderConfiguration.idxCallGeometryCutoutOpacity, &state, &res_data, material.arg_block);
+    }
+
+    // Stochastic alpha test to get an alpha blend effect.
+    // No need to calculate an expensive random number if the test is going to fail anyway.
+    if (opacity < 1.0f && opacity <= rng(thePrd.seed))
+    {
+        optixIgnoreIntersection();
+    }
+}
+
+
+// The shadow ray program for all materials with no cutout opacity.
+// Just set ray FLAG_SHADOW and go to CH.
+extern "C" __global__ void __anyhit__shadow()
+{
+    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+
+    // Always set payload values before calling optixIgnoreIntersection or optixTerminateRay because they return immediately!
+    thePrd->flags |= FLAG_SHADOW; // Visbility check failed.
+
+    optixTerminateRay();
+}
+
+// The shadow ray program for all materials with cutout opacity.
+// Stocastically set ray FLAG_SHADOW and go to CH, or continue the ray.
+extern "C" __global__ void __anyhit__shadow_cutout()
+{
+    const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    PerRayData &thePrd = *mergePointer(optixGetPayload_0(), optixGetPayload_1());
+
+    const Mdl_state state = ::buildMDLState(theData);
+
+    const MaterialDefinitionMDL &material = sysData.materialDefinitionsMDL[theData.ids.x];
+
+    mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
+
+    // The cutout opacity value needs to be determined based on the ShaderConfiguration data and geometry.cutout expression when needed.
+    const DeviceShaderConfiguration &shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
 
     // Using a single material init function instead of per distribution init functions.
     // PERF See how that affects cutout opacity which only needs the geometry.cutout expression.
@@ -933,138 +1065,16 @@ extern "C" __global__ void __anyhit__radiance_cutout()
         opacity = optixDirectCall<float>(shaderConfiguration.idxCallGeometryCutoutOpacity, &state, &res_data, material.arg_block);
     }
 
-    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
-
     // Stochastic alpha test to get an alpha blend effect.
     // No need to calculate an expensive random number if the test is going to fail anyway.
-    if (opacity < 1.0f && opacity <= rng(thePrd->seed))
-    {
-        optixIgnoreIntersection();
-    }
-}
-
-
-// The shadow ray program for all materials with no cutout opacity.
-extern "C" __global__ void __anyhit__shadow()
-{
-    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
-
-    // Always set payload values before calling optixIgnoreIntersection or optixTerminateRay because they return immediately!
-    thePrd->flags |= FLAG_SHADOW; // Visbility check failed.
-
-    optixTerminateRay();
-}
-
-
-extern "C" __global__ void __anyhit__shadow_cutout() // For the radiance ray type.
-{
-    const GeometryInstanceData theData = sysData.geometryInstanceData[optixGetInstanceId()];
-
-    const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
-
-    const uint3* indices = reinterpret_cast<uint3*>(theData.indices);
-    const uint3  tri = indices[thePrimitiveIndex];
-
-    // Cast the CUdeviceptr to the actual format for Triangles geometry.
-    const TriangleAttributes* attributes = reinterpret_cast<const TriangleAttributes*>(theData.attributes);
-
-    const TriangleAttributes& attr0 = attributes[tri.x];
-    const TriangleAttributes& attr1 = attributes[tri.y];
-    const TriangleAttributes& attr2 = attributes[tri.z];
-
-    const float2 theBarycentrics = optixGetTriangleBarycentrics(); // beta and gamma
-    const float  alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;
-
-    float4 objectToWorld[3];
-    float4 worldToObject[3];
-
-    getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject); // Single instance level transformation list only.
-
-    // Object space vertex attributes at the hit point.
-    float3 po = attr0.vertex * alpha + attr1.vertex * theBarycentrics.x + attr2.vertex * theBarycentrics.y;
-    float3 ns = attr0.normal * alpha + attr1.normal * theBarycentrics.x + attr2.normal * theBarycentrics.y;
-    float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
-    float3 tg = attr0.tangent * alpha + attr1.tangent * theBarycentrics.x + attr2.tangent * theBarycentrics.y;
-
-    // Transform attributes into internal space == world space.
-    po = transformPoint(objectToWorld, po);
-    ns = normalize(transformNormal(worldToObject, ns));
-    ng = normalize(transformNormal(worldToObject, ng));
-    // This is actually the geometry tangent which for the runtime generated geometry objects
-    // (plane, box, sphere, torus) match exactly with the texture space tangent.
-    // FIXME Generate these from the triangle's texture derivatives instead, but that's more expensive.
-    // Mind that tangents and bitangents are transformed as vectors, not normals, because they lie inside the surface's plane.
-    tg = normalize(transformVector(objectToWorld, tg));
-    // Calculate an ortho-normal system respective to the shading normal.
-    // Expanding the TBN tbn(tg, ns) constructor because TBN members can't be used as pointers for the Mdl_state with NUM_TEXTURE_SPACES > 1.
-    float3 bt = normalize(cross(ns, tg));
-    tg = cross(bt, ns); // Now the tangent is orthogonal to the shading normal.
-
-    // The Mdl_state holds the texture attributes per texture space in separate arrays.
-    float3 texture_coordinates[NUM_TEXTURE_SPACES];
-    float3 texture_tangents[NUM_TEXTURE_SPACES];
-    float3 texture_bitangents[NUM_TEXTURE_SPACES];
-
-    // NUM_TEXTURE_SPACES is always at least 1.
-    texture_coordinates[0] = attr0.texcoord * alpha + attr1.texcoord * theBarycentrics.x + attr2.texcoord * theBarycentrics.y;
-    texture_bitangents[0] = bt;
-    texture_tangents[0] = tg;
-
-#if NUM_TEXTURE_SPACES == 2
-    // HACK Copy the vertex attributes of texture space 0, simply because there is no second texcoord inside TriangleAttributes.
-    texture_coordinates[1] = texture_coordinates[0];
-    texture_bitangents[1] = bt;
-    texture_tangents[1] = tg;
-#endif 
-
-    // Setup the Mdl_state.
-    Mdl_state state;
-
-    float4 texture_results[NUM_TEXTURE_RESULTS];
-
-    // For explanations of these fields see comments inside __closesthit__radiance above.
-    state.normal = ns;
-    state.geom_normal = ng;
-    state.position = po;
-    state.animation_time = 0.0f;
-    state.text_coords = texture_coordinates;
-    state.tangent_u = texture_tangents;
-    state.tangent_v = texture_bitangents;
-    state.text_results = texture_results;
-    state.ro_data_segment = nullptr;
-    state.world_to_object = worldToObject;
-    state.object_to_world = objectToWorld;
-    state.object_id = theData.ids.z;
-    state.meters_per_scene_unit = 1.0f;
-
-    const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
-
-    mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
-
-    // The cutout opacity value needs to be determined based on the ShaderConfiguration data and geometry.cutout expression when needed.
-    const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
-
-    float opacity = shaderConfiguration.cutout_opacity;
-
-    if (0 <= shaderConfiguration.idxCallGeometryCutoutOpacity)
-    {
-        optixDirectCall<void>(shaderConfiguration.idxCallInit, &state, &res_data, material.arg_block);
-
-        opacity = optixDirectCall<float>(shaderConfiguration.idxCallGeometryCutoutOpacity, &state, &res_data, material.arg_block);
-    }
-
-    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
-
-    // Stochastic alpha test to get an alpha blend effect.
-    // No need to calculate an expensive random number if the test is going to fail anyway.
-    if (opacity < 1.0f && opacity <= rng(thePrd->seed))
+    if (opacity < 1.0f && opacity <= rng(thePrd.seed))
     {
         optixIgnoreIntersection();
     }
     else
     {
         // Always set payload values before calling optixIgnoreIntersection or optixTerminateRay because they return immediately!
-        thePrd->flags |= FLAG_SHADOW;
+        thePrd.flags |= FLAG_SHADOW;
 
         optixTerminateRay();
     }
@@ -1438,17 +1448,17 @@ extern "C" __global__ void __closesthit__curves()
         int idx = thePrd->idxStack;
 
         // FIXME The MDL-SDK libbsdf_hair.h ignores these ior values and only uses the ior value from the chiang_hair_bsdf structure!
-        sample_data.ior1 = thePrd->stack[idx].ior;             // From surrounding medium ior
+        sample_data.ior1   = thePrd->stack[idx].ior;             // From surrounding medium ior
         sample_data.ior2.x = MI_NEURAYLIB_BSDF_USE_MATERIAL_IOR; // to material ior.
-        sample_data.k1 = thePrd->wo;                         // == -optixGetWorldRayDirection()
-        sample_data.xi = rng4(thePrd->seed);
+        sample_data.k1     = thePrd->wo;                         // == -optixGetWorldRayDirection()
+        sample_data.xi     = rng4(thePrd->seed);
 
         optixDirectCall<void>(shaderConfiguration.idxCallHairSample, &sample_data, &state, &res_data, material.arg_block);
 
-        thePrd->wi = sample_data.k2;            // Continuation direction.
+        thePrd->wi          = sample_data.k2;            // Continuation direction.
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
-        thePrd->pdf = sample_data.pdf;           // Specular events return pdf == 0.0f!
-        thePrd->eventType = sample_data.event_type;    // This replaces the previous PRD flags.
+        thePrd->pdf         = sample_data.pdf;           // Specular events return pdf == 0.0f!
+        thePrd->eventType   = sample_data.event_type;    // This replaces the previous PRD flags.
     }
     else
     {
@@ -1479,10 +1489,10 @@ extern "C" __global__ void __closesthit__curves()
             int idx = thePrd->idxStack;
 
             // DAR FIXME The MDL-SDK libbsdf_hair.h ignores these values and only uses the ior value from the chiang_hair-bsdf structure!
-            eval_data.ior1 = thePrd->stack[idx].ior;             // From surrounding medium ior
+            eval_data.ior1   = thePrd->stack[idx].ior;             // From surrounding medium ior
             eval_data.ior2.x = MI_NEURAYLIB_BSDF_USE_MATERIAL_IOR; // to material ior.
-            eval_data.k1 = thePrd->wo;
-            eval_data.k2 = lightSample.direction;
+            eval_data.k1     = thePrd->wo;
+            eval_data.k2     = lightSample.direction;
 
             optixDirectCall<void>(shaderConfiguration.idxCallHairEval, &eval_data, &state, &res_data, material.arg_block);
 
@@ -1501,11 +1511,11 @@ extern "C" __global__ void __closesthit__curves()
                 // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval 
                 // to prevent self-intersections with the actual light geometry in the scene.
                 optixTrace(sysData.topObject,
-                    thePrd->pos, lightSample.direction, // origin, direction
-                    sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                    OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                    TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                    p0, p1); // Pass through thePrd to the shadow ray.
+                           thePrd->pos, lightSample.direction, // origin, direction
+                           sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                           p0, p1); // Pass through thePrd to the shadow ray.
 
                 if ((thePrd->flags & FLAG_SHADOW) == 0) // Shadow flag not set?
                 {
