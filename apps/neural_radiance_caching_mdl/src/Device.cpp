@@ -1943,8 +1943,6 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_systemData.iterationIndex, perFrameDataSize, m_cudaStream));
 	}
 
-	synchronizeStream();
-
 	// Note the launch width per device to render in tiles.
 	const auto res_ = m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1);
 	OPTIX_CHECK(res_);
