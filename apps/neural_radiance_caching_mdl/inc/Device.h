@@ -410,13 +410,13 @@ class Device
 {
 public:
 	Device(const int ordinal,       // The original CUDA ordinal ID.
-		const int index,         // The zero based index of this device, required for multi-GPU work distribution.
-		const int count,        // The number of active devices, required for multi-GPU work distribution.
-		const TypeLight typeEnv, // Controls which miss shader to use.
-		const int interop,       // The interop mode to use.
-		const unsigned int tex,  // OpenGL HDR texture object handle
-		const unsigned int pbo,  // OpenGL PBO handle.
-		const size_t sizeArena); // The default Arena size in mega-bytes.
+		   const int index,         // The zero based index of this device, required for multi-GPU work distribution.
+		   const int count,         // The number of active devices, required for multi-GPU work distribution.
+		   const TypeLight typeEnv, // Controls which miss shader to use.
+		   const int interop,       // The interop mode to use.
+		   const unsigned int tex,  // OpenGL HDR texture object handle
+		   const unsigned int pbo,  // OpenGL PBO handle.
+		   const size_t sizeArena); // The default Arena size in mega-bytes.
 	~Device();
 
 	bool matchUUID(const char* uuid);

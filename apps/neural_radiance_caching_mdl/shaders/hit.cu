@@ -226,7 +226,7 @@ extern "C" __global__ void __closesthit__radiance()
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
     PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
     
-    const GeometryInstanceData& theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
     // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
 
     thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
@@ -382,7 +382,7 @@ extern "C" __global__ void __closesthit__radiance()
     // The field is only used if the "fold_meters_per_scene_unit" option is set to false.
     // Otherwise, the value of the "meters_per_scene_unit" option will be used in the code.
     state.meters_per_scene_unit = 1.0f;
-#else  // Somehow calling buildMDLState will cause sync error here. So don't use it.
+#else  // Somehow calling buildMDLState here will cause a sync error. So don't use it.
     const auto state = buildMDLState(theData);
     thePrd->pos = state.position;
 #endif
@@ -419,73 +419,76 @@ extern "C" __global__ void __closesthit__radiance()
         ior = optixDirectCall<float3>(shaderConfiguration.idxCallIor, &state, &res_data, material.arg_block);
     }
 
-    // Handle optional surface and backface emission expressions.
-    // Default to no EDF.
-    int idxCallEmissionEval = -1;
-    int idxCallEmissionIntensity = -1;
-    int idxCallEmissionIntensityMode = -1;
-    // These are not used when there is no emission, no need to initialize.
-    float3 emission_intensity;
-    int    emission_intensity_mode;
-
-    // MDL Specs: There is no emission on the back-side unless an EDF is specified with the backface field and thin_walled is set to true.
-    if (isFrontFace)
+    // Add emitted radiance
     {
-        idxCallEmissionEval          = shaderConfiguration.idxCallSurfaceEmissionEval;
-        idxCallEmissionIntensity     = shaderConfiguration.idxCallSurfaceEmissionIntensity;
-        idxCallEmissionIntensityMode = shaderConfiguration.idxCallSurfaceEmissionIntensityMode;
+        // Handle optional surface and backface emission expressions.
+        // Default to no EDF.
+        int idxCallEmissionEval = -1;
+        int idxCallEmissionIntensity = -1;
+        int idxCallEmissionIntensityMode = -1;
+        // These are not used when there is no emission, no need to initialize.
+        float3 emission_intensity;
+        int    emission_intensity_mode;
 
-        emission_intensity           = shaderConfiguration.surface_intensity;
-        emission_intensity_mode      = shaderConfiguration.surface_intensity_mode;
-    }
-    else if (thin_walled) // && !isFrontFace
-    {
-        // These can be the same callable indices if the expressions from surface and backface were identical.
-        idxCallEmissionEval          = shaderConfiguration.idxCallBackfaceEmissionEval;
-        idxCallEmissionIntensity     = shaderConfiguration.idxCallBackfaceEmissionIntensity;
-        idxCallEmissionIntensityMode = shaderConfiguration.idxCallBackfaceEmissionIntensityMode;
-
-        emission_intensity           = shaderConfiguration.backface_intensity;
-        emission_intensity_mode      = shaderConfiguration.backface_intensity_mode;
-    }
-
-    // Check if the hit geometry contains any emission.
-    if (0 <= idxCallEmissionEval)
-    {
-        if (0 <= idxCallEmissionIntensity) // Emission intensity is not a constant.
+        // MDL Specs: There is no emission on the back-side unless an EDF is specified with the backface field and thin_walled is set to true.
+        if (isFrontFace)
         {
-            emission_intensity = optixDirectCall<float3>(idxCallEmissionIntensity, &state, &res_data, material.arg_block);
+            idxCallEmissionEval = shaderConfiguration.idxCallSurfaceEmissionEval;
+            idxCallEmissionIntensity = shaderConfiguration.idxCallSurfaceEmissionIntensity;
+            idxCallEmissionIntensityMode = shaderConfiguration.idxCallSurfaceEmissionIntensityMode;
+
+            emission_intensity = shaderConfiguration.surface_intensity;
+            emission_intensity_mode = shaderConfiguration.surface_intensity_mode;
         }
-        if (0 <= idxCallEmissionIntensityMode) // Emission intensity mode is not a constant.
+        else if (thin_walled) // && !isFrontFace
         {
-            emission_intensity_mode = optixDirectCall<int>(idxCallEmissionIntensityMode, &state, &res_data, material.arg_block);
+            // These can be the same callable indices if the expressions from surface and backface were identical.
+            idxCallEmissionEval = shaderConfiguration.idxCallBackfaceEmissionEval;
+            idxCallEmissionIntensity = shaderConfiguration.idxCallBackfaceEmissionIntensity;
+            idxCallEmissionIntensityMode = shaderConfiguration.idxCallBackfaceEmissionIntensityMode;
+
+            emission_intensity = shaderConfiguration.backface_intensity;
+            emission_intensity_mode = shaderConfiguration.backface_intensity_mode;
         }
-        if (isNotNull(emission_intensity))
+
+        // Check if the hit geometry contains any emission.
+        if (0 <= idxCallEmissionEval)
         {
-            mi::neuraylib::Edf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
-
-            eval_data.k1 = thePrd->wo; // input: outgoing direction (-ray.direction)
-            //eval_data.cos : output: dot(normal, k1)
-            //eval_data.edf : output: edf
-            //eval_data.pdf : output: pdf (non-projected hemisphere)
-
-            optixDirectCall<void>(idxCallEmissionEval, &eval_data, &state, &res_data, material.arg_block);
-
-            const float area = sysData.lightDefinitions[theData.ids.y].area; // This must be a mesh light, and then it has a valid idLight.
-
-            eval_data.pdf = thePrd->distance * thePrd->distance / (area * eval_data.cos); // Solid angle measure.
-
-            float weightMIS = 1.0f;
-            // If the last event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
-            if (sysData.directLighting && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
+            if (0 <= idxCallEmissionIntensity) // Emission intensity is not a constant.
             {
-                weightMIS = balanceHeuristic(thePrd->pdf, eval_data.pdf);
+                emission_intensity = optixDirectCall<float3>(idxCallEmissionIntensity, &state, &res_data, material.arg_block);
             }
+            if (0 <= idxCallEmissionIntensityMode) // Emission intensity mode is not a constant.
+            {
+                emission_intensity_mode = optixDirectCall<int>(idxCallEmissionIntensityMode, &state, &res_data, material.arg_block);
+            }
+            if (isNotNull(emission_intensity))
+            {
+                mi::neuraylib::Edf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
 
-            // Power (flux) [W] divided by light area gives radiant exitance [W/m^2].
-            const float factor = (emission_intensity_mode == 0) ? 1.0f : 1.0f / area;
+                eval_data.k1 = thePrd->wo; // input: outgoing direction (-ray.direction)
+                //eval_data.cos : output: dot(normal, k1)
+                //eval_data.edf : output: edf
+                //eval_data.pdf : output: pdf (non-projected hemisphere)
 
-            thePrd->radiance += thePrd->throughput * emission_intensity * eval_data.edf * (factor * weightMIS);
+                optixDirectCall<void>(idxCallEmissionEval, &eval_data, &state, &res_data, material.arg_block);
+
+                const float area = sysData.lightDefinitions[theData.ids.y].area; // This must be a mesh light, and then it has a valid idLight.
+
+                eval_data.pdf = thePrd->distance * thePrd->distance / (area * eval_data.cos); // Solid angle measure.
+
+                float weightMIS = 1.0f;
+                // If the last event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
+                if (sysData.directLighting && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
+                {
+                    weightMIS = balanceHeuristic(thePrd->pdf, eval_data.pdf);
+                }
+
+                // Power (flux) [W] divided by light area gives radiant exitance [W/m^2].
+                const float factor = (emission_intensity_mode == 0) ? 1.0f : 1.0f / area;
+
+                thePrd->radiance += thePrd->throughput * emission_intensity * eval_data.edf * (factor * weightMIS);
+            }
         }
     }
 
@@ -990,7 +993,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 }
 
 
-// One anyhit program for the radiance ray for all materials with cutout opacity!
+// The anyhit program for the radiance ray for all materials with cutout opacity.
+// Stocastically continue the ray (passes through), or otherwise go to CH.
 extern "C" __global__ void __anyhit__radiance_cutout()
 {
     const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
@@ -1020,13 +1024,13 @@ extern "C" __global__ void __anyhit__radiance_cutout()
     // No need to calculate an expensive random number if the test is going to fail anyway.
     if (opacity < 1.0f && opacity <= rng(thePrd.seed))
     {
-        optixIgnoreIntersection();
+        optixIgnoreIntersection(); // Continue the ray
     }
 }
 
 
 // The shadow ray program for all materials with no cutout opacity.
-// Just set ray FLAG_SHADOW and go to CH.
+// Just set ray FLAG_SHADOW and return to CH.
 extern "C" __global__ void __anyhit__shadow()
 {
     PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
@@ -1038,7 +1042,7 @@ extern "C" __global__ void __anyhit__shadow()
 }
 
 // The shadow ray program for all materials with cutout opacity.
-// Stocastically set ray FLAG_SHADOW and go to CH, or continue the ray.
+// Stocastically set ray FLAG_SHADOW and return to CH, or continue the ray (passes through).
 extern "C" __global__ void __anyhit__shadow_cutout()
 {
     const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
@@ -1069,7 +1073,7 @@ extern "C" __global__ void __anyhit__shadow_cutout()
     // No need to calculate an expensive random number if the test is going to fail anyway.
     if (opacity < 1.0f && opacity <= rng(thePrd.seed))
     {
-        optixIgnoreIntersection();
+        optixIgnoreIntersection(); // Continue the ray
     }
     else
     {

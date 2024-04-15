@@ -1819,7 +1819,9 @@ void Device::activateContext() const
 
 void Device::synchronizeStream() const
 {
-	CU_CHECK(cuStreamSynchronize(m_cudaStream));
+	const auto res_ = cuStreamSynchronize(m_cudaStream);
+	CU_CHECK(res_);
+	//CU_CHECK(cuStreamSynchronize(m_cudaStream));
 }
 
 void Device::render(const unsigned int iterationIndex, 
@@ -1925,13 +1927,12 @@ void Device::render(const unsigned int iterationIndex,
 	// We simpy sync here because this NRC demo only supports interactive mode on single device
 	synchronizeStream();
 	
-	// Update the whole SystemData block because more than per-frame data has changed. This normally means a GUI interaction.
-	if (m_isDirtySystemData)
+	if (m_isDirtySystemData) // Update the whole SystemData block because more than per-frame data has changed. This normally means a GUI interaction.
 	{
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
 		m_isDirtySystemData = false;
 	}
-	else // Just copy the new indices
+	else // Just copy the per-frame data
 	{
 		static constexpr auto perFrameDataSize = sizeof(SystemData) - offsetof(SystemData, iterationIndex);
 		// NOTE This won't work for async launches, but single-frame benchmarking doesn't make sense for NRC anyway.

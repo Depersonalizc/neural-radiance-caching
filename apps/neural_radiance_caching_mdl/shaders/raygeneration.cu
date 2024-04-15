@@ -498,7 +498,7 @@ __forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
 	return idxLocal == sysData.tileTrainingIndex;
 }
 
-#define VOLUME_RENDER 0
+#define VOLUME_RENDER 1
 __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 {
 	// The integrator starts with black radiance and full path throughput.
@@ -533,8 +533,10 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 		prd.wo       = -prd.wi;        // Direction to observer.
 		prd.distance = RT_DEFAULT_MAX; // Shoot the next ray with maximum length.
 		prd.flags    = 0;              // reset flags
+		prd.depth    = depth;
 
 		// Special cases for volume scattering!
+		// Set ray FLAG_VOLUME_SCATTERING and optionally tmax
 #if VOLUME_RENDER
 		if (prd.idxStack > 0) // Inside a volume?
 		{
@@ -568,6 +570,10 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 #endif
 
 		// Note that the primary rays and volume scattering miss cases do not offset the ray t_min by sysSceneEpsilon.
+		// Updated: prd.radiance, .throughput, .flags, .eventType (for BSDF importance sampling)
+		//             .pos, .distance
+		//             .wi (next ray)
+		//             .stack, .idxStack
 		optixTrace(sysData.topObject,
 				   prd.pos, prd.wi, // origin, direction
 				   epsilon, prd.distance, 0.0f, // tmin, tmax, time
@@ -656,7 +662,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 
 	const bool training = ::isTrainingRay(theLaunchIndex);
 
-#if 0
+#if 1
 	if (training)
 	{
 		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
