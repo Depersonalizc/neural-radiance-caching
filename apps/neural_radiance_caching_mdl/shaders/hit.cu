@@ -248,7 +248,7 @@ extern "C" __global__ void __closesthit__radiance()
         ++thePrd->walk;
     }
 
-#if 1
+#if 0
     const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
 
     // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
@@ -382,7 +382,7 @@ extern "C" __global__ void __closesthit__radiance()
     // The field is only used if the "fold_meters_per_scene_unit" option is set to false.
     // Otherwise, the value of the "meters_per_scene_unit" option will be used in the code.
     state.meters_per_scene_unit = 1.0f;
-#else  // Somehow calling buildMDLState here will cause a sync error. So don't use it.
+#else
     const auto state = buildMDLState(theData);
     thePrd->pos = state.position;
 #endif

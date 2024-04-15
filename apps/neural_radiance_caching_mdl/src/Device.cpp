@@ -717,8 +717,12 @@ void Device::initPipeline()
 	// Set pipeline stack sizes
 	const auto pss = estimatePipelineStackSizes(programGroups);
 	OPTIX_CHECK(m_api.optixPipelineSetStackSize(m_pipeline,
-		pss.directCallableStackSizeFromTraversal,
-		pss.directCallableStackSizeFromState,
+		pss.directCallableStackSizeFromTraversal
+			* 2  // This shouldn't be necessary, but doing so fixes some device memory issues we had.
+		,
+		pss.directCallableStackSizeFromState 
+			* 2  // This shouldn't be necessary, but doing so fixes some device memory issues we had.
+		,
 		pss.continuationStackSize,
 		pss.maxTraversableGraphDepth
 	));
@@ -1017,7 +1021,7 @@ PipelineStackSizes Device::estimatePipelineStackSizes(const std::vector<OptixPro
 	// Arguments
 	return {
 		.directCallableStackSizeFromTraversal = ssMax.dssDC, // maxDCDepth == 1 // FromTraversal: DC is invoked from IS or AH.      // Possible stack size optimizations.
-		.directCallableStackSizeFromState = ssMax.dssDC, // maxDCDepth == 1 // FromState:     DC is invoked from RG, MS, or CH. // Possible stack size optimizations.
+		.directCallableStackSizeFromState     = ssMax.dssDC, // maxDCDepth == 1 // FromState:     DC is invoked from RG, MS, or CH. // Possible stack size optimizations.
 		.continuationStackSize =
 			ssMax.cssRG + cssCCTree + cssCHOrMSPlusCCTree * (std::max(1u, m_plo.maxTraceDepth) - 1u) +
 			std::min(1u, m_plo.maxTraceDepth) * std::max(cssCHOrMSPlusCCTree, ssMax.cssAH + ssMax.cssIS),
@@ -1939,8 +1943,10 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_systemData.iterationIndex, perFrameDataSize, m_cudaStream));
 	}
 
+	synchronizeStream();
+
 	// Note the launch width per device to render in tiles.
-	const auto res_ = (m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
+	const auto res_ = m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1);
 	OPTIX_CHECK(res_);
 	//OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 }
