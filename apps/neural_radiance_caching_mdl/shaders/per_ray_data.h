@@ -90,7 +90,7 @@ struct PerRayData
   
   float3 throughput;  // The current path troughput. Starts white and gets modulated with bsdf_over_pdf with each sample.
 
-  float  depth;
+  int    depth;
   float  areaSpread;    // This is the *SQARE ROOT* of a(x1...xn) in Eq (3)
   float  areaThreshold; // This is the *SQARE ROOT* of (c * a0) in Eq (4).
                         // Once areaSpread > areaThreshold we terminate the ray and query from NRC
