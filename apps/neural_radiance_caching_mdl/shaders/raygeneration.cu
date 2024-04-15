@@ -509,6 +509,7 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 	prd.sigma_t    = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
 	prd.walk       = 0;                 // Number of random walk steps taken through volume scattering. 
 	prd.eventType  = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
+	prd.areaSpread = 0.0f;
 
 	// Nested material handling.
 	// Small stack of MATERIAL_STACK_SIZE = 4 entries of which the first is vacuum.
@@ -647,7 +648,12 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	const float2 pixel  = make_float2(theLaunchIndex);
 	const float2 sample = rng2(prd.seed);
 
-	const bool isDebug = (theLaunchIndex.x == theLaunchDim.x / 2) && (theLaunchIndex.y == theLaunchDim.y / 2);
+	// Set ray flags
+	prd.flags = 0;
+
+	const bool isDebug = (theLaunchIndex.x == theLaunchDim.x / 2)
+						&& (theLaunchIndex.y == theLaunchDim.y / 2)
+						&& (sysData.iterationIndex == 0);
 	if (isDebug)
 	{
 		prd.flags |= FLAG_DEBUG;

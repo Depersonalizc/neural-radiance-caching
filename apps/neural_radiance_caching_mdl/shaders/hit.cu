@@ -777,6 +777,51 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     thePrd->pos = state.position;
 #endif
 
+    bool rayShouldTerminate = false;
+    {
+        // TODO: Handle cosine <= 0
+        const float cosine = dot(thePrd->wo, state.normal);
+
+        if (thePrd->depth == 0) // First bounce: Compute area threshold (Eq. 4)
+        {
+            if (cosine > 0.0f)
+            {
+                // TODO: What happens if deno is TINY?
+                const float denom = sqrt(4.f * M_PIf * cosine);
+                thePrd->areaThreshold = 0.1f * thePrd->distance / denom;
+#if 1
+                if (thePrd->flags & FLAG_DEBUG)
+                {
+                    printf("\nArea threashold: %f\n", thePrd->areaThreshold);
+                }
+#endif
+            }
+            else
+            {
+                // TODO
+            }
+        }
+        else // 2nd+ bounce: Increment area spread (Eq. 3)
+        {
+            const float pdf = thePrd->pdf == 0.f ? 1e30f : thePrd->pdf;
+            const float denom = sqrt(pdf * (abs(cosine) + 1e-30f));
+            thePrd->areaSpread += (thePrd->distance / denom);
+
+            rayShouldTerminate = thePrd->areaSpread > thePrd->areaThreshold;
+#if 1
+            if (thePrd->flags & FLAG_DEBUG)
+            {
+                printf("Area spread (hit %d): %f\n", thePrd->depth, thePrd->areaSpread);
+                if (rayShouldTerminate)
+                {
+                    printf("[Terminate!] Area spread reaches threshold after hit %d\n", thePrd->depth);
+                }
+            }
+#endif
+        }
+
+    }
+
     const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
 
     mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
