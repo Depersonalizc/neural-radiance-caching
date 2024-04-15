@@ -1940,7 +1940,9 @@ void Device::render(const unsigned int iterationIndex,
 	}
 
 	// Note the launch width per device to render in tiles.
-	OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
+	const auto res_ = (m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
+	OPTIX_CHECK(res_);
+	//OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 }
 
 
