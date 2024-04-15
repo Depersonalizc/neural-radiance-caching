@@ -718,10 +718,10 @@ void Device::initPipeline()
 	const auto pss = estimatePipelineStackSizes(programGroups);
 	OPTIX_CHECK(m_api.optixPipelineSetStackSize(m_pipeline,
 		pss.directCallableStackSizeFromTraversal
-			* 2  // This shouldn't be necessary, but doing so fixes some device memory issues we had.
+			* 2  // Shouldn't be necessary, but doing so fixes some device memory issues we had.
 		,
 		pss.directCallableStackSizeFromState 
-			* 2  // This shouldn't be necessary, but doing so fixes some device memory issues we had.
+			* 2  // Shouldn't be necessary, but doing so fixes some device memory issues we had.
 		,
 		pss.continuationStackSize,
 		pss.maxTraversableGraphDepth

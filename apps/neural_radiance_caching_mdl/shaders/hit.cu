@@ -224,7 +224,9 @@ __forceinline__ __device__ Mdl_state buildMDLState(const GeometryInstanceData &t
 extern "C" __global__ void __closesthit__radiance()
 {
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
-    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+    unsigned int p0 = optixGetPayload_0(),
+                 p1 = optixGetPayload_1();
+    PerRayData* thePrd = mergePointer(p0, p1);
     
     const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
     // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
@@ -232,10 +234,6 @@ extern "C" __global__ void __closesthit__radiance()
     thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
 
     thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
-
-    // PRECISION Calculate this from the object space vertex positions and transform to world for better accuracy when needed.
-    // Same as: thePrd->pos = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
-    thePrd->pos += thePrd->wi * thePrd->distance;
 
     // If we're inside a volume and hit something, the path throughput needs to be modulated
     // with the transmittance along this segment before adding surface or light radiance!
@@ -249,6 +247,9 @@ extern "C" __global__ void __closesthit__radiance()
     }
 
 #if 0
+    // Same as: thePrd->pos = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
+    thePrd->pos += thePrd->wi * thePrd->distance;
+
     const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
 
     // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
@@ -405,7 +406,6 @@ extern "C" __global__ void __closesthit__radiance()
 
     // thin_walled value in case the expression is a constant.
     bool thin_walled = ((shaderConfiguration.flags & IS_THIN_WALLED) != 0);
-
     if (0 <= shaderConfiguration.idxCallThinWalled)
     {
         thin_walled = optixDirectCall<bool>(shaderConfiguration.idxCallThinWalled, &state, &res_data, material.arg_block);
@@ -413,7 +413,6 @@ extern "C" __global__ void __closesthit__radiance()
 
     // IOR value in case the material ior expression is constant.
     float3 ior = shaderConfiguration.ior;
-
     if (0 <= shaderConfiguration.idxCallIor)
     {
         ior = optixDirectCall<float3>(shaderConfiguration.idxCallIor, &state, &res_data, material.arg_block);
@@ -558,8 +557,9 @@ extern "C" __global__ void __closesthit__radiance()
 
     // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
     const int numLights = sysData.numLights;
-
-    if (sysData.directLighting && 0 < numLights && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
+    if (sysData.directLighting 
+            && 0 < numLights 
+            && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
     {
         // Sample one of many lights.
         // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
@@ -599,10 +599,6 @@ extern "C" __global__ void __closesthit__radiance()
 
             if (0.0f < eval_data.pdf && isNotNull(bxdf))
             {
-                // Pass the current payload registers through to the shadow ray.
-                unsigned int p0 = optixGetPayload_0();
-                unsigned int p1 = optixGetPayload_1();
-
                 thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
 
                 // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval 
@@ -616,7 +612,8 @@ extern "C" __global__ void __closesthit__radiance()
 
                 if ((thePrd->flags & FLAG_SHADOW) == 0) // Shadow flag not set?
                 {
-                    const float weightMIS = (TYPE_LIGHT_POINT <= light.typeLight) ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
+                    const float weightMIS = (light.typeLight >= TYPE_LIGHT_FIRST_SINGULAR)
+                                          ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
 
                     // The sampled emission needs to be scaled by the inverse probability to have selected this light,
                     // Selecting one of many lights means the inverse of 1.0f / numLights.
@@ -679,15 +676,13 @@ extern "C" __global__ void __closesthit__radiance()
 extern "C" __global__ void __closesthit__radiance_no_emission()
 {
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
+    unsigned int p0 = optixGetPayload_0(),
+                 p1 = optixGetPayload_1();
     PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
     thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
 
     thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
-
-    // PRECISION Calculate this from the object space vertex positions and transform to world for better accuracy when needed.
-    // Same as: thePrd->pos = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
-    thePrd->pos += thePrd->wi * thePrd->distance;
 
     // If we're inside a volume and hit something, the path throughput needs to be modulated
     // with the transmittance along this segment before adding surface or light radiance!
@@ -703,7 +698,11 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
     // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
 
-#if 0
+#if 0 
+    // PRECISION Calculate this from the object space vertex positions and transform to world for better accuracy when needed.
+    // Same as: thePrd->pos = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
+    thePrd->pos += thePrd->wi * thePrd->distance;
+
     const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
 
     // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
@@ -796,7 +795,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
     // thin_walled value in case the expression is a constant.
     bool thin_walled = ((shaderConfiguration.flags & IS_THIN_WALLED) != 0);
-
     if (0 <= shaderConfiguration.idxCallThinWalled)
     {
         thin_walled = optixDirectCall<bool>(shaderConfiguration.idxCallThinWalled, &state, &res_data, material.arg_block);
@@ -804,7 +802,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
     // IOR value in case the material ior expression is constant.
     float3 ior = shaderConfiguration.ior;
-
     if (0 <= shaderConfiguration.idxCallIor)
     {
         ior = optixDirectCall<float3>(shaderConfiguration.idxCallIor, &state, &res_data, material.arg_block);
@@ -814,7 +811,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     // Save the current path throughput for the direct lighting contribution.
     // The path throughput will be modulated with the BSDF sampling results before that.
     const float3 throughput = thePrd->throughput;
-    // The pdf of the previous event was needed for the emission calculation above.
     thePrd->pdf = 0.0f;
 
     // Determine which BSDF to use when the material is thin-walled. 
@@ -876,8 +872,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
     // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
     const int numLights = sysData.numLights;
-
-    if (sysData.directLighting && 0 < numLights && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
+    if (sysData.directLighting 
+            && 0 < numLights 
+            && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
     {
         // Sample one of many lights.
         // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
@@ -917,10 +914,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
             if (0.0f < eval_data.pdf && isNotNull(bxdf))
             {
-                // Pass the current payload registers through to the shadow ray.
-                unsigned int p0 = optixGetPayload_0();
-                unsigned int p1 = optixGetPayload_1();
-
                 thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
 
                 // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval 
@@ -934,7 +927,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
                 if ((thePrd->flags & FLAG_SHADOW) == 0) // Shadow flag not set?
                 {
-                    const float weightMIS = (TYPE_LIGHT_POINT <= light.typeLight) ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
+                    const float weightMIS = (light.typeLight >= TYPE_LIGHT_FIRST_SINGULAR)
+                                          ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
 
                     // The sampled emission needs to be scaled by the inverse probability to have selected this light,
                     // Selecting one of many lights means the inverse of 1.0f / numLights.
@@ -1523,7 +1517,8 @@ extern "C" __global__ void __closesthit__curves()
 
                 if ((thePrd->flags & FLAG_SHADOW) == 0) // Shadow flag not set?
                 {
-                    const float weightMIS = (TYPE_LIGHT_POINT <= light.typeLight) ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
+                    const float weightMIS = (light.typeLight >= TYPE_LIGHT_FIRST_SINGULAR)
+                                          ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
 
                     // The sampled emission needs to be scaled by the inverse probability to have selected this light,
                     // Selecting one of many lights means the inverse of 1.0f / numLights.

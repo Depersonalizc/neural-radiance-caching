@@ -505,7 +505,7 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 	prd.radiance   = make_float3(0.0f);
 	prd.pdf        = 0.0f;
 	prd.throughput = make_float3(1.0f);
-	prd.flags      = 0;
+	prd.flags     &= FLAG_MASK_PERSISTENT; // Clear trasient flags
 	prd.sigma_t    = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
 	prd.walk       = 0;                 // Number of random walk steps taken through volume scattering. 
 	prd.eventType  = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
@@ -532,7 +532,7 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 
 		prd.wo       = -prd.wi;        // Direction to observer.
 		prd.distance = RT_DEFAULT_MAX; // Shoot the next ray with maximum length.
-		prd.flags    = 0;              // reset flags
+		prd.flags   &= FLAG_MASK_PERSISTENT; // reset transient flags
 		prd.depth    = depth;
 
 		// Special cases for volume scattering!
@@ -635,11 +635,6 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	const uint2 theLaunchDim   = make_uint2(optixGetLaunchDimensions());
 	const uint2 theLaunchIndex = make_uint2(optixGetLaunchIndex());
 
-#if 0
-	bool DEBUG = (theLaunchIndex.x == theLaunchDim.x / 2)
-			  && (theLaunchIndex.y == theLaunchDim.y / 2);
-#endif
-
 	PerRayData prd;
 
 	// Initialize the random number generator seed from the linear pixel index and the iteration index.
@@ -652,18 +647,27 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	const float2 pixel  = make_float2(theLaunchIndex);
 	const float2 sample = rng2(prd.seed);
 
+	const bool isDebug = (theLaunchIndex.x == theLaunchDim.x / 2) && (theLaunchIndex.y == theLaunchDim.y / 2);
+	if (isDebug)
+	{
+		prd.flags |= FLAG_DEBUG;
+	}
+
+	const bool isTrain = ::isTrainingRay(theLaunchIndex);
+	if (isTrain)
+	{
+		prd.flags |= FLAG_TRAIN;
+	}
+
 #if 0
-	if (DEBUG) 
+	if (isDebug)
 	{
 		printf("Tile size: (%d, %d), train index: %d\n",
 			sysData.tileSize.x, sysData.tileSize.y, sysData.tileTrainingIndex);
 	}
 #endif
-
-	const bool training = ::isTrainingRay(theLaunchIndex);
-
 #if 1
-	if (training)
+	if (isTrain)
 	{
 		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
 		buffer[index] = { 0.0f, 1000000.0f, 0.0f, 1.0f };  // super green
