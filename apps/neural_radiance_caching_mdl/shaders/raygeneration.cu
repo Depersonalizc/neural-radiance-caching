@@ -672,7 +672,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 			sysData.tileSize.x, sysData.tileSize.y, sysData.tileTrainingIndex);
 	}
 #endif
-#if 1
+#if 0
 	if (isTrain)
 	{
 		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
@@ -686,7 +686,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	prd.pos = ray.org;
 	prd.wi  = ray.dir;
 
-	float3 radiance = nrcIntegrator(prd);
+	float3 radiance = ::nrcIntegrator(prd);
 
 #if USE_DEBUG_EXCEPTIONS
 	// DEBUG Highlight numerical errors.
