@@ -374,7 +374,15 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
         eval_data.k1 = thePrd.wo;
         eval_data.k2 = lightSample.direction;
 
+        //if (thePrd.flags & FLAG_DEBUG)
+        //{
+        //    printf("Before: %f, ", eval_data.pdf);
+        //}
         optixDirectCall<void>(idxCallScatteringEval, &eval_data, &mdlState, &resourceData, materialArgBlock);
+        //if (thePrd.flags & FLAG_DEBUG)
+        //{
+        //    printf("After: %f\n", eval_data.pdf);
+        //}
     }
     
     // This already contains the fabsf(dot(lightSample.direction, state.normal)) factor!
@@ -414,7 +422,6 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
 
     // The sampled emission needs to be scaled by the inverse probability to have selected this light,
     // Selecting one of many lights means the inverse of 1.0f / numLights.
-    // This is using the path throughput before the sampling modulated it above.
     return bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
 }
 
@@ -481,6 +488,21 @@ extern "C" __global__ void __closesthit__radiance()
         // Unused when FLAG_VOLUME_SCATTERING is not set.
         ++thePrd->walk;
     }
+
+#if 0
+    thePrd->radiance = make_float3(0.0f);
+    return;
+#endif
+
+#if 0 // Debug Visualization
+    if (thePrd->depth == 0)
+    {
+        // Visualize emissive objects in bright green
+        thePrd->radiance += float3{ 0.0f, 1000000.0f, 0.0f };
+
+        return;
+    }
+#endif
 
     const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
     mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
@@ -555,11 +577,13 @@ extern "C" __global__ void __closesthit__radiance()
 
                 const float area = sysData.lightDefinitions[theData.ids.y].area; // This must be a mesh light, and then it has a valid idLight.
 
-                eval_data.pdf = thePrd->distance * thePrd->distance / (area * eval_data.cos); // Solid angle measure.
+                eval_data.pdf = (thePrd->distance * thePrd->distance) / (area * eval_data.cos); // Solid angle measure.
 
                 float weightMIS = 1.0f;
-                // If the last event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
-                if (sysData.directLighting && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
+                // If the *last* event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
+                static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE
+                                                             | mi::neuraylib::BSDF_EVENT_GLOSSY;
+                if (sysData.directLighting && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE))
                 {
                     weightMIS = balanceHeuristic(thePrd->pdf, eval_data.pdf);
                 }
@@ -681,7 +705,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         if (thePrd->depth == 0) // First bounce: Compute area threshold (Eq. 4)
         {
             static constexpr auto SQRT_C = 0.1f;
-            const float denom = sqrt(4.f * M_PIf * absCosine);   
+            const float denom = sqrtf(4.f * M_PIf * absCosine);   
             thePrd->areaThreshold = SQRT_C * ::safeDiv(thePrd->distance, denom);
 #if 0
             if (thePrd->flags & FLAG_DEBUG)
@@ -693,7 +717,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         else // 2nd+ bounce: Increment area spread (Eq. 3)
         {
             const float pdf = thePrd->pdf == 0.f ? INFINITY : thePrd->pdf;
-            const float denom = sqrt(pdf * absCosine);
+            const float denom = sqrtf(pdf * absCosine);
             thePrd->areaSpread += ::safeDiv(thePrd->distance, denom);
 
             rayShouldTerminate = (thePrd->areaSpread > thePrd->areaThreshold);
