@@ -332,21 +332,28 @@ mi::neuraylib::Bsdf_sample_data importanceSampleBSDF(const Mdl_state& mdlState,
     return sampleData;
 }
 
+// NOTE:
+// Estimated from one light.
+// Assume MIS and only compute the light sampling part.
+// The BSDF sampling part is handled in __closesthit__radiance, __miss__env_constant, or __miss__env_sphere
 __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlState,
                                                          const mi::neuraylib::Resource_data &resourceData,
                                                          CUdeviceptr materialArgBlock,
                                                          int idxCallScatteringEval,
-                                                         PerRayData &thePrd, bool isFrontFace, bool isThinWalled, const float3 &ior,
-                                                         int numLights)
+                                                         PerRayData &thePrd, bool isFrontFace, bool isThinWalled, const float3 &ior)
 {
     // Sample one of many lights.
     // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
+    const int numLights = sysData.numLights;
     const int indexLight = static_cast<int>(rng(thePrd.seed) * numLights);
 
     const LightDefinition& light = sysData.lightDefinitions[indexLight];
 
     LightSample lightSample = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, &thePrd);
-
+    
+    // Happens when the lightSample is on the other side,
+    // i.e., dot(-lightSample.direction, lightSample.normal) <= 0.0f
+    // Will be shadowed later anyway. So return early.
     if (lightSample.pdf <= 0.0f)
     {
         return make_float3(0.0f);
@@ -374,22 +381,14 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
         eval_data.k1 = thePrd.wo;
         eval_data.k2 = lightSample.direction;
 
-        //if (thePrd.flags & FLAG_DEBUG)
-        //{
-        //    printf("Before: %f, ", eval_data.pdf);
-        //}
         optixDirectCall<void>(idxCallScatteringEval, &eval_data, &mdlState, &resourceData, materialArgBlock);
-        //if (thePrd.flags & FLAG_DEBUG)
-        //{
-        //    printf("After: %f\n", eval_data.pdf);
-        //}
     }
     
     // This already contains the fabsf(dot(lightSample.direction, state.normal)) factor!
     // For a white Lambert material, the bxdf components match the eval_data.pdf
     const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
 
-    // bxdf should not be null, since we should've checked for BSDF_EVENT_SUPPORT_NEE
+    // Should not happen, since we checked for BSDF_EVENT_SUPPORT_NEE before calling this function
     if (eval_data.pdf <= 0.0f || isNull(bxdf))
     {
         return make_float3(0.0f);
@@ -521,7 +520,9 @@ extern "C" __global__ void __closesthit__radiance()
     const bool thin_walled = ::getThinWalled(shaderConfiguration, state, res_data, material.arg_block);
     const float3       ior = ::getIOR(shaderConfiguration, state, res_data, material.arg_block);
 
-    // Add emitted radiance
+    // If directly lighting is disabled, simply add the emitted radiance
+    // If directly lighting is enabled, we assume MIS was used in estimateDirect 
+    // which adds the light-sampling part. So here we add the remaining BSDF sampling part
     {
         // Handle optional surface and backface emission expressions.
         // Default to no EDF.
@@ -580,7 +581,9 @@ extern "C" __global__ void __closesthit__radiance()
                 eval_data.pdf = (thePrd->distance * thePrd->distance) / (area * eval_data.cos); // Solid angle measure.
 
                 float weightMIS = 1.0f;
-                // If the *last* event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
+                // If the last event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
+                // Note that we don't need to multiply by numLights here because this light 
+                // doesn't have to match the previous one sampled for direct lighting estimation
                 static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE
                                                              | mi::neuraylib::BSDF_EVENT_GLOSSY;
                 if (sysData.directLighting && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE))
@@ -654,8 +657,7 @@ extern "C" __global__ void __closesthit__radiance()
         // Note that lightsample.pdf is already solid-angle projected.
         float3 directLighting = ::estimateDirectLighting(state, res_data, material.arg_block,
                                                          idxCallScatteringEval, *thePrd,
-                                                         isFrontFace, thin_walled, ior,
-                                                         sysData.numLights);
+                                                         isFrontFace, thin_walled, ior);
         thePrd->radiance += throughput * directLighting;
     }
 
@@ -833,8 +835,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         // Note that lightsample.pdf is already solid-angle projected.
         float3 directLighting = ::estimateDirectLighting(state, res_data, material.arg_block,
                                                          idxCallScatteringEval, *thePrd,
-                                                         isFrontFace, thin_walled, ior,
-                                                         sysData.numLights);
+                                                         isFrontFace, thin_walled, ior);
         thePrd->radiance += throughput * directLighting;
     }
 

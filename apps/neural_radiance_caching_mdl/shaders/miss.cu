@@ -92,13 +92,14 @@ extern "C" __global__ void __miss__env_constant()
 	// The environment light is always in the first element.
 	float3 emission = sysData.lightDefinitions[0].emission; // Constant emission.
 
-
 	// If the last surface intersection was diffuse or glossy which was directly lit with multiple importance sampling,
 	// then calculate implicit light emission with multiple importance sampling as well.
 	static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE
 												 | mi::neuraylib::BSDF_EVENT_GLOSSY;
 	if (sysData.directLighting && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE))
 	{
+		// Note that we don't need to multiply by numLights here because this light 
+		// doesn't have to match the previous one sampled for direct lighting estimation
 		const float weightMIS = balanceHeuristic(thePrd->pdf, 0.25f * M_1_PIf);
 		emission *= weightMIS;
 	}
@@ -143,6 +144,8 @@ extern "C" __global__ void __miss__env_sphere()
 		// and not the Gaussian smoothed one used to actually generate the CDFs.
 		const float pdfLight = intensity(emission) * light.invIntegral;
 
+		// Note that we don't need to multiply by numLights here because this light 
+		// doesn't have to match the previous one sampled for direct lighting estimation
 		emission *= balanceHeuristic(thePrd->pdf, pdfLight);
 	}
 
