@@ -92,14 +92,14 @@ extern "C" __global__ void __miss__env_constant()
 	// The environment light is always in the first element.
 	float3 emission = sysData.lightDefinitions[0].emission; // Constant emission.
 
-	if (sysData.directLighting)
-	{
-		// If the last surface intersection was diffuse or glossy which was directly lit with multiple importance sampling,
-		// then calculate implicit light emission with multiple importance sampling as well.
-		const float weightMIS = (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY))
-			? balanceHeuristic(thePrd->pdf, 0.25f * M_1_PIf)
-			: 1.0f;
 
+	// If the last surface intersection was diffuse or glossy which was directly lit with multiple importance sampling,
+	// then calculate implicit light emission with multiple importance sampling as well.
+	static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE
+												 | mi::neuraylib::BSDF_EVENT_GLOSSY;
+	if (sysData.directLighting && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE))
+	{
+		const float weightMIS = balanceHeuristic(thePrd->pdf, 0.25f * M_1_PIf);
 		emission *= weightMIS;
 	}
 
@@ -133,18 +133,17 @@ extern "C" __global__ void __miss__env_sphere()
 
 	float3 emission = make_float3(tex2D<float4>(light.textureEmission, u, v));
 
-	if (sysData.directLighting)
+	// If the last surface intersection was a diffuse event which was directly lit with multiple importance sampling,
+	// then calculate implicit light emission with multiple importance sampling as well.
+	static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE
+												 | mi::neuraylib::BSDF_EVENT_GLOSSY;
+	if (sysData.directLighting && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE))
 	{
-		// If the last surface intersection was a diffuse event which was directly lit with multiple importance sampling,
-		// then calculate implicit light emission with multiple importance sampling as well.
-		if (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY))
-		{
-			// For simplicity we pretend that we perfectly importance-sampled the actual texture-filtered environment map
-			// and not the Gaussian smoothed one used to actually generate the CDFs.
-			const float pdfLight = intensity(emission) * light.invIntegral;
+		// For simplicity we pretend that we perfectly importance-sampled the actual texture-filtered environment map
+		// and not the Gaussian smoothed one used to actually generate the CDFs.
+		const float pdfLight = intensity(emission) * light.invIntegral;
 
-			emission *= balanceHeuristic(thePrd->pdf, pdfLight);
-		}
+		emission *= balanceHeuristic(thePrd->pdf, pdfLight);
 	}
 
 	thePrd->radiance += thePrd->throughput * emission * light.emission;
