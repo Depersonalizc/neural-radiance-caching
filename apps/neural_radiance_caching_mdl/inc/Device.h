@@ -560,16 +560,21 @@ public:
 
 	// This contains the root traversable handle as well.
 	SystemData m_systemData{
+		// Static Data ==========
 		.resolution     = {1, 1},
-		.tileSize       = {8, 8},
-		.tileShift      = {3, 3},
 		.pathLengths    = {2, 5},
 		.walkLength     = 1,
 		.sceneEpsilon   = 500.0f * SCENE_EPSILON_SCALE,
 		.clockScale     = 1000.0f * CLOCK_FACTOR_SCALE,
 		.directLighting = 1,
-	};   
-	SystemData* m_d_systemData; // Device side CUdeviceptr of the system data.
+
+		// Per-frame Data ==========
+		.pf = {
+			.tileSize = {8, 8},
+			.tileShift = {3, 3},
+		}
+	};
+	SystemData* m_d_systemData; // Device side CUdeviceptr of the static system data.
 
 	std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
 
@@ -625,6 +630,10 @@ public:
 	std::vector<MbsdfHost> m_mbsdfHosts; // All MBSDFs used by the materials inside the scene.
 
 	std::vector<LightprofileHost> m_lightprofileHosts; // All light profiles used by materials inside the scene
+
+	struct {
+		
+	} m_nrcData;
 };
 
 #endif // DEVICE_H

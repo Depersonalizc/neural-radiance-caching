@@ -52,6 +52,24 @@ struct GeometryInstanceData
 	CUdeviceptr indices;
 };
 
+// Data updated per frame
+struct SystemDataPerFrame
+{
+	// 16 byte alignment
+
+	// 8 byte alignment
+	int2 tileSize;    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
+	int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
+
+	// Neural Radiance Cache =============================
+	//NeuralRadianceCacheData* nrcNumTrainingRecords;
+
+	// 4 byte alignment
+	int iterationIndex;
+	int totalSubframeIndex;  // Added: total number of subframes, counting all iterations
+	int tileTrainingIndex;   // The local index of training ray within each tile. Randomly sampled from [0..tileSize) every subframe
+};
+
 struct SystemData
 {
 	// 16 byte alignment
@@ -65,6 +83,7 @@ struct SystemData
 	// Using a CUdeviceptr here to allow for different buffer formats without too many casts.
 	CUdeviceptr outputBuffer;
 	// These buffers are used differently among the rendering strategies.
+	// See: Device::compositor. Not used for this NRC demo
 	CUdeviceptr tileBuffer;
 	CUdeviceptr texelBuffer;
 
@@ -77,8 +96,6 @@ struct SystemData
 	DeviceShaderConfiguration* shaderConfigurations;    // Indexed by MaterialDefinitionMDL::indexShader.
 
 	int2 resolution;  // The actual rendering resolution. Independent from the launch dimensions for some rendering strategies.
-	int2 tileSize;    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
-	int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
 	int2 pathLengths; // .x = min path length before Russian Roulette kicks in, .y = maximum path length
 
 	// 4 byte alignment 
@@ -98,11 +115,12 @@ struct SystemData
 	int numBitsShaders; // The number of bits needed to represent the number of elements in shaderConfigurations. Used as coherence hint in SER.
 
 	int directLighting;
+	
+	// Padding to 16-byte alignment
+	int pad0;
+	int pad1;
 
-	// Per-frame data. Placed in the end to make one single copy possible
-	int iterationIndex;
-	int totalSubframeIndex;  // Added: total number of subframes, counting all iterations
-	int tileTrainingIndex;   // The local index of training ray within each tile. Randomly sampled from [0..tileSize) every subframe
+	SystemDataPerFrame pf;
 };
 
 

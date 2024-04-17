@@ -1302,7 +1302,7 @@ void Device::setState(const DeviceState& state)
 
 	// Special handling from the previous DeviceMultiGPULocalCopy class.
 	if (m_systemData.resolution != state.resolution ||
-		m_systemData.tileSize != state.tileSize)
+		m_systemData.pf.tileSize != state.tileSize)
 	{
 		if (1 < m_count)
 		{
@@ -1327,10 +1327,10 @@ void Device::setState(const DeviceState& state)
 		m_isDirtySystemData = true;
 	}
 
-	if (m_systemData.tileSize != state.tileSize)
+	if (m_systemData.pf.tileSize != state.tileSize)
 	{
-		m_systemData.tileSize = state.tileSize;
-		m_systemData.tileShift = calculateTileShift(m_systemData.tileSize);
+		m_systemData.pf.tileSize = state.tileSize;
+		m_systemData.pf.tileShift = calculateTileShift(m_systemData.pf.tileSize);
 		m_isDirtySystemData = true;
 	}
 
@@ -1835,13 +1835,13 @@ void Device::render(const unsigned int iterationIndex,
 	activateContext();
 
 	// PER-FRAME: Update iteration/subframe index
-	m_systemData.iterationIndex = iterationIndex;
-	m_systemData.totalSubframeIndex = totalSubframeIndex;
+	m_systemData.pf.iterationIndex = iterationIndex;
+	m_systemData.pf.totalSubframeIndex = totalSubframeIndex;
 
 	// PER-FRAME: Update the training index, shared across all tiles
 	{
-		const auto tileSize = 1 << (m_systemData.tileShift.x + m_systemData.tileShift.y);
-		m_systemData.tileTrainingIndex = rand() % tileSize;
+		const auto tileSize = 1 << (m_systemData.pf.tileShift.x + m_systemData.pf.tileShift.y);
+		m_systemData.pf.tileTrainingIndex = rand() % tileSize;
 	}
 
 	if (m_isDirtyOutputBuffer)
@@ -1936,11 +1936,10 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
 		m_isDirtySystemData = false;
 	}
-	else // Just copy the per-frame data
-	{
-		static constexpr auto perFrameDataSize = sizeof(SystemData) - offsetof(SystemData, iterationIndex);
+	else { // Only update the per-frame data
 		// NOTE This won't work for async launches, but single-frame benchmarking doesn't make sense for NRC anyway.
-		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_systemData.iterationIndex, perFrameDataSize, m_cudaStream));
+		static constexpr auto perFrameDataSize = sizeof(SystemData) - offsetof(SystemData, pf);
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), &m_systemData.pf, perFrameDataSize, m_cudaStream));
 	}
 
 	// Note the launch width per device to render in tiles.
@@ -2103,8 +2102,8 @@ void Device::compositor(Device* other)
 	compositorData.outputBuffer = m_systemData.outputBuffer;
 	compositorData.tileBuffer = m_systemData.tileBuffer;
 	compositorData.resolution = m_systemData.resolution;
-	compositorData.tileSize = m_systemData.tileSize;
-	compositorData.tileShift = m_systemData.tileShift;
+	compositorData.tileSize = m_systemData.pf.tileSize;
+	compositorData.tileShift = m_systemData.pf.tileShift;
 	compositorData.launchWidth = m_launchWidth;
 	compositorData.deviceCount = m_systemData.deviceCount;
 	compositorData.deviceIndex = other->m_systemData.deviceIndex; // This is the only value which changes per device. 

@@ -753,7 +753,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     const bool thin_walled = ::getThinWalled(shaderConfiguration, state, res_data, material.arg_block);
     const float3       ior = ::getIOR(shaderConfiguration, state, res_data, material.arg_block);
 
-#if 0 // Debug Visualization
+    // Debug Visualization
+#if 0
     if (thePrd->depth == 0)
     {
         bool vis = false;
