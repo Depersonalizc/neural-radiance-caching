@@ -558,9 +558,9 @@ public:
 	std::vector<GeometryInstanceData> m_geometryInstanceData;
 	GeometryInstanceData* m_d_geometryInstanceData;
 
-	// This contains the root traversable handle as well.
 	SystemData m_systemData{
 		// Static Data ==========
+		// This contains the root traversable handle as well.
 		.resolution     = {1, 1},
 		.pathLengths    = {2, 5},
 		.walkLength     = 1,
@@ -570,13 +570,13 @@ public:
 
 		// Per-frame Data ==========
 		.pf = {
-			.tileSize = {8, 8},
+			.tileSize  = {8, 8},
 			.tileShift = {3, 3},
 		}
 	};
-	SystemData* m_d_systemData; // Device side CUdeviceptr of the static system data.
+	SystemData* m_d_systemData; // Device side CUdeviceptr of the system data.
 
-	std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
+	//std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
 
 	int m_launchWidth;
 
@@ -588,11 +588,11 @@ public:
 
 	std::vector<LightDefinition> m_lights; // Staging data for the device side sysData.lightDefinitions
 
-	CUgraphicsResource  m_cudaGraphicsResource; // The handle for the registered OpenGL PBO or texture image resource when using interop.
+	CUgraphicsResource  m_cudaGraphicsResource{}; // The handle for the registered OpenGL PBO or texture image resource when using interop.
 
-	CUmodule    m_moduleCompositor;
-	CUfunction  m_functionCompositor;
-	CUdeviceptr m_d_compositorData;
+	CUmodule    m_moduleCompositor{};
+	CUfunction  m_functionCompositor{};
+	CUdeviceptr m_d_compositorData{};
 
 #if USE_FP32_OUTPUT
 	std::vector<float4> m_bufferHost;
@@ -630,10 +630,6 @@ public:
 	std::vector<MbsdfHost> m_mbsdfHosts; // All MBSDFs used by the materials inside the scene.
 
 	std::vector<LightprofileHost> m_lightprofileHosts; // All light profiles used by materials inside the scene
-
-	struct {
-		
-	} m_nrcData;
 };
 
 #endif // DEVICE_H

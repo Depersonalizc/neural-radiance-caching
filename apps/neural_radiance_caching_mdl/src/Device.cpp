@@ -286,9 +286,12 @@ Device::Device(const int ordinal,
 	CU_CHECK(cuDeviceGetLuid(m_deviceLUID, &m_nodeMask, m_cudaDevice));
 #endif
 
-	// FIXME Only load this on the primary device.
-	CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./neural_radiance_caching_mdl_core/compositor.ptx"));
-	CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
+	if (m_count > 1)
+	{
+		// FIXME Only load this on the primary device.
+		CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./neural_radiance_caching_mdl_core/compositor.ptx"));
+		CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
+	}
 
 	// Create Optix context
 	{
@@ -404,7 +407,10 @@ Device::~Device()
 		CU_CHECK_NO_THROW(cuGraphicsUnregisterResource(m_cudaGraphicsResource));
 	}
 
-	CU_CHECK_NO_THROW(cuModuleUnload(m_moduleCompositor));
+	if (m_moduleCompositor)
+	{
+		CU_CHECK_NO_THROW(cuModuleUnload(m_moduleCompositor));
+	}
 
 	for (const auto &[_, texture] : m_mapTextures) 
 	{
@@ -1338,6 +1344,7 @@ void Device::setState(const DeviceState& state)
 	{
 		m_systemData.samplesSqrt = state.samplesSqrt;
 
+#if 0
 		// Update the m_subFrames host index array.
 		const int spp = m_systemData.samplesSqrt * m_systemData.samplesSqrt;
 
@@ -1347,6 +1354,7 @@ void Device::setState(const DeviceState& state)
 		{
 			m_subFrames[i] = i;
 		}
+#endif
 
 		m_isDirtySystemData = true;
 	}
