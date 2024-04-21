@@ -65,12 +65,6 @@
 #define MATERIAL_STACK_LAST 3
 #define MATERIAL_STACK_SIZE 4
 
-namespace nrc
-{
-	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
-	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
-}
-
 // This is the minimal size of the struct. float4 for vectorized access was slower due to more registers used.
 struct MaterialStack
 {
@@ -119,7 +113,8 @@ struct PerRayData
 
   // Needed for accumulating direct emission in __closesthit__radiance and environment map miss shaders.
   // Remember that we defer the BSDF-sampling of MIS to the next hit(/env miss).
-  int lastTrainRecordIndex{ nrc::TRAIN_RECORD_INDEX_NONE };
+  // Initialized to nrc::TRAIN_RECORD_INDEX_NONE in nrcIntegrator
+  int lastTrainRecordIndex;
   
   // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
   int           idxStack; 

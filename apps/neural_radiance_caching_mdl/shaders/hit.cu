@@ -713,7 +713,8 @@ extern "C" __global__ void __closesthit__radiance()
         idxCallScatteringEval = shaderConfiguration.idxCallBackfaceScatteringEval; // Assumes both are valid.
     }
 
-    // Importance sample the BSDF. 
+    // Importance sample the BSDF.
+    float3 localThroughput = make_float3(0.f);
     if (0 <= idxCallScatteringSample)
     {
         // Direct-call into material's ScatteringSample function
@@ -725,12 +726,14 @@ extern "C" __global__ void __closesthit__radiance()
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
         thePrd->pdf         = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
         thePrd->eventType   = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
-        // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
+                                                         // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
+        localThroughput = sample_data.bsdf_over_pdf;
     }
     else
     {
         // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
         // This is usually happening with arbitrary mesh lights when only specifying emission.
+        // NOTE: Should not happen here?
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     }
 
@@ -742,7 +745,8 @@ extern "C" __global__ void __closesthit__radiance()
         if (!isTrainSuffix)
         {
             // TODO: Add a (rendering) query for this *pixel*.
-            // Emission has been added already. 
+
+            // Store the last rendering throughput to accumulate the query by. 
             thePrd->lastRenderThroughput = make_float3(0.f);
         }
 
@@ -756,10 +760,65 @@ extern "C" __global__ void __closesthit__radiance()
         return;
     }
 
-    // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
     static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
                                                | mi::neuraylib::BSDF_EVENT_GLOSSY;
     const auto eventIsNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
+
+    // Try to atomically allocate a training record if we're training
+    // ... and previous hits haven't reported a full buffer.
+    //nrc::TrainingRecord* trainRecord = nullptr;
+    float3* trainTargetRadiance = nullptr;
+    const auto doAllocateTrainRecord = isTrain 
+                                    && eventIsNonDirac 
+                                    && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+    if (doAllocateTrainRecord)
+    {
+        int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
+        if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
+        {
+            auto allTrainRecords = sysData.nrcCB->trainingRecords;
+            auto allTrainTargets = sysData.nrcCB->trainingRadianceTargets;
+            auto allTrainQueries = sysData.nrcCB->radianceQueriesTraining;
+
+            auto &trainRecord = allTrainRecords[trainRecordIndex]; // Get the record.
+            trainRecord.propTo = thePrd->lastTrainRecordIndex; // Link to last record for radiance prop, if any.
+            trainRecord.localThroughput = localThroughput;
+
+            // Training target radiance - initialized to zero.
+            trainTargetRadiance = &allTrainTargets[trainRecordIndex];
+            *trainTargetRadiance = make_float3(0.f);
+
+            // Add a training query with (unencoded) inputs to NRC network
+            auto& trainQuery = allTrainQueries[trainRecordIndex];
+            trainQuery.position = state.position;
+            trainQuery.direction = cartesianToSphericalUnitVector(thePrd->wo);
+            // TODO: Get those material properties.
+            //trainQuery.roughness = ;
+            //trainQuery.diffuse = ;
+            //trainQuery.specular = ;
+
+            // Used for linkage and for next (potential) emissive hit/env miss to accumulate radiance
+            thePrd->lastTrainRecordIndex = trainRecordIndex;
+        }
+        else // If the train record buffer is full
+        {
+            // If the rendering path has been completed already:
+            // Treat this vertex as the end of a training suffix. Terminate early.
+            if (isTrainSuffix)
+            {
+                // TODO: Add a (training) query for this *tile*. Marks the start of a radiance-prop chain.
+
+                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                return;
+            }
+
+            // Otherwise the rendering path hasn't been completed. Must continue until it does. 
+            // But we no longer need to allocate training records for later bounces.
+            // Tell the next hits don't bother with allocating training records.
+            thePrd->lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+        }
+    }
+    // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
     const bool doDirectLighting = sysData.directLighting
                                 && sysData.numLights > 0
                                 && eventIsNonDirac
@@ -772,9 +831,20 @@ extern "C" __global__ void __closesthit__radiance()
         float3 directLighting = ::estimateDirectLighting(state, res_data, material.arg_block,
                                                          idxCallScatteringEval, *thePrd,
                                                          isFrontFace, thin_walled, ior);
-        thePrd->radiance += throughput * directLighting;
-    }
+        
+        // If we got a training record, accumulate the radiance at this vertex to it.
+        // Note we don't need to modulate the radiance by throughput, because it is local.
+        if (trainTargetRadiance)
+        {
+            *trainTargetRadiance += directLighting;
+        }
 
+        // Accumulate *rendering* radiance if not currently on a training suffix.
+        if (!isTrainSuffix)
+        {
+            thePrd->radiance += throughput * directLighting;
+        }
+    }
     // Now after everything has been handled using the current material stack,
     // adjust the material stack if there was a transmission crossing a boundary surface.
     const bool isTransmitBoundary = !thin_walled && (thePrd->eventType & mi::neuraylib::BSDF_EVENT_TRANSMISSION);
@@ -935,7 +1005,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         idxCallScatteringEval = shaderConfiguration.idxCallBackfaceScatteringEval; // Assumes both are valid.
     }
 
-    // Importance sample the BSDF. 
+    // Importance sample the BSDF.
+    float3 localThroughput = make_float3(0.f);
     if (0 <= idxCallScatteringSample)
     {
         // Direct-call into material's ScatteringSample function
@@ -947,7 +1018,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
         thePrd->pdf         = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
         thePrd->eventType   = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
-        // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
+                                                         // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
+        localThroughput = sample_data.bsdf_over_pdf;
     }
     else
     {
@@ -979,7 +1051,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
         return;
     }
-
+    
 
     static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
                                                | mi::neuraylib::BSDF_EVENT_GLOSSY;
@@ -987,30 +1059,36 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
     // Try to atomically allocate a training record if we're training
     // ... and previous hits haven't reported a full buffer.
-    nrc::TrainingRecord* trainRecord = nullptr;
+    //nrc::TrainingRecord* trainRecord = nullptr;
+    float3* trainTargetRadiance = nullptr;
     const auto doAllocateTrainRecord = isTrain 
                                     && eventIsNonDirac 
                                     && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
     if (doAllocateTrainRecord)
     {
-        int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1) - 1;
+        int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
         if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
         {
-            auto& allTrainRecords = sysData.nrcCB->trainingRecords;
+            auto allTrainRecords = sysData.nrcCB->trainingRecords;
+            auto allTrainTargets = sysData.nrcCB->trainingRadianceTargets;
+            auto allTrainQueries = sysData.nrcCB->radianceQueriesTraining;
 
-            trainRecord = &allTrainRecords[trainRecordIndex]; // Get the record.
-            trainRecord->next = (thePrd->lastTrainRecordIndex >= 0)
-                              ? &allTrainRecords[thePrd->lastTrainRecordIndex]
-                              : nullptr; // Link to last record for radiance prop, if any.
+            auto &trainRecord = allTrainRecords[trainRecordIndex]; // Get the record.
+            trainRecord.propTo = thePrd->lastTrainRecordIndex; // Link to last record for radiance prop, if any.
+            trainRecord.localThroughput = localThroughput;
 
-            // (Unencoded) inputs to NRC network
-            trainRecord->position = state.position;
-            trainRecord->direction = cartesianToSphericalUnitVector(thePrd->wo);
+            // Training target radiance - initialized to zero.
+            trainTargetRadiance = &allTrainTargets[trainRecordIndex];
+            *trainTargetRadiance = make_float3(0.f);
 
+            // Add a training query with (unencoded) inputs to NRC network
+            auto& trainQuery = allTrainQueries[trainRecordIndex];
+            trainQuery.position = state.position;
+            trainQuery.direction = cartesianToSphericalUnitVector(thePrd->wo);
             // TODO: Get those material properties.
-            //trainRecord->roughness = ;
-            //trainRecord->diffuse = ;
-            //trainRecord->specular = ;
+            //trainQuery.roughness = ;
+            //trainQuery.diffuse = ;
+            //trainQuery.specular = ;
 
             // Used for linkage and for next (potential) emissive hit/env miss to accumulate radiance
             thePrd->lastTrainRecordIndex = trainRecordIndex;
@@ -1050,9 +1128,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         
         // If we got a training record, accumulate the radiance at this vertex to it.
         // Note we don't need to modulate the radiance by throughput, because it is local.
-        if (trainRecord)
+        if (trainTargetRadiance)
         {
-            trainRecord->radiance = directLighting; // Just do assignment. Should've started at 0.
+            *trainTargetRadiance += directLighting;
         }
 
         // Accumulate *rendering* radiance if not currently on a training suffix.

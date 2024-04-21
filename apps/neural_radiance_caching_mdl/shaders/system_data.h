@@ -57,24 +57,26 @@ namespace nrc
 	constexpr int NUM_BATCHES = 4;
 	constexpr int NUM_TRAINING_RECORDS_PER_FRAME = 65536;
 
+	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
+	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
+
+	// Keep track of the ray path for radiance prop
 	struct TrainingRecord
 	{
 		// 16 byte alignment
 
 		// 8 byte alignment
-		TrainingRecord* next; // Link to training record from the last hit. In the direction of light prop.
-
-		float2 direction;
-		float2 normal;
 
 		// 4 byte alignment
-		float3 radiance;
+		int propTo/* = TRAIN_RECORD_INDEX_NONE*/; // Link to next training record in the direction of radiance prop.
+		
+		// Used to modulate radiance prop'd from *previous* record.
+		float3 localThroughput; 
 
-		// Unencoded inputs to the network.
-		float3 position;
-		float  roughness;
-		float3 diffuse;
-		float3 specular;
+		// A radiance prop looks like this: (if propTo >= 0)
+		// propFrom = index of this TrainingRecord
+		// const auto &nextRec = trainingRecords[propTo];
+		// trainingRadianceTargets[propTo] += nextRec.localThroughput * trainingRadianceTargets[propFrom];
 	};
 
 	struct RadianceQuery
@@ -98,7 +100,8 @@ namespace nrc
 
 		// 8 byte alignment
 		// Points to a fixed-length array of 65536 training records. Static.
-		TrainingRecord *trainingRecords;
+		TrainingRecord *trainingRecords; // numTrainingRecords -> 65536
+		float3 *trainingRadianceTargets; // numTrainingRecords -> 65536
 
 		// TODO: Allocate & Resize!
 		// Points to a dynamic array of (#pixels + #tiles) randiance queries. Note the #tiles is dynamic each frame.
@@ -112,10 +115,13 @@ namespace nrc
 		// The following #tiles queries are at the end of training suffixes, in the flattened order of tiles.
 		// -- Results used for initiating radiance propagation.
 		// -- Mask
-		RadianceQuery *radianceQueries;
+		RadianceQuery *radianceQueriesInference;
+
+		// The results of those queries will be used to train the NRC.
+		RadianceQuery *radianceQueriesTraining; // numTrainingRecords -> 65536
 
 		// TODO: Allocate & Resize!
-		float3 *lastRenderingThroughput;
+		float3 *lastRenderingThroughput; // #pixels
 
 		// 4 byte alignment
 		int numTrainingRecords;   // Number of training records generated. Upated per-frame

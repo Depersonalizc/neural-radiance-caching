@@ -321,11 +321,17 @@ Device::Device(const int ordinal,
 		using namespace nrc;
 
 		// Allocate device-side CB
-		m_systemData.nrcCB = reinterpret_cast<ControlBlock *>(memAlloc(sizeof(ControlBlock), 16));
+		m_systemData.nrcCB = reinterpret_cast<ControlBlock *>(memAlloc(sizeof(ControlBlock), alignof(ControlBlock)));
 
 		// Init host side CB. Allocate buffers
 		m_nrcControlBlock.numTrainingRecords = 0;
-		m_nrcControlBlock.trainingRecords = reinterpret_cast<TrainingRecord*>(memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, 16));
+		m_nrcControlBlock.trainingRecords = reinterpret_cast<TrainingRecord*>(
+			memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(TrainingRecord)));
+		m_nrcControlBlock.trainingRadianceTargets = reinterpret_cast<float3*>(
+			memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
+
+		m_nrcControlBlock.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
+			memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
 
 		// Copy the control block over to device
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
