@@ -326,6 +326,31 @@ __forceinline__ __device__ unsigned int binarySearchCDF(const float* cdf, const 
   return ilo;
 }
 
+// https://github.com/mitsuba-renderer/mitsuba3/blob/77eafddc04fb030a219b31882abedb5362147e7c/src/bsdfs/measured.cpp#L238
+/**
+ * Numerically stable method computing the elevation of the given
+ * (normalized) vector in the local frame.
+ */
+__forceinline__ __device__ float elevation(const float3& d)
+{
+    const float z_minus_1 = d.z - 1.f;
+    const float dist = sqrtf(d.x * d.x + d.y * d.y + z_minus_1 * z_minus_1);
+    return 2.f * asinf(.5f * dist);
+}
+
+// https://github.com/mitsuba-renderer/mitsuba3/blob/77eafddc04fb030a219b31882abedb5362147e7c/src/bsdfs/measured.cpp#L311
+__forceinline__ __device__ float2 cartesianToSphericalUnitVector(const float3& d)
+{
+    const float theta = elevation(d);
+    const float phi = atan2f(d.y, d.x);
+    return float2{ theta, phi };
+}
+
+__forceinline__ __device__ float2 cartesianToSpherical(const float3& p)
+{
+    return cartesianToSphericalUnitVector(normalize(p));
+}
+
 
 
 #endif // SHADER_COMMON_H

@@ -459,6 +459,54 @@ __forceinline__ __device__ void updatePrdMaterialStackAtTransmitBoundary(const D
     thePrd.walk = 0; // Reset the number of random walk steps taken when crossing any volume boundary.
 }
 
+// Update area spread and decide whether to terminate the rendering ray.
+// TODO: Unbiased termination if FLAG_TRAIN_UNBIASED is set.
+__forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, PerRayData& thePrd)
+{
+    bool terminate = false;
+    
+    const float absCosine = abs(dot(thePrd.wo, mdlState.normal));
+
+    // TODO, PERF: Make this a separate initial launch in the raygen shader
+    if (thePrd.depth == 0) // First bounce: Compute area threshold (Eq. 4)
+    {
+        static constexpr auto SQRT_C = 0.1f;
+        const float denom = sqrtf(4.f * M_PIf * absCosine);   
+        thePrd.areaThreshold = SQRT_C * ::safeDiv(thePrd.distance, denom);
+// DEBUG INFO
+#if 1
+        if (thePrd.flags & FLAG_DEBUG)
+        {
+            printf("\nArea threashold: %f\n", thePrd.areaThreshold);
+        }
+#endif
+    }
+    else // 2nd+ bounce: Increment area spread (Eq. 3)
+    {
+        const float pdf = thePrd.pdf == 0.f ? INFINITY : thePrd.pdf;
+        const float denom = sqrtf(pdf * absCosine);
+        thePrd.areaSpread += ::safeDiv(thePrd.distance, denom);
+
+        terminate = (thePrd.areaSpread > thePrd.areaThreshold);
+// DEBUG INFO
+#if 1
+        if (thePrd.flags & FLAG_DEBUG)
+        {
+            printf("Area spread (@hit %d, train=%d, suffix=%d): %f\n", 
+                    thePrd.depth,
+                    bool(thePrd.flags & FLAG_TRAIN),
+                    bool(thePrd.flags & FLAG_TRAIN_SUFFIX),
+                    thePrd.areaSpread);
+            if (terminate)
+            {
+                printf("[Terminate!] Area spread reaches threshold after hit %d\n", thePrd.depth);
+            }
+        }
+#endif
+    }
+    return terminate;
+}
+
 }
 
 // This shader handles every supported feature of the renderer.
@@ -492,7 +540,6 @@ extern "C" __global__ void __closesthit__radiance()
     thePrd->radiance = make_float3(0.0f);
     return;
 #endif
-
 #if 0 // Debug Visualization
     if (thePrd->depth == 0)
     {
@@ -584,9 +631,10 @@ extern "C" __global__ void __closesthit__radiance()
                 // If the last event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
                 // Note that we don't need to multiply by numLights here because this light 
                 // doesn't have to match the previous one sampled for direct lighting estimation
-                static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE
-                                                             | mi::neuraylib::BSDF_EVENT_GLOSSY;
-                if (sysData.directLighting && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE))
+                static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE
+                                                           | mi::neuraylib::BSDF_EVENT_GLOSSY;
+                const auto eventWasNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
+                if (sysData.directLighting && eventWasNonDirac)
                 {
                     weightMIS = balanceHeuristic(thePrd->pdf, eval_data.pdf);
                 }
@@ -598,6 +646,50 @@ extern "C" __global__ void __closesthit__radiance()
             }
         }
     }
+
+    // Decide ray termination. Also update the accumulated area spread.
+    const bool terminate = rayShouldTerminate(state, *thePrd);
+    const bool isTrain = thePrd->flags & FLAG_TRAIN;
+    bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
+
+    // Handle terminate vertex.
+    if (terminate) [[unlikely]]
+    {
+        if (isTrain) [[unlikely]]
+        {
+            if (isTrainSuffix) // Case 1: End of training suffix
+            {
+                // TODO: Add a (training) query for this *tile*. Marks the start of a radiance-prop chain.
+
+                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                return;
+            }
+            else // Case 2: End of rendering path
+            {
+                // TODO: Add a (rendering) query for this *pixel*.
+
+                // Store the last rendering throughput to accumulate the query by. 
+                // Then proceed with the training suffix.
+                thePrd->lastRenderThroughput = thePrd->throughput;
+
+                // Set things up for the training suffix.
+                thePrd->flags |= FLAG_TRAIN_SUFFIX; // Mark we're in training suffix.
+                thePrd->areaSpread = 0.f; // Restart area spread accumulation
+                isTrainSuffix = true;
+            }
+        }
+        else // Pure rendering ray ends
+        {
+            // TODO: Add a (rendering) query for this *pixel*.
+
+            // Store the last rendering throughput to accumulate the query by. Then terminate.
+            thePrd->lastRenderThroughput = thePrd->throughput;
+
+            thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+            return;
+        }
+    }
+
 
     // Start fresh with the next BSDF sample.
     // Save the current path throughput for the direct lighting contribution.
@@ -633,22 +725,44 @@ extern "C" __global__ void __closesthit__radiance()
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
         thePrd->pdf         = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
         thePrd->eventType   = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
+        // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
     }
     else
     {
         // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
         // This is usually happening with arbitrary mesh lights when only specifying emission.
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-        // None of the following code will have any effect in that case.
+    }
+
+    // None of the following code will have any effect in that case.
+    // Terminate both rendering and optionally training.
+    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB) [[unlikely]]
+    {
+        // Terminate rendering path if it hasn't
+        if (!isTrainSuffix)
+        {
+            // TODO: Add a (rendering) query for this *pixel*.
+            // Emission has been added already. 
+            thePrd->lastRenderThroughput = make_float3(0.f);
+        }
+
+        // Terminate training chain
+        if (isTrain)
+        {
+            // TODO: Add a (training) query for this *tile*. Marks the start of a radiance-prop chain.
+
+        }
+
         return;
     }
 
     // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
-    static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE 
-                                                 | mi::neuraylib::BSDF_EVENT_GLOSSY;
+    static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
+                                               | mi::neuraylib::BSDF_EVENT_GLOSSY;
+    const auto eventIsNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
     const bool doDirectLighting = sysData.directLighting
                                 && sysData.numLights > 0
-                                && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE)
+                                && eventIsNonDirac
                                 && idxCallScatteringEval >= 0;
     if (doDirectLighting)
     {
@@ -699,40 +813,61 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         ++thePrd->walk;
     }
 
-    // Update area spread and decide whether to terminate the ray
-    bool rayShouldTerminate = false;
+    // Decide ray termination. Also update the accumulated area spread.
+    const bool terminate = rayShouldTerminate(state, *thePrd);
+    const bool isTrain = thePrd->flags & FLAG_TRAIN;
+    bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
+
+    // Handle terminate vertex.
+    if (terminate) [[unlikely]]
     {
-        const float absCosine = abs(dot(thePrd->wo, state.normal));
-
-        if (thePrd->depth == 0) // First bounce: Compute area threshold (Eq. 4)
+        if (isTrain) [[unlikely]]
         {
-            static constexpr auto SQRT_C = 0.1f;
-            const float denom = sqrtf(4.f * M_PIf * absCosine);   
-            thePrd->areaThreshold = SQRT_C * ::safeDiv(thePrd->distance, denom);
-#if 0
-            if (thePrd->flags & FLAG_DEBUG)
+            if (isTrainSuffix) // Case 1: End of training suffix
             {
-                printf("\nArea threashold: %f\n", thePrd->areaThreshold);
+                // TODO: Add a (training) query for this *tile*. Marks the start of a radiance-prop chain.
+
+                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                return;
             }
-#endif
-        }
-        else // 2nd+ bounce: Increment area spread (Eq. 3)
-        {
-            const float pdf = thePrd->pdf == 0.f ? INFINITY : thePrd->pdf;
-            const float denom = sqrtf(pdf * absCosine);
-            thePrd->areaSpread += ::safeDiv(thePrd->distance, denom);
-
-            rayShouldTerminate = (thePrd->areaSpread > thePrd->areaThreshold);
-#if 0
-            if (thePrd->flags & FLAG_DEBUG)
+            else // Case 2: End of rendering path
             {
-                printf("Area spread (hit %d): %f\n", thePrd->depth, thePrd->areaSpread);
-                if (rayShouldTerminate)
+                // TODO: Add a (rendering) query for this *pixel*.
+
+                // Store the last rendering throughput to accumulate the query by. 
+                thePrd->lastRenderThroughput = thePrd->throughput;
+
+#if 0
+                if (thePrd->flags & FLAG_DEBUG)
                 {
-                    printf("[Terminate!] Area spread reaches threshold after hit %d\n", thePrd->depth);
+                    printf("Final rendering throughput : (%f, %f, %f)\n", 
+                        thePrd->lastRenderThroughput.x, thePrd->lastRenderThroughput.y, thePrd->lastRenderThroughput.z);
                 }
+#endif
+                
+                // Setup to proceed with the training suffix.
+                thePrd->flags |= FLAG_TRAIN_SUFFIX; // Mark we're in training suffix.
+                thePrd->areaSpread = 0.f; // Restart area spread accumulation
+                isTrainSuffix = true;
+            }
+        }
+        else // Pure rendering ray ends
+        {
+            // TODO: Add a (rendering) query for this *pixel*.
+            
+            // Store the last rendering throughput to accumulate the query by. Then terminate.
+            thePrd->lastRenderThroughput = thePrd->throughput;
+
+#if 0
+            if (thePrd->flags & FLAG_DEBUG)
+            {
+                printf("Final rendering throughput : (%f, %f, %f)\n",
+                    thePrd->lastRenderThroughput.x, thePrd->lastRenderThroughput.y, thePrd->lastRenderThroughput.z);
             }
 #endif
+            
+            thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+            return;
         }
     }
 
@@ -753,7 +888,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     const bool thin_walled = ::getThinWalled(shaderConfiguration, state, res_data, material.arg_block);
     const float3       ior = ::getIOR(shaderConfiguration, state, res_data, material.arg_block);
 
-    // Debug Visualization
+// Debug Vis
 #if 0
     if (thePrd->depth == 0)
     {
@@ -812,22 +947,97 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
         thePrd->pdf         = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
         thePrd->eventType   = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
+        // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
     }
     else
     {
         // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
         // This is usually happening with arbitrary mesh lights when only specifying emission.
+        // NOTE: Should not happen here?
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-        // None of the following code will have any effect in that case.
+    }
+
+    // None of the following code will have any effect in that case.
+    // Terminate both rendering and optionally training.
+    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB) [[unlikely]]
+    {
+        // Terminate rendering path if it hasn't
+        if (!isTrainSuffix)
+        {
+            // TODO: Add a (rendering) query for this *pixel*.
+
+            // Store the last rendering throughput to accumulate the query by. 
+            thePrd->lastRenderThroughput = throughput;
+        }
+
+        // Terminate training chain
+        if (isTrain)
+        {
+            // TODO: Add a (training) query for this *tile*. Marks the start of a radiance-prop chain.
+
+        }
+
         return;
     }
 
+
+    static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
+                                               | mi::neuraylib::BSDF_EVENT_GLOSSY;
+    const auto eventIsNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
+
+    // Try to atomically allocate a training record if we're training
+    // ... and previous hits haven't reported a full buffer.
+    nrc::TrainingRecord* trainRecord = nullptr;
+    const auto doAllocateTrainRecord = isTrain 
+                                    && eventIsNonDirac 
+                                    && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+    if (doAllocateTrainRecord)
+    {
+        int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1) - 1;
+        if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
+        {
+            auto& allTrainRecords = sysData.nrcCB->trainingRecords;
+
+            trainRecord = &allTrainRecords[trainRecordIndex]; // Get the record.
+            trainRecord->next = (thePrd->lastTrainRecordIndex >= 0)
+                              ? &allTrainRecords[thePrd->lastTrainRecordIndex]
+                              : nullptr; // Link to last record for radiance prop, if any.
+
+            // (Unencoded) inputs to NRC network
+            trainRecord->position = state.position;
+            trainRecord->direction = cartesianToSphericalUnitVector(thePrd->wo);
+
+            // TODO: Get those material properties.
+            //trainRecord->roughness = ;
+            //trainRecord->diffuse = ;
+            //trainRecord->specular = ;
+
+            // Used for linkage and for next (potential) emissive hit/env miss to accumulate radiance
+            thePrd->lastTrainRecordIndex = trainRecordIndex;
+        }
+        else // If the train record buffer is full
+        {
+            // If the rendering path has been completed already:
+            // Treat this vertex as the end of a training suffix. Terminate early.
+            if (isTrainSuffix)
+            {
+                // TODO: Add a (training) query for this *tile*. Marks the start of a radiance-prop chain.
+
+                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                return;
+            }
+
+            // Otherwise the rendering path hasn't been completed. Must continue until it does. 
+            // But we no longer need to allocate training records for later bounces.
+            // Tell the next hits don't bother with allocating training records.
+            thePrd->lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+        }
+    }
+
     // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
-    static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE 
-                                                 | mi::neuraylib::BSDF_EVENT_GLOSSY;
     const bool doDirectLighting = sysData.directLighting
                                 && sysData.numLights > 0
-                                && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE)
+                                && eventIsNonDirac
                                 && idxCallScatteringEval >= 0;
     if (doDirectLighting)
     {
@@ -837,7 +1047,19 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         float3 directLighting = ::estimateDirectLighting(state, res_data, material.arg_block,
                                                          idxCallScatteringEval, *thePrd,
                                                          isFrontFace, thin_walled, ior);
-        thePrd->radiance += throughput * directLighting;
+        
+        // If we got a training record, accumulate the radiance at this vertex to it.
+        // Note we don't need to modulate the radiance by throughput, because it is local.
+        if (trainRecord)
+        {
+            trainRecord->radiance = directLighting; // Just do assignment. Should've started at 0.
+        }
+
+        // Accumulate *rendering* radiance if not currently on a training suffix.
+        if (!isTrainSuffix)
+        {
+            thePrd->radiance += throughput * directLighting;
+        }
     }
 
     // Now after everything has been handled using the current material stack,

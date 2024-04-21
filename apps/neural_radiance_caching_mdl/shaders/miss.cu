@@ -74,6 +74,20 @@ extern "C" __global__ void __miss__env_null()
 
 	// The null environment adds nothing to the radiance.
 	thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+
+	// The ray is terminated early, mask off the queried radiance for rendering.
+	const bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
+	if (!isTrainSuffix) // Either pure rendering, or rendering path of training ray
+	{
+		thePrd->lastRenderThroughput = make_float3(0.f);
+	}
+
+	// TODO: Terminate if training
+	const bool isTrain = thePrd->flags & FLAG_TRAIN;
+	if (isTrain)
+	{
+
+	}
 }
 
 
@@ -94,9 +108,10 @@ extern "C" __global__ void __miss__env_constant()
 
 	// If the last surface intersection was diffuse or glossy which was directly lit with multiple importance sampling,
 	// then calculate implicit light emission with multiple importance sampling as well.
-	static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE
-												 | mi::neuraylib::BSDF_EVENT_GLOSSY;
-	if (sysData.directLighting && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE))
+    static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
+                                               | mi::neuraylib::BSDF_EVENT_GLOSSY;
+    const auto eventWasNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
+	if (sysData.directLighting && eventWasNonDirac)
 	{
 		// Note that we don't need to multiply by numLights here because this light 
 		// doesn't have to match the previous one sampled for direct lighting estimation
@@ -106,6 +121,20 @@ extern "C" __global__ void __miss__env_constant()
 
 	thePrd->radiance += thePrd->throughput * emission;
 	thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+
+	// The ray is terminated early, mask off the queried radiance for rendering.
+	const bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
+	if (!isTrainSuffix) // Either pure rendering, or rendering path of training ray
+	{
+		thePrd->lastRenderThroughput = make_float3(0.f);
+	}
+
+	// TODO: Terminate if training
+	const bool isTrain = thePrd->flags & FLAG_TRAIN;
+	if (isTrain)
+	{
+
+	}
 }
 
 
@@ -136,9 +165,10 @@ extern "C" __global__ void __miss__env_sphere()
 
 	// If the last surface intersection was a diffuse event which was directly lit with multiple importance sampling,
 	// then calculate implicit light emission with multiple importance sampling as well.
-	static constexpr auto BSDF_EVENT_SUPPORT_NEE = mi::neuraylib::BSDF_EVENT_DIFFUSE
-												 | mi::neuraylib::BSDF_EVENT_GLOSSY;
-	if (sysData.directLighting && (thePrd->eventType & BSDF_EVENT_SUPPORT_NEE))
+    static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
+                                               | mi::neuraylib::BSDF_EVENT_GLOSSY;
+    const auto eventWasNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
+	if (sysData.directLighting && eventWasNonDirac)
 	{
 		// For simplicity we pretend that we perfectly importance-sampled the actual texture-filtered environment map
 		// and not the Gaussian smoothed one used to actually generate the CDFs.
@@ -151,4 +181,18 @@ extern "C" __global__ void __miss__env_sphere()
 
 	thePrd->radiance += thePrd->throughput * emission * light.emission;
 	thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+
+	// The ray is terminated early, mask off the queried radiance for rendering.
+	const bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
+	if (!isTrainSuffix) // Either pure rendering, or rendering path of training ray
+	{
+		thePrd->lastRenderThroughput = make_float3(0.f);
+	}
+
+	// TODO: Terminate if training
+	const bool isTrain = thePrd->flags & FLAG_TRAIN;
+	if (isTrain)
+	{
+
+	}
 }

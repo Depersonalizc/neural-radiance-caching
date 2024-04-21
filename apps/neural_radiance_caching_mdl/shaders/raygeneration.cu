@@ -508,7 +508,12 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 	prd.sigma_t    = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
 	prd.walk       = 0;                 // Number of random walk steps taken through volume scattering. 
 	prd.eventType  = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
-	prd.areaSpread = 0.0f;
+	
+	prd.areaThreshold        = INFINITY;
+	prd.areaSpread           = 0.0f;
+	prd.lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_NONE;
+	//prd.lastRenderThroughput = prd.throughput;
+	prd.lastRenderThroughput = float3{ 0.0f, 1000000.0f, 0.0f };
 
 	// Nested material handling.
 	// Small stack of MATERIAL_STACK_SIZE = 4 entries of which the first is vacuum.
@@ -523,7 +528,7 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 
 	// Russian Roulette path termination after a specified number of bounces needs the current depth.
 	//int depth = 0; // Path segment index. Primary ray is depth == 0. 
-	for (int depth = 0; depth < sysData.pathLengths.y; depth++)
+	for (int depth = 0;; depth++)
 	{
 		// Self-intersection avoidance:
 		// Offset the ray t_min value by sysData.sceneEpsilon when a geometric primitive was hit by the previous ray.
@@ -594,18 +599,23 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 #endif
 
 		// Path termination by miss shader or sample() routines.
-		if (prd.eventType == mi::neuraylib::BSDF_EVENT_ABSORB || isNull(prd.throughput))
+		//if (prd.eventType == mi::neuraylib::BSDF_EVENT_ABSORB || isNull(prd.throughput))
+		if (prd.eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
 		{
 			break;
 		}
 
 		// Unbiased Russian Roulette path termination.
-		if (depth >= sysData.pathLengths.x) // Start termination after a minimum number of bounces.
+		const bool isUnbiasedSuffix = (prd.flags & (FLAG_TRAIN_UNBIASED | FLAG_TRAIN_SUFFIX));
+		const bool doRR = isUnbiasedSuffix && (depth >= sysData.pathLengths.x);
+		if (doRR)
 		{
-			const float probability = fmaxf(prd.throughput);
+			const float probability = max(fmaxf(prd.throughput), 0.005f);
 
 			if (probability < rng(prd.seed)) // Paths with lower probability to continue are terminated earlier.
 			{
+				// TODO: Terminate training ray.
+
 				break;
 			}
 
@@ -620,6 +630,23 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 			sampleVolumeScattering(rng2(prd.seed), prd.stack[prd.idxStack].bias, prd.wi);
 		}
 #endif
+
+		// Max #bounces exceeded
+		if (depth >= sysData.pathLengths.y)
+		{
+			const bool isTrain = prd.flags & FLAG_TRAIN;
+
+			prd.lastRenderThroughput = make_float3(0.f);
+
+			// Terminate training chain
+			if (isTrain)
+			{
+				// TODO: Add a (training) query for this *tile*. Marks the start of a radiance-prop chain.
+
+			}
+
+			break;
+		}
 	}
 
 	return prd.radiance;
@@ -651,8 +678,8 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	prd.flags = 0;
 
 	const bool isDebug = (theLaunchIndex.x == theLaunchDim.x / 2)
-						&& (theLaunchIndex.y == theLaunchDim.y / 2)
-						&& (sysData.pf.iterationIndex == 0);
+						 && (theLaunchIndex.y == theLaunchDim.y / 2)
+						 && (sysData.pf.iterationIndex == 0);
 	if (isDebug)
 	{
 		prd.flags |= FLAG_DEBUG;
@@ -662,20 +689,33 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	if (isTrain)
 	{
 		prd.flags |= FLAG_TRAIN;
+
+		// Set about 1/16 of training ray to be unbiased (terminated with RR)
+		static constexpr auto TRAIN_UNBIASED_RATIO = 1.f / 16.f;
+		if (rng(prd.seed) < TRAIN_UNBIASED_RATIO) {
+			prd.flags |= FLAG_TRAIN_UNBIASED;
+		}
 	}
 
+// DEBUG INFO
 #if 0
 	if (isDebug)
 	{
 		printf("Tile size: (%d, %d), train index: %d\n",
 			sysData.pf.tileSize.x, sysData.pf.tileSize.y, sysData.pf.tileTrainingIndex);
+
+		printf("#Training records: %d, Max #records allowed: %d\n",
+			sysData.nrcCB->numTrainingRecords, sysData.nrcCB->maxNumTrainingRecords);
 	}
 #endif
+// DEBUG VIS
 #if 0
 	if (isTrain)
 	{
 		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
-		buffer[index] = { 0.0f, 1000000.0f, 0.0f, 1.0f };  // super green
+		buffer[index] = (prd.flags & FLAG_TRAIN_UNBIASED)
+					  ? float4{ 0.0f, 1000000.0f, 0.0f, 1.0f }  // super green for unbiased training
+					  : float4{ 1000000.0f, 0.0f, 0.0f, 1.0f }; // super red for self-training ray
 		return;
 	}
 #endif
@@ -727,10 +767,11 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 #else // if !USE_TIME_VIEW
 		//if (sysData.pf.iterationIndex > 0)
 		{
-			const float4& dst = buffer[index]; // RGBA32F
-			radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.pf.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
+			const float3 dst = make_float3(buffer[index]); // RGB24F
+			radiance = lerp(dst, radiance, 1.0f / float(sysData.pf.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
 		}
 		buffer[index] = make_float4(radiance, 1.0f);
+
 #endif // USE_TIME_VIEW
 
 #else // if !USE_FP32_OUPUT
@@ -769,4 +810,19 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 
 #endif // USE_FP32_OUTPUT
 	}
+
+// DEBUG INFO
+#if 0
+	if (isDebug)
+	{
+		printf("Ray tracing iteration done. Last render throughput: (%f, %f, %f)\n",
+			prd.lastRenderThroughput.x, prd.lastRenderThroughput.y, prd.lastRenderThroughput.z);
+	}
+#endif
+
+// DEBUG VIS (prd.lastRenderThroughput)
+#if 1
+	float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
+	buffer[index] = make_float4(prd.lastRenderThroughput, 1.0f);
+#endif
 }

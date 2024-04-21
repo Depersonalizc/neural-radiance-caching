@@ -50,8 +50,12 @@
 #define FLAG_VOLUME_SCATTERING_MISS 0x00000040
 
 /* Persistent flags */
-#define FLAG_TRAIN 0x01000000
-#define FLAG_DEBUG 0x80000000
+#define FLAG_TRAIN          0x01000000
+// Set for training ray once past the short rendering path
+#define FLAG_TRAIN_SUFFIX   0x02000000
+// Set if the training ray should be terminated with RR
+#define FLAG_TRAIN_UNBIASED 0x04000000
+#define FLAG_DEBUG          0x80000000
 
 // Changed every hit
 #define FLAG_MASK_TRANSIENT  0x00ffffff
@@ -60,6 +64,12 @@
 // Small 4 entries deep material stack.
 #define MATERIAL_STACK_LAST 3
 #define MATERIAL_STACK_SIZE 4
+
+namespace nrc
+{
+	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
+	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
+}
 
 // This is the minimal size of the struct. float4 for vectorized access was slower due to more registers used.
 struct MaterialStack
@@ -88,7 +98,9 @@ struct PerRayData
   float3 radiance;    // Radiance along the current path segment.
   float  pdf;         // The last BSDF sample's pdf, tracked for multiple importance sampling.
   
-  float3 throughput;  // The current path troughput. Starts white and gets modulated with bsdf_over_pdf with each sample.
+  float3 throughput;  // The current path throughput. Starts white and gets modulated with bsdf_over_pdf with each sample.
+  
+  float3 lastRenderThroughput; // Throughput for accumulating the queried rendering radiance at the end of rendering path.
 
   int    depth;
   float  areaSpread;    // This is the *SQARE ROOT* of a(x1...xn) in Eq (3)
@@ -104,6 +116,10 @@ struct PerRayData
   mi::neuraylib::Bsdf_event_type eventType; // The type of events created by BSDF importance sampling.
 
   unsigned int seed;  // Random number generator input.
+
+  // Needed for accumulating direct emission in __closesthit__radiance and environment map miss shaders.
+  // Remember that we defer the BSDF-sampling of MIS to the next hit(/env miss).
+  int lastTrainRecordIndex{ nrc::TRAIN_RECORD_INDEX_NONE };
   
   // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
   int           idxStack; 

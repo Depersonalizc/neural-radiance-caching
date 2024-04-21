@@ -307,13 +307,29 @@ Device::Device(const int ordinal,
 		OPTIX_CHECK(m_api.optixDeviceContextCreate(m_cudaContext, &options, &m_optixContext));
 	}
 
-	initDeviceProperties(); // OptiX, m_deviceProperty
+	// OptiX, m_deviceProperty
+	initDeviceProperties();
 
 	m_d_systemData = reinterpret_cast<SystemData *>(memAlloc(sizeof(SystemData), 16)); // Currently 8 byte alignment would be enough.
 
 	// Initialize all renderer system data.
 	m_systemData.deviceCount = m_count; // The number of active devices.
 	m_systemData.deviceIndex = m_index; // This allows to distinguish multiple devices.
+
+	// NRC Allocations
+	{
+		using namespace nrc;
+
+		// Allocate device-side CB
+		m_systemData.nrcCB = reinterpret_cast<ControlBlock *>(memAlloc(sizeof(ControlBlock), 16));
+
+		// Init host side CB. Allocate buffers
+		m_nrcControlBlock.numTrainingRecords = 0;
+		m_nrcControlBlock.trainingRecords = reinterpret_cast<TrainingRecord*>(memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, 16));
+
+		// Copy the control block over to device
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
+	}
 
 	// Starting with OptiX SDK 7.5.0 and CUDA 11.7 either PTX or OptiX IR input can be used to create modules.
 	// Just initialize the m_moduleFilenames depending on the definition of USE_OPTIX_IR.
@@ -1845,7 +1861,7 @@ void Device::render(const unsigned int iterationIndex,
 	// PER-FRAME: Update iteration/subframe index
 	m_systemData.pf.iterationIndex = iterationIndex;
 	m_systemData.pf.totalSubframeIndex = totalSubframeIndex;
-
+	
 	// PER-FRAME: Update the training index, shared across all tiles
 	{
 		const auto tileSize = 1 << (m_systemData.pf.tileShift.x + m_systemData.pf.tileShift.y);
@@ -1944,16 +1960,69 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
 		m_isDirtySystemData = false;
 	}
-	else { // Only update the per-frame data
+	else // Only update the per-frame data
+	{
 		// NOTE This won't work for async launches, but single-frame benchmarking doesn't make sense for NRC anyway.
 		static constexpr auto perFrameDataSize = sizeof(SystemData) - offsetof(SystemData, pf);
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), &m_systemData.pf, perFrameDataSize, m_cudaStream));
 	}
 
+	// TODO: Reset the per-frame data of the NRC block
+	{
+		CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
+	}
+
+	// Path Tracing: 
+	// - Generate training data for NRC
+	// - Populate queries, training records           
 	// Note the launch width per device to render in tiles.
-	const auto res_ = m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1);
-	OPTIX_CHECK(res_);
-	//OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
+	{
+		const auto res_ = m_api.optixLaunch(m_pipeline, m_cudaStream, 
+											reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), 
+											&m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1);
+		OPTIX_CHECK(res_);
+		//OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
+	}
+
+	// Sync with Device to get all the training records
+	// TODO: Only download the per-frame data fields.
+	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock, reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), sizeof(nrc::ControlBlock), m_cudaStream));
+
+	synchronizeStream();
+	std::cout << "#Training records generated: " << m_nrcControlBlock.numTrainingRecords << '\n';
+
+	// Inference at
+	// 1. The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
+	//	  These results are used for rendering. See next section.
+	// 2. The end of long training paths (#Actual Queries <= #Tiles; some could be unbiased and RR-terminated)
+	//    These results are used as ground-truth radiance for training.
+	// INPUT: RadianceQuery[#Rays + #Tiles]
+	{
+		
+	}
+
+	// Accumulate the inferenced radiance for short rendering paths to output buffer
+	// INPUT: InferredRadiance[#Rays]
+	{
+
+	}
+
+	// Back-propagate the (queried/unbiased) radiance from the end of each long path (= #Tiles)
+	// This gets all training records ready for training.
+	{
+
+	}
+
+	// Shuffle the training records to avoid spatial correlation.
+	// Also repeat samples if the raytracer undersampled.
+	{
+
+	}
+
+	// TODO: Adjust the m_systemData.pf.tileSize/tileShift according to #records
+	{
+
+	}
 }
 
 

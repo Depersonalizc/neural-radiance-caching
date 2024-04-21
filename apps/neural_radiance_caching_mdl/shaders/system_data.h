@@ -52,6 +52,78 @@ struct GeometryInstanceData
 	CUdeviceptr indices;
 };
 
+namespace nrc
+{
+	constexpr int NUM_BATCHES = 4;
+	constexpr int NUM_TRAINING_RECORDS_PER_FRAME = 65536;
+
+	struct TrainingRecord
+	{
+		// 16 byte alignment
+
+		// 8 byte alignment
+		TrainingRecord* next; // Link to training record from the last hit. In the direction of light prop.
+
+		float2 direction;
+		float2 normal;
+
+		// 4 byte alignment
+		float3 radiance;
+
+		// Unencoded inputs to the network.
+		float3 position;
+		float  roughness;
+		float3 diffuse;
+		float3 specular;
+	};
+
+	struct RadianceQuery
+	{
+		// 16 byte alignment
+
+		// 8 byte alignment
+		float2 direction;
+		float2 normal;
+
+		// 4 byte alignment
+		float3 position;
+		float  roughness;
+		float3 diffuse;
+		float3 specular;
+	};
+
+	struct ControlBlock
+	{
+		// 16 byte alignment
+
+		// 8 byte alignment
+		// Points to a fixed-length array of 65536 training records. Static.
+		TrainingRecord *trainingRecords;
+
+		// TODO: Allocate & Resize!
+		// Points to a dynamic array of (#pixels + #tiles) randiance queries. Note the #tiles is dynamic each frame.
+		// Capacity is (#pixels + #2x2-tiles ~= 1.25*#pixels). Re-allocate when the render resolution changes.
+		//
+		// The first #pixels queries are at the end of short rendering paths, in the flattened order of pixels.
+		// -- Results used for rendering (Remember to modulate with `lastRenderingThroughput`)
+		// -- For rays that are terminated early by missing into envmap, the RadianceQuery contains garbage inputs. For convenience
+		//    we still query but the results won't get accumulated into the pixel buffer, since `lastRenderingThroughput` should be 0.
+		// 
+		// The following #tiles queries are at the end of training suffixes, in the flattened order of tiles.
+		// -- Results used for initiating radiance propagation.
+		// -- Mask
+		RadianceQuery *radianceQueries;
+
+		// TODO: Allocate & Resize!
+		float3 *lastRenderingThroughput;
+
+		// 4 byte alignment
+		int numTrainingRecords;   // Number of training records generated. Upated per-frame
+		
+		int maxNumTrainingRecords = NUM_TRAINING_RECORDS_PER_FRAME;
+	};
+}
+
 // Data updated per frame
 struct SystemDataPerFrame
 {
@@ -60,9 +132,6 @@ struct SystemDataPerFrame
 	// 8 byte alignment
 	int2 tileSize;    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
 	int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
-
-	// Neural Radiance Cache =============================
-	//NeuralRadianceCacheData* nrcNumTrainingRecords;
 
 	// 4 byte alignment
 	int iterationIndex;
@@ -77,6 +146,8 @@ struct SystemData
 
 	// 8 byte alignment
 	OptixTraversableHandle topObject;
+
+	nrc::ControlBlock* nrcCB; // Single NRC control block
 
 	// The accumulated linear color space output buffer.
 	// This is always sized to the resolution, not always matching the launch dimension.
@@ -117,8 +188,8 @@ struct SystemData
 	int directLighting;
 	
 	// Padding to 16-byte alignment
-	int pad0;
-	int pad1;
+	//int pad0;
+	//int pad1;
 
 	SystemDataPerFrame pf;
 };

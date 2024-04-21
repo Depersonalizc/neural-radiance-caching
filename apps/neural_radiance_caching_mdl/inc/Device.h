@@ -558,6 +558,10 @@ public:
 	std::vector<GeometryInstanceData> m_geometryInstanceData;
 	GeometryInstanceData* m_d_geometryInstanceData;
 
+	// Host-side NRC Control block.
+	// Device-side is pointed by m_systemData.nrcCB
+	nrc::ControlBlock m_nrcControlBlock;
+
 	SystemData m_systemData{
 		// Static Data ==========
 		// This contains the root traversable handle as well.
