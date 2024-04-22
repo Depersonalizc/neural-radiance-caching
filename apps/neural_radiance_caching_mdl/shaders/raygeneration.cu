@@ -228,8 +228,10 @@ __forceinline__ __device__ unsigned int distribute(const uint2 launchIndex)
 {
 	// First calculate block coordinates of this launch index.
 	// That is the launch index divided by the tile dimensions. (No operator>>() on vectors?)
-	const unsigned int xBlock = launchIndex.x >> sysData.pf.tileShift.x;
-	const unsigned int yBlock = launchIndex.y >> sysData.pf.tileShift.y;
+	//const unsigned int xBlock = launchIndex.x >> sysData.pf.tileShift.x;
+	//const unsigned int yBlock = launchIndex.y >> sysData.pf.tileShift.y;
+	const unsigned int xBlock = launchIndex.x / sysData.pf.tileSize.x;
+	const unsigned int yBlock = launchIndex.y / sysData.pf.tileSize.y;
 
 	// Each device needs to start at a different column and each row should start with a different device.
 	const unsigned int xTile = xBlock * sysData.deviceCount + ((sysData.deviceIndex + yBlock) % sysData.deviceCount);
@@ -490,9 +492,12 @@ __forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
 	}
 
 	// Compute the local index within tile
-	const auto xLocal = launchIndex.x - (launchIndex.x >> sysData.pf.tileShift.x << sysData.pf.tileShift.x);
-	const auto yLocal = launchIndex.y - (launchIndex.y >> sysData.pf.tileShift.y << sysData.pf.tileShift.y);
-	const auto idxLocal = (yLocal << sysData.pf.tileShift.x) + xLocal;
+	//const auto xLocal = launchIndex.x - (launchIndex.x >> sysData.pf.tileShift.x << sysData.pf.tileShift.x);
+	//const auto yLocal = launchIndex.y - (launchIndex.y >> sysData.pf.tileShift.y << sysData.pf.tileShift.y);
+	//const auto idxLocal = (yLocal << sysData.pf.tileShift.x) + xLocal;
+	const auto xLocal = launchIndex.x % sysData.pf.tileSize.x;
+	const auto yLocal = launchIndex.y % sysData.pf.tileSize.y;
+	const auto idxLocal = yLocal * sysData.pf.tileSize.x + xLocal;
 
 	return idxLocal == sysData.pf.tileTrainingIndex;
 }
@@ -705,18 +710,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 			sysData.pf.tileSize.x, sysData.pf.tileSize.y, sysData.pf.tileTrainingIndex);
 
 		printf("#Training records: %d, Max #records allowed: %d\n",
-			sysData.nrcCB->numTrainingRecords, sysData.nrcCB->maxNumTrainingRecords);
-	}
-#endif
-// DEBUG VIS
-#if 0
-	if (isTrain)
-	{
-		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
-		buffer[index] = (prd.flags & FLAG_TRAIN_UNBIASED)
-					  ? float4{ 0.0f, 1000000.0f, 0.0f, 1.0f }  // super green for unbiased training
-					  : float4{ 1000000.0f, 0.0f, 0.0f, 1.0f }; // super red for self-training ray
-		return;
+			sysData.nrcCB->numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME/*sysData.nrcCB->maxNumTrainingRecords*/);
 	}
 #endif
 
@@ -725,7 +719,12 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	prd.pos = ray.org;
 	prd.wi  = ray.dir;
 
+	prd.pixelIndex = index;
+
 	float3 radiance = ::nrcIntegrator(prd);
+
+	// Record the last throughput.
+	sysData.nrcCB->lastRenderThroughput[index] = prd.lastRenderThroughput;
 
 #if USE_DEBUG_EXCEPTIONS
 	// DEBUG Highlight numerical errors.
@@ -821,8 +820,21 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 #endif
 
 // DEBUG VIS (prd.lastRenderThroughput)
-#if 1
+#if 0
 	float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
 	buffer[index] = make_float4(prd.lastRenderThroughput, 1.0f);
 #endif
+
+// DEBUG VIS
+#if 0
+	if (isTrain)
+	{
+		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
+		buffer[index] = (prd.flags & FLAG_TRAIN_UNBIASED)
+					  ? float4{ 0.0f, 1000000.0f, 0.0f, 1.0f }  // super green for unbiased training
+					  : float4{ 1000000.0f, 0.0f, 0.0f, 1.0f }; // super red for self-training ray
+		return;
+	}
+#endif
+
 }

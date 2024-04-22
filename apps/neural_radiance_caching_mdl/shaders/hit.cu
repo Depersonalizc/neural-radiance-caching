@@ -507,6 +507,15 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
     return terminate;
 }
 
+__forceinline__ __device__ void addRenderQuery(const PerRayData& thePrd)
+{
+    // TODO: Needs material information as query input!
+
+    auto& renderQuery = sysData.nrcCB->radianceQueriesTraining[thePrd.pixelIndex];
+    
+    return;
+}
+
 }
 
 // This shader handles every supported feature of the renderer.
@@ -553,7 +562,7 @@ extern "C" __global__ void __closesthit__radiance()
     const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
     mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
     const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
-
+    
     // Using a single material init function instead of per distribution init functions.
     // This is always present, even if it just returns.
     optixDirectCall<void>(shaderConfiguration.idxCallInit, &state, &res_data, material.arg_block);
@@ -667,6 +676,7 @@ extern "C" __global__ void __closesthit__radiance()
             else // Case 2: End of rendering path
             {
                 // TODO: Add a (rendering) query for this *pixel*.
+                ::addRenderQuery(*thePrd);
 
                 // Store the last rendering throughput to accumulate the query by. 
                 // Then proceed with the training suffix.
@@ -681,6 +691,7 @@ extern "C" __global__ void __closesthit__radiance()
         else // Pure rendering ray ends
         {
             // TODO: Add a (rendering) query for this *pixel*.
+            ::addRenderQuery(*thePrd);
 
             // Store the last rendering throughput to accumulate the query by. Then terminate.
             thePrd->lastRenderThroughput = thePrd->throughput;
@@ -745,6 +756,7 @@ extern "C" __global__ void __closesthit__radiance()
         if (!isTrainSuffix)
         {
             // TODO: Add a (rendering) query for this *pixel*.
+            ::addRenderQuery(*thePrd);
 
             // Store the last rendering throughput to accumulate the query by. 
             thePrd->lastRenderThroughput = make_float3(0.f);
@@ -903,6 +915,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             else // Case 2: End of rendering path
             {
                 // TODO: Add a (rendering) query for this *pixel*.
+                ::addRenderQuery(*thePrd);
 
                 // Store the last rendering throughput to accumulate the query by. 
                 thePrd->lastRenderThroughput = thePrd->throughput;
@@ -924,7 +937,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         else // Pure rendering ray ends
         {
             // TODO: Add a (rendering) query for this *pixel*.
-            
+            ::addRenderQuery(*thePrd);
+
             // Store the last rendering throughput to accumulate the query by. Then terminate.
             thePrd->lastRenderThroughput = thePrd->throughput;
 
@@ -1037,6 +1051,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         if (!isTrainSuffix)
         {
             // TODO: Add a (rendering) query for this *pixel*.
+            ::addRenderQuery(*thePrd);
 
             // Store the last rendering throughput to accumulate the query by. 
             thePrd->lastRenderThroughput = throughput;

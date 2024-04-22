@@ -99,9 +99,12 @@ namespace nrc
 		// 16 byte alignment
 
 		// 8 byte alignment
-		// Points to a fixed-length array of 65536 training records. Static.
-		TrainingRecord *trainingRecords; // numTrainingRecords -> 65536
-		float3 *trainingRadianceTargets; // numTrainingRecords -> 65536
+		
+		// Static. All point to fixed-length arrays of 65536 training records.
+		TrainingRecord *trainingRecords = nullptr; // numTrainingRecords -> 65536
+		float3 *trainingRadianceTargets = nullptr; // numTrainingRecords -> 65536
+		// The results of those queries will be used to train the NRC.
+		RadianceQuery *radianceQueriesTraining = nullptr; // numTrainingRecords -> 65536
 
 		// TODO: Allocate & Resize!
 		// Points to a dynamic array of (#pixels + #tiles) randiance queries. Note the #tiles is dynamic each frame.
@@ -114,19 +117,15 @@ namespace nrc
 		// 
 		// The following #tiles queries are at the end of training suffixes, in the flattened order of tiles.
 		// -- Results used for initiating radiance propagation.
-		// -- Mask
-		RadianceQuery *radianceQueriesInference;
-
-		// The results of those queries will be used to train the NRC.
-		RadianceQuery *radianceQueriesTraining; // numTrainingRecords -> 65536
+		RadianceQuery *radianceQueriesInference = nullptr;
 
 		// TODO: Allocate & Resize!
-		float3 *lastRenderingThroughput; // #pixels
+		float3 *lastRenderThroughput = nullptr; // #pixels
 
 		// 4 byte alignment
-		int numTrainingRecords;   // Number of training records generated. Upated per-frame
+		int numTrainingRecords = 0;   // Number of training records generated. Upated per-frame
 		
-		int maxNumTrainingRecords = NUM_TRAINING_RECORDS_PER_FRAME;
+		//int maxNumTrainingRecords = NUM_TRAINING_RECORDS_PER_FRAME;
 	};
 }
 
@@ -136,8 +135,8 @@ struct SystemDataPerFrame
 	// 16 byte alignment
 
 	// 8 byte alignment
-	int2 tileSize;    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
-	int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
+	int2 tileSize = { 8, 8 };    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
+	//int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
 
 	// 4 byte alignment
 	int iterationIndex;

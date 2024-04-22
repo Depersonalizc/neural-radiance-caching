@@ -115,6 +115,8 @@ struct PerRayData
   // Remember that we defer the BSDF-sampling of MIS to the next hit(/env miss).
   // Initialized to nrc::TRAIN_RECORD_INDEX_NONE in nrcIntegrator
   int lastTrainRecordIndex;
+
+  int pixelIndex;
   
   // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
   int           idxStack; 

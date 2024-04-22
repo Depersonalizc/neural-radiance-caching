@@ -324,7 +324,7 @@ struct InstanceData
 struct DeviceState
 {
 	int2     resolution;
-	int2     tileSize;
+	//int2     tileSize;
 	int2     pathLengths;
 	int      walkLength;
 	int      samplesSqrt;
@@ -491,6 +491,11 @@ private:
 	void initDeviceProperties();
 	void initPipeline();
 	void initSBT(const std::vector<OptixProgramGroup>& programGroups);
+	void initNRC();
+	void resizeNRC();
+
+	// Adjust the tile size according to #train records generated last frame.
+	void adjustTileSize(int numTrainRecords);
 
 	[[nodiscard]] std::vector<OptixModule> buildModules() const;
 	[[nodiscard]] std::vector<OptixProgramGroupDesc> buildProgramGroupDescs(const std::vector<OptixModule>& modules) const;
@@ -575,7 +580,7 @@ public:
 		// Per-frame Data ==========
 		.pf = {
 			.tileSize  = {8, 8},
-			.tileShift = {3, 3},
+			//.tileShift = {3, 3},
 		}
 	};
 	SystemData* m_d_systemData; // Device side CUdeviceptr of the system data.

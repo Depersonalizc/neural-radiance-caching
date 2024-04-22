@@ -316,27 +316,6 @@ Device::Device(const int ordinal,
 	m_systemData.deviceCount = m_count; // The number of active devices.
 	m_systemData.deviceIndex = m_index; // This allows to distinguish multiple devices.
 
-	// NRC Allocations
-	{
-		using namespace nrc;
-
-		// Allocate device-side CB
-		m_systemData.nrcCB = reinterpret_cast<ControlBlock *>(memAlloc(sizeof(ControlBlock), alignof(ControlBlock)));
-
-		// Init host side CB. Allocate buffers
-		m_nrcControlBlock.numTrainingRecords = 0;
-		m_nrcControlBlock.trainingRecords = reinterpret_cast<TrainingRecord*>(
-			memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(TrainingRecord)));
-		m_nrcControlBlock.trainingRadianceTargets = reinterpret_cast<float3*>(
-			memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
-
-		m_nrcControlBlock.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
-			memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
-
-		// Copy the control block over to device
-		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
-	}
-
 	// Starting with OptiX SDK 7.5.0 and CUDA 11.7 either PTX or OptiX IR input can be used to create modules.
 	// Just initialize the m_moduleFilenames depending on the definition of USE_OPTIX_IR.
 	// That is added to the project definitions inside the CMake script when OptiX SDK 7.5.0 and CUDA 11.7 or newer are found.
@@ -416,6 +395,9 @@ Device::Device(const int ordinal,
 
 	// OptixProgramGroupOptions
 	//m_pgo = {}; // This is a just placeholder.
+
+	// NRC Allocations
+	initNRC();
 }
 
 
@@ -779,6 +761,18 @@ void Device::initPipeline()
 	m_modulesMDL.clear();
 }
 
+void Device::adjustTileSize(int numTrainRecords)
+{
+	const auto ratio = static_cast<float>(numTrainRecords) 
+					 / static_cast<float>(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+	const auto r = std::sqrtf(ratio);
+	
+	const auto newSizeX = std::max(static_cast<int>(m_systemData.pf.tileSize.x * r + 0.5f), 2);
+	const auto newSizeY = std::max(static_cast<int>(m_systemData.pf.tileSize.y * r + 0.5f), 2);
+	
+	m_systemData.pf.tileSize = { newSizeX, newSizeY };
+}
+
 // Create all modules:
 // Each source file results in one OptixModule.
 std::vector<OptixModule> Device::buildModules() const
@@ -1105,6 +1099,55 @@ void Device::initSBT(const std::vector<OptixProgramGroup>& programGroups)
 	}
 }
 
+void Device::initNRC()
+{
+	using namespace nrc;
+
+	// Allocate device-side CB
+	m_systemData.nrcCB = reinterpret_cast<ControlBlock *>(memAlloc(sizeof(ControlBlock), alignof(ControlBlock)));
+
+	// Init host side CB. Allocate buffers
+	m_nrcControlBlock.numTrainingRecords = 0;
+	m_nrcControlBlock.trainingRecords = reinterpret_cast<TrainingRecord*>(
+		memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(TrainingRecord)));
+	m_nrcControlBlock.trainingRadianceTargets = reinterpret_cast<float3*>(
+		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
+
+	m_nrcControlBlock.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
+		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
+
+	// Copy the control block over to device
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
+}
+
+// Resize NRC buffers according to the current screensize
+void Device::resizeNRC()
+{
+	using namespace nrc;
+
+	const auto numPixels = m_systemData.resolution.x * m_systemData.resolution.y;
+
+	// m_nrcControlBlock.lastRenderThroughput
+	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.lastRenderThroughput));
+	m_nrcControlBlock.lastRenderThroughput = reinterpret_cast<float3*>(
+		memAlloc(sizeof(float3) * numPixels, alignof(float3)));
+
+	// m_nrcControlBlock.radianceQueriesInference
+	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.radianceQueriesInference));
+	auto numQueriesInference = numPixels;
+	{
+		const auto nTilesXMax = m_systemData.resolution.x / 2;
+		const auto nTilesYMax = m_systemData.resolution.y / 2;
+		numQueriesInference += (nTilesXMax * nTilesYMax);
+	}
+	m_nrcControlBlock.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
+		memAlloc(sizeof(RadianceQuery) * numQueriesInference, alignof(RadianceQuery)));
+
+	// Copy the control block over to device
+	// TODO: Copy only the changed part.
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
+}
+
 void Device::initCameras(const std::vector<CameraDefinition>& cameras)
 {
 	// PERF For simplicity, the public Device functions make sure to set the CUDA context and wait for the previous operation to finish.
@@ -1329,18 +1372,19 @@ void Device::setState(const DeviceState& state)
 	}
 
 	// Special handling from the previous DeviceMultiGPULocalCopy class.
-	if (m_systemData.resolution != state.resolution ||
-		m_systemData.pf.tileSize != state.tileSize)
+	if (m_systemData.resolution != state.resolution 
+		//|| m_systemData.pf.tileSize != state.tileSize
+		)
 	{
-		if (1 < m_count)
-		{
-			// Calculate the new launch width for the tiled rendering.
-			// It must be a multiple of the tileSize width, otherwise the right-most tiles will not get filled correctly.
-			const int width = (state.resolution.x + m_count - 1) / m_count;
-			const int mask = state.tileSize.x - 1;
-			m_launchWidth = (width + mask) & ~mask; // == ((width + (tileSize - 1)) / tileSize.x) * tileSize.x;
-		}
-		else
+		//if (1 < m_count)
+		//{
+		//	// Calculate the new launch width for the tiled rendering.
+		//	// It must be a multiple of the tileSize width, otherwise the right-most tiles will not get filled correctly.
+		//	const int width = (state.resolution.x + m_count - 1) / m_count;
+		//	const int mask = state.tileSize.x - 1;
+		//	m_launchWidth = (width + mask) & ~mask; // == ((width + (tileSize - 1)) / tileSize.x) * tileSize.x;
+		//}
+		//else
 		{
 			// Single-GPU launch width is the same as the rendering resolution width.
 			m_launchWidth = state.resolution.x;
@@ -1355,12 +1399,12 @@ void Device::setState(const DeviceState& state)
 		m_isDirtySystemData = true;
 	}
 
-	if (m_systemData.pf.tileSize != state.tileSize)
-	{
-		m_systemData.pf.tileSize = state.tileSize;
-		m_systemData.pf.tileShift = calculateTileShift(m_systemData.pf.tileSize);
-		m_isDirtySystemData = true;
-	}
+	//if (m_systemData.pf.tileSize != state.tileSize)
+	//{
+	//	m_systemData.pf.tileSize = state.tileSize;
+	//	//m_systemData.pf.tileShift = calculateTileShift(m_systemData.pf.tileSize);
+	//	m_isDirtySystemData = true;
+	//}
 
 	if (m_systemData.samplesSqrt != state.samplesSqrt)
 	{
@@ -1868,14 +1912,15 @@ void Device::render(const unsigned int iterationIndex,
 	m_systemData.pf.iterationIndex = iterationIndex;
 	m_systemData.pf.totalSubframeIndex = totalSubframeIndex;
 	
-	// PER-FRAME: Update the training index, shared across all tiles
-	{
-		const auto tileSize = 1 << (m_systemData.pf.tileShift.x + m_systemData.pf.tileShift.y);
-		m_systemData.pf.tileTrainingIndex = rand() % tileSize;
-	}
-
 	if (m_isDirtyOutputBuffer)
 	{
+		if (!m_bufferHost.empty()) [[likely]]
+		{
+			const auto scale = static_cast<float>(m_systemData.resolution.x * m_systemData.resolution.y)
+				             / static_cast<float>(m_bufferHost.size());
+			adjustTileSize(m_nrcControlBlock.numTrainingRecords * scale);
+		}
+
 		MY_ASSERT(buffer != nullptr);
 		if (*buffer == nullptr) // The buffer is nullptr for the device which should allocate the full resolution buffers. This device is called first!
 		{
@@ -1954,8 +1999,18 @@ void Device::render(const unsigned int iterationIndex,
 #endif
 		}
 
+		// Resize for NRC
+		resizeNRC();
+
 		m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
 		m_isDirtySystemData   = true;  // Now the sysData on the device needs to be updated.
+	}
+
+	// PER-FRAME: Update the training index, shared across all tiles
+	{
+		//const auto tileSize = 1 << (m_systemData.pf.tileShift.x + m_systemData.pf.tileShift.y);
+		const auto tileSize = m_systemData.pf.tileSize.x * m_systemData.pf.tileSize.y;
+		m_systemData.pf.tileTrainingIndex = rand() % tileSize;
 	}
 
 	// We simpy sync here because this NRC demo only supports interactive mode on single device
@@ -1995,7 +2050,7 @@ void Device::render(const unsigned int iterationIndex,
 	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock, reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), sizeof(nrc::ControlBlock), m_cudaStream));
 
 	synchronizeStream();
-	std::cout << "#Training records generated: " << m_nrcControlBlock.numTrainingRecords << '\n';
+	std::cout << "[HOST] #Training records generated: " << m_nrcControlBlock.numTrainingRecords << '\n';
 
 	// Inference at
 	// 1. The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
@@ -2025,10 +2080,9 @@ void Device::render(const unsigned int iterationIndex,
 
 	}
 
-	// TODO: Adjust the m_systemData.pf.tileSize/tileShift according to #records
-	{
-
-	}
+	// Adjust the tile size according to #records
+	adjustTileSize(m_nrcControlBlock.numTrainingRecords);
+	std::cout << "[HOST] Tile size: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << '\n';
 }
 
 
@@ -2186,7 +2240,7 @@ void Device::compositor(Device* other)
 	compositorData.tileBuffer = m_systemData.tileBuffer;
 	compositorData.resolution = m_systemData.resolution;
 	compositorData.tileSize = m_systemData.pf.tileSize;
-	compositorData.tileShift = m_systemData.pf.tileShift;
+	//compositorData.tileShift = m_systemData.pf.tileShift;
 	compositorData.launchWidth = m_launchWidth;
 	compositorData.deviceCount = m_systemData.deviceCount;
 	compositorData.deviceIndex = other->m_systemData.deviceIndex; // This is the only value which changes per device. 

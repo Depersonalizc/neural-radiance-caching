@@ -330,7 +330,7 @@ Application::Application(GLFWwindow* window, const Options& options)
 		}
 
 		m_state.resolution = m_resolution;
-		m_state.tileSize = m_tileSize;
+		//m_state.tileSize = m_tileSize;
 		m_state.pathLengths = m_pathLengths;
 		m_state.walkLength = m_walkLength;
 		m_state.samplesSqrt = m_samplesSqrt;
