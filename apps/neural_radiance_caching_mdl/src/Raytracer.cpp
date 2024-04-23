@@ -1748,6 +1748,12 @@ bool Raytracer::initMDL(const std::vector<std::string>& searchPaths)
     // return false;
   }
 
+  // Generate code for auxiliary methods on BSDF.
+  if (m_mdl_backend->set_option("enable_auxiliary", "on") != 0)
+  {
+      return false;
+  }
+
   m_image_api = m_neuray->get_api_component<mi::neuraylib::IImage_api>();
 
   return true;

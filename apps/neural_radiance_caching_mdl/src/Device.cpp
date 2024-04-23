@@ -1912,8 +1912,9 @@ void Device::render(const unsigned int iterationIndex,
 	m_systemData.pf.iterationIndex = iterationIndex;
 	m_systemData.pf.totalSubframeIndex = totalSubframeIndex;
 	
-	if (m_isDirtyOutputBuffer)
+	if (m_isDirtyOutputBuffer) [[unlikely]]
 	{
+		// Adjust the tile size due to screen-size change
 		if (!m_bufferHost.empty()) [[likely]]
 		{
 			const auto scale = static_cast<float>(m_systemData.resolution.x * m_systemData.resolution.y)
@@ -1999,7 +2000,7 @@ void Device::render(const unsigned int iterationIndex,
 #endif
 		}
 
-		// Resize for NRC
+		// Resize NRC buffers
 		resizeNRC();
 
 		m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
@@ -2399,81 +2400,50 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 	// This function is called per reference because it needs to allocate and store the parameter argument block per reference.
 	// Though the shader code, resp. the callable program indices need to be reused.
 	const int indexShader = material->getShaderIndex();
+	MY_ASSERT(indexShader <= m_modulesMDL.size());
 
 	const std::string suffix = std::to_string(indexShader);
-
-	DeviceShaderConfiguration dsc = {};
-
-	// Set all callable indices to the invalid value -1.
-	// The MDL code generator will generate all functions by default (sample, evaluate, pdf),
-	// but pdf functions are disabled with backend set_option("enable_pdf", "off")
-	// This is only containing the direct callables which are required inside the pipeline of this unidirectional path tracer.
-
-	dsc.idxCallInit = -1;
-
-	dsc.idxCallThinWalled = -1;
-
-	dsc.idxCallSurfaceScatteringSample = -1;
-	dsc.idxCallSurfaceScatteringEval = -1;
-
-	dsc.idxCallBackfaceScatteringSample = -1;
-	dsc.idxCallBackfaceScatteringEval = -1;
-
-	dsc.idxCallSurfaceEmissionEval = -1;
-	dsc.idxCallSurfaceEmissionIntensity = -1;
-	dsc.idxCallSurfaceEmissionIntensityMode = -1;
-
-	dsc.idxCallBackfaceEmissionEval = -1;
-	dsc.idxCallBackfaceEmissionIntensity = -1;
-	dsc.idxCallBackfaceEmissionIntensityMode = -1;
-
-	dsc.idxCallIor = -1;
-
-	// No direct callables for VDFs itself. The MDL SDK is not generating code for VDFs.
-
-	dsc.idxCallVolumeAbsorptionCoefficient = -1;
-	dsc.idxCallVolumeScatteringCoefficient = -1;
-	dsc.idxCallVolumeDirectionalBias = -1;
-
-	dsc.idxCallGeometryCutoutOpacity = -1;
-
-	dsc.idxCallHairSample = -1;
-	dsc.idxCallHairEval = -1;
-
-	// Simplify the conditions by translating all constants unconditionally.
-	if (config.thin_walled)
-	{
-		dsc.flags |= IS_THIN_WALLED;
-	}
-	dsc.surface_intensity = make_float3(config.surface_intensity[0], config.surface_intensity[1], config.surface_intensity[2]);
-	dsc.surface_intensity_mode = config.surface_intensity_mode;
-	dsc.backface_intensity = make_float3(config.backface_intensity[0], config.backface_intensity[1], config.backface_intensity[2]);
-	dsc.backface_intensity_mode = config.backface_intensity_mode;
-	dsc.ior = make_float3(config.ior[0], config.ior[1], config.ior[2]);
-	dsc.absorption_coefficient = make_float3(config.absorption_coefficient[0], config.absorption_coefficient[1], config.absorption_coefficient[2]);
-	dsc.scattering_coefficient = make_float3(config.scattering_coefficient[0], config.scattering_coefficient[1], config.scattering_coefficient[2]);
-	dsc.cutout_opacity = config.cutout_opacity;
-
-	MY_ASSERT(indexShader <= m_modulesMDL.size());
 
 	// If the shader index hasn't been seen before, we need to create a new OptixModule and a device side shader configuration.
 	// Otherwise the indexShader is already indexing the correct shader configuration and 
 	// only the per reference parameter argument block and texture_handler need to be setup per reference.
 	if (indexShader == m_modulesMDL.size())
 	{
-		OptixModule moduleMDL = {};
-
-		//char log[2048];
-		//size_t sizeof_log = sizeof(log);
-
+		// Create MDL module
+		{
 #if (OPTIX_VERSION >= 70700)
-		OPTIX_CHECK(m_api.optixModuleCreate(m_optixContext, &m_mco, &m_pco, res.target_code->get_code(), res.target_code->get_code_size(), nullptr, nullptr, &moduleMDL));
+			const auto optixModuleCreateFn = m_api.optixModuleCreate;
 #else
-		OPTIX_CHECK(m_api.optixModuleCreateFromPTX(m_optixContext, &m_mco, &m_pco, res.target_code->get_code(), res.target_code->get_code_size(), nullptr, nullptr, &moduleMDL));
+			const auto optixModuleCreateFn = m_api.optixModuleCreateFromPTX;
 #endif
+			auto &moduleMDL = m_modulesMDL.emplace_back();
 
-		m_modulesMDL.push_back(moduleMDL);
+			char log[2048];
+			size_t sizeLog = sizeof(log);
+			OPTIX_CHECK(optixModuleCreateFn(m_optixContext,
+				&m_mco, &m_pco, res.target_code->get_code(), res.target_code->get_code_size(), 
+				log, &sizeLog, &moduleMDL));
+			if (sizeLog > 1) std::cerr << log << '\n';
+		}
 
+		// Append shader desc
+		auto& dsc = m_deviceShaderConfigurations.emplace_back();
+
+		// Simplify the conditions by translating all constants unconditionally.
+		if (config.thin_walled)
+		{
+			dsc.flags |= IS_THIN_WALLED;
+		}
+		dsc.surface_intensity       = make_float3(config.surface_intensity[0], config.surface_intensity[1], config.surface_intensity[2]);
+		dsc.surface_intensity_mode  = config.surface_intensity_mode;
+		dsc.backface_intensity      = make_float3(config.backface_intensity[0], config.backface_intensity[1], config.backface_intensity[2]);
+		dsc.backface_intensity_mode = config.backface_intensity_mode;
+		dsc.ior                     = make_float3(config.ior[0], config.ior[1], config.ior[2]);
+		dsc.absorption_coefficient  = make_float3(config.absorption_coefficient[0], config.absorption_coefficient[1], config.absorption_coefficient[2]);
+		dsc.scattering_coefficient  = make_float3(config.scattering_coefficient[0], config.scattering_coefficient[1], config.scattering_coefficient[2]);
+		dsc.cutout_opacity          = config.cutout_opacity;
+
+		// Record indices for direct callables
 		dsc.idxCallInit = appendProgramGroupMDL(indexShader, std::string("__direct_callable__init") + suffix); // The material init function.
 
 		if (!config.is_thin_walled_constant)
@@ -2487,6 +2457,8 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 
 			dsc.idxCallSurfaceScatteringSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
 			dsc.idxCallSurfaceScatteringEval = appendProgramGroupMDL(indexShader, name + std::string("_evaluate"));
+			// TODO: Add direct callables to query the surface albedo/roughness?
+			dsc.idxCallSurfaceScatteringAux = appendProgramGroupMDL(indexShader, name + std::string("_auxiliary"));
 		}
 
 		if (config.is_backface_bsdf_valid)
@@ -2495,6 +2467,8 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 
 			dsc.idxCallBackfaceScatteringSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
 			dsc.idxCallBackfaceScatteringEval = appendProgramGroupMDL(indexShader, name + std::string("_evaluate"));
+			// TODO: Add direct callables to query the backface albedo/roughness?
+			dsc.idxCallBackfaceScatteringAux = appendProgramGroupMDL(indexShader, name + std::string("_auxiliary"));
 		}
 
 		if (config.is_surface_edf_valid)
@@ -2603,8 +2577,6 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 			dsc.idxCallHairSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
 			dsc.idxCallHairEval = appendProgramGroupMDL(indexShader, name + std::string("_evaluate"));
 		}
-
-		m_deviceShaderConfigurations.push_back(dsc);
 
 		MY_ASSERT(m_modulesMDL.size() == m_deviceShaderConfigurations.size());
 	}

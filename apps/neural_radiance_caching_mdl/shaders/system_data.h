@@ -89,9 +89,9 @@ namespace nrc
 
 		// 4 byte alignment
 		float3 position;
-		float  roughness;
 		float3 diffuse;
 		float3 specular;
+		float3 roughness;
 	};
 
 	struct ControlBlock
@@ -111,12 +111,14 @@ namespace nrc
 		// Capacity is (#pixels + #2x2-tiles ~= 1.25*#pixels). Re-allocate when the render resolution changes.
 		//
 		// The first #pixels queries are at the end of short rendering paths, in the flattened order of pixels.
-		// -- Results used for rendering (Remember to modulate with `lastRenderingThroughput`)
+		// -- Results (potentially) used for rendering (Remember to modulate with `lastRenderingThroughput`)
 		// -- For rays that are terminated early by missing into envmap, the RadianceQuery contains garbage inputs. For convenience
 		//    we still query but the results won't get accumulated into the pixel buffer, since `lastRenderingThroughput` should be 0.
 		// 
 		// The following #tiles queries are at the end of training suffixes, in the flattened order of tiles.
-		// -- Results used for initiating radiance propagation.
+		// -- Results (potentially) used for initiating radiance propagation in self-training.
+		// -- For unbiased training rays, the RadianceQuery contains garbage inputs. For convenience we still query
+		//    but the results won't be used to initiate radiance propagation, as indicated by the corresponding TrainTerminalVertex.
 		RadianceQuery *radianceQueriesInference = nullptr;
 
 		// TODO: Allocate & Resize!

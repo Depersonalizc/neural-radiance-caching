@@ -119,13 +119,23 @@ extern "C" __global__ void __miss__env_constant()
 		emission *= weightMIS;
 	}
 
-	thePrd->radiance += thePrd->throughput * emission;
+	emission *= thePrd->throughput;
+
+	thePrd->radiance += emission;
 	thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
 
-	// The ray is terminated early, mask off the queried radiance for rendering.
+	// !! Add the BSDF-sampling part of the MIS to last vertex's target radiance.
+    if (thePrd->lastTrainRecordIndex >= 0) [[unlikely]]
+    {
+        sysData.nrcCB->trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
+    }
+
+	// Terminate rendering path if it hasn't
 	const bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
-	if (!isTrainSuffix) // Either pure rendering, or rendering path of training ray
+	if (!isTrainSuffix)
 	{
+		// Set rendering throughput to zero because the emission has already
+		// been accounted for by Direct Lighting. Avoid double counting!
 		thePrd->lastRenderThroughput = make_float3(0.f);
 	}
 
@@ -179,13 +189,23 @@ extern "C" __global__ void __miss__env_sphere()
 		emission *= balanceHeuristic(thePrd->pdf, pdfLight);
 	}
 
-	thePrd->radiance += thePrd->throughput * emission * light.emission;
+	emission *= (thePrd->throughput * light.emission);
+
+	thePrd->radiance += emission;
 	thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
 
-	// The ray is terminated early, mask off the queried radiance for rendering.
+	// !! Add the BSDF-sampling part of the MIS to last vertex's target radiance.
+    if (thePrd->lastTrainRecordIndex >= 0) [[unlikely]]
+    {
+        sysData.nrcCB->trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
+    }
+
+	// Terminate rendering path if it hasn't
 	const bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
-	if (!isTrainSuffix) // Either pure rendering, or rendering path of training ray
+	if (!isTrainSuffix)
 	{
+		// Set rendering throughput to zero because the emission has already
+		// been accounted for by Direct Lighting. Avoid double counting!
 		thePrd->lastRenderThroughput = make_float3(0.f);
 	}
 

@@ -619,8 +619,9 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 
 			if (probability < rng(prd.seed)) // Paths with lower probability to continue are terminated earlier.
 			{
-				// TODO: Terminate training ray.
-
+				// TODO: End the train suffix by a zero-radiance unbiased 
+				// terminal vertex that links to thePrd->lastTrainRecordIndex.
+				//::endTrainSuffixUnbiased(prd);
 				break;
 			}
 
@@ -646,8 +647,9 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 			// Terminate training chain
 			if (isTrain)
 			{
-				// TODO: Add a (training) query for this *tile*. Marks the start of a radiance-prop chain.
-
+				// TODO: End the train suffix by a zero-radiance unbiased 
+				// terminal vertex that links to thePrd->lastTrainRecordIndex.
+				//::endTrainSuffixUnbiased(prd);
 			}
 
 			break;
