@@ -424,6 +424,8 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
     return bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
 }
 
+// NOTE: We assume thePrd.eventType contains the surface interaction.
+// It is needed to correct roughness of diffuse surfaces to (1.f, 1.f).
 __forceinline__ __device__ void getBSDFAuxiliaryData(const Mdl_state& mdlState,
                                                      const mi::neuraylib::Resource_data& resourceData,
                                                      CUdeviceptr materialArgBlock,
@@ -459,6 +461,12 @@ __forceinline__ __device__ void getBSDFAuxiliaryData(const Mdl_state& mdlState,
     auxData.k1 = thePrd.wo; // == -optixGetWorldRayDirection()
     
     optixDirectCall<void>(idxCallAuxiliarySample, &auxData, &mdlState, &resourceData, materialArgBlock);
+
+    // roughtness returns (0, 0) for diffuse surfaces. Correct it to (1, 1).
+    if (thePrd.eventType & mi::neuraylib::BSDF_EVENT_DIFFUSE)
+    {
+        auxData.roughness = { 1.f, 1.f, 0.f };
+    }
 
     queried = true;
 }
@@ -773,60 +781,8 @@ extern "C" __global__ void __closesthit__radiance()
 
     // Auxiliary material properties (albedos, roughness) if we need it.
     // If scattering fn doesn't exist, just use the default Bsdf_auxiliary_data.
-    mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> aux_data;
+    mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> aux_data{};
     bool queriedAuxData = !scatteringFnExists;
-
-    // Handle terminating vertex.
-    // Can be sure it's not an unbiased train suffix.
-    if (terminateAreaSpread) [[unlikely]]
-    {
-        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringSample, 
-                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
-
-        if (isTrain) [[unlikely]]
-        {
-            if (isTrainSuffix) // Case 1: End of (self-)training suffix.
-            {
-                // Terminate the train suffix by self-training.
-                // Add a query for this *tile* to (the training part of) radianceQueriesInference
-                ::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
-
-                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-                return;
-            }
-            else // Case 2: End of rendering path
-            {
-                // TODO: Add a (rendering) query for this *pixel*.
-                ::addRenderQuery(state, *thePrd, aux_data);
-
-                // Store the last rendering throughput to accumulate the query by. 
-                thePrd->lastRenderThroughput = throughput;
-                
-                // EDGE: Train suffix ended before rendering path due to a full buffer.
-                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL)
-                {
-                    thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-                    return;
-                }
-
-                // Setup to proceed with the training suffix.
-                thePrd->flags |= FLAG_TRAIN_SUFFIX; // Mark we're in training suffix.
-                thePrd->areaSpread = 0.f; // Restart area spread accumulation
-                isTrainSuffix = true;
-            }
-        }
-        else // Pure rendering ray ends
-        {
-            // TODO: Add a (rendering) query for this *pixel*.
-            ::addRenderQuery(state, *thePrd, aux_data);
-
-            // Store the last rendering throughput to accumulate the query by. Then terminate.
-            thePrd->lastRenderThroughput = throughput;
-            
-            thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-            return;
-        }
-    }
 
     // Importance sample the BSDF.
     float3 localThroughput = make_float3(0.f);
@@ -852,13 +808,24 @@ extern "C" __global__ void __closesthit__radiance()
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     }
 
+// DEBUG VIS: Albedos/roughness
+#if 0
+    ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                           *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+    thePrd->radiance = aux_data.albedo_diffuse;
+    //thePrd->radiance = aux_data.albedo_glossy;
+    //thePrd->radiance = { aux_data.roughness.x, aux_data.roughness.y, 0.f };
+    thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+    return;
+#endif
+
     // Early unbiased termination.
     if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
     {
         // Terminate rendering path if it hasn't
         if (!isTrainSuffix)
         {
-            // TODO: Add a (rendering) query for this *pixel*.
+            // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
             //::addRenderQuery(state, *thePrd, aux_data);
 
@@ -877,6 +844,58 @@ extern "C" __global__ void __closesthit__radiance()
         return;
     }
 
+    // Handle terminating vertex due to area spread.
+    // Can be sure it's not an unbiased train suffix.
+    if (terminateAreaSpread) [[unlikely]]
+    {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+
+        if (isTrain) [[unlikely]]
+        {
+            if (isTrainSuffix) // Case 1: End of (self-)training suffix.
+            {
+                // Terminate the train suffix by self-training.
+                // Add a query for this *tile* to (the training part of) radianceQueriesInference
+                ::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
+
+                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                return;
+            }
+            else // Case 2: End of rendering path
+            {
+                // Add a (rendering) query for this *pixel*.
+                ::addRenderQuery(state, *thePrd, aux_data);
+
+                // Store the last rendering throughput to accumulate the query by. 
+                thePrd->lastRenderThroughput = throughput;
+                
+                // EDGE: Train suffix ended before rendering path due to a full buffer.
+                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL)
+                {
+                    thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                    return;
+                }
+
+                // Setup to proceed with the training suffix.
+                thePrd->flags |= FLAG_TRAIN_SUFFIX; // Mark we're in training suffix.
+                thePrd->areaSpread = 0.f; // Restart area spread accumulation
+                isTrainSuffix = true;
+            }
+        }
+        else // Pure rendering ray ends
+        {
+            // Add a (rendering) query for this *pixel*.
+            ::addRenderQuery(state, *thePrd, aux_data);
+
+            // Store the last rendering throughput to accumulate the query by. Then terminate.
+            thePrd->lastRenderThroughput = throughput;
+            
+            thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+            return;
+        }
+    }
+
     static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
                                                | mi::neuraylib::BSDF_EVENT_GLOSSY;
     const auto eventIsNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
@@ -890,6 +909,9 @@ extern "C" __global__ void __closesthit__radiance()
                                     && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
     if (doAllocateTrainRecord)
     {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+
         int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
         if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
         {
@@ -906,19 +928,20 @@ extern "C" __global__ void __closesthit__radiance()
             *trainTargetRadiance = make_float3(0.f);
 
             // Add a training query with (unencoded) inputs to NRC network
-            ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringSample,
-                                   *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
             ::addTrainQuery(state, *thePrd, aux_data, trainRecordIndex);
 
             // Used for radiance prop and for next (potential) 
             // emissive hit/env miss to accumulate BSDF-sampling MIS radiance.
             thePrd->lastTrainRecordIndex = trainRecordIndex;
         }
-        else // If the train record buffer is full - we're forced to terminate the train suffix here.
+        else
         {
-            // TODO: End the train suffix by a zero-radiance unbiased 
-            // terminal vertex that links to thePrd->lastTrainRecordIndex.
-            ::endTrainSuffixUnbiased(*thePrd);
+            // If the train record buffer is full - we're forced to terminate the train suffix here.
+            // Unconditionally treat this ray as self-training to avoid bias.
+
+            // Terminate the train suffix by self-training.
+            // Add a query for this *tile* to (the training part of) radianceQueriesInference
+            ::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
 
             // If the rendering path has been completed already, we can terminate.
             if (isTrainSuffix)
@@ -1077,58 +1100,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> aux_data;
     bool queriedAuxData = !scatteringFnExists;
 
-    // Handle terminating vertex.
-    // Can be sure it's not an unbiased train suffix.
-    if (terminateAreaSpread) [[unlikely]]
-    {
-        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringSample, 
-                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
-
-        if (isTrain) [[unlikely]]
-        {
-            if (isTrainSuffix) // Case 1: End of (self-)training suffix.
-            {
-                // Terminate the train suffix by self-training.
-                // Add a query for this *tile* to (the training part of) radianceQueriesInference
-                ::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
-
-                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-                return;
-            }
-            else // Case 2: End of rendering path
-            {
-                // TODO: Add a (rendering) query for this *pixel*.
-                ::addRenderQuery(state, *thePrd, aux_data);
-
-                // Store the last rendering throughput to accumulate the query by. 
-                thePrd->lastRenderThroughput = throughput;
-                
-                // EDGE: Train suffix ended before rendering path due to a full buffer.
-                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL)
-                {
-                    thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-                    return;
-                }
-
-                // Setup to proceed with the training suffix.
-                thePrd->flags |= FLAG_TRAIN_SUFFIX; // Mark we're in training suffix.
-                thePrd->areaSpread = 0.f; // Restart area spread accumulation
-                isTrainSuffix = true;
-            }
-        }
-        else // Pure rendering ray ends
-        {
-            // TODO: Add a (rendering) query for this *pixel*.
-            ::addRenderQuery(state, *thePrd, aux_data);
-
-            // Store the last rendering throughput to accumulate the query by. Then terminate.
-            thePrd->lastRenderThroughput = throughput;
-            
-            thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-            return;
-        }
-    }
-
     // Importance sample the BSDF.
     float3 localThroughput = make_float3(0.f);
     if (scatteringFnExists) [[likely]]
@@ -1153,13 +1124,24 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     }
 
+// DEBUG VIS: Albedos/roughness
+#if 0
+    ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                           *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+    //thePrd->radiance = aux_data.albedo_diffuse;
+    //thePrd->radiance = aux_data.albedo_glossy;
+    thePrd->radiance = { aux_data.roughness.x, aux_data.roughness.y, 0.f };
+    thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+    return;
+#endif
+
     // Early unbiased termination.
     if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
     {
         // Terminate rendering path if it hasn't
         if (!isTrainSuffix)
         {
-            // TODO: Add a (rendering) query for this *pixel*.
+            // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
             //::addRenderQuery(state, *thePrd, aux_data);
 
@@ -1178,6 +1160,58 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         return;
     }
     
+    // Handle terminating vertex due to area spread.
+    // Can be sure it's not an unbiased train suffix.
+    if (terminateAreaSpread) [[unlikely]]
+    {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+
+        if (isTrain) [[unlikely]]
+        {
+            if (isTrainSuffix) // Case 1: End of (self-)training suffix.
+            {
+                // Terminate the train suffix by self-training.
+                // Add a query for this *tile* to (the training part of) radianceQueriesInference
+                ::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
+
+                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                return;
+            }
+            else // Case 2: End of rendering path
+            {
+                // Add a (rendering) query for this *pixel*.
+                ::addRenderQuery(state, *thePrd, aux_data);
+
+                // Store the last rendering throughput to accumulate the query by. 
+                thePrd->lastRenderThroughput = throughput;
+                
+                // EDGE: Train suffix ended before rendering path due to a full buffer.
+                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL)
+                {
+                    thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                    return;
+                }
+
+                // Setup to proceed with the training suffix.
+                thePrd->flags |= FLAG_TRAIN_SUFFIX; // Mark we're in training suffix.
+                thePrd->areaSpread = 0.f; // Restart area spread accumulation
+                isTrainSuffix = true;
+            }
+        }
+        else // Pure rendering ray ends
+        {
+            // Add a (rendering) query for this *pixel*.
+            ::addRenderQuery(state, *thePrd, aux_data);
+
+            // Store the last rendering throughput to accumulate the query by. Then terminate.
+            thePrd->lastRenderThroughput = throughput;
+            
+            thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+            return;
+        }
+    }
+
 
     static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
                                                | mi::neuraylib::BSDF_EVENT_GLOSSY;
@@ -1191,6 +1225,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                                     && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
     if (doAllocateTrainRecord)
     {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+
         int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
         if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
         {
@@ -1207,19 +1244,20 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             *trainTargetRadiance = make_float3(0.f);
 
             // Add a training query with (unencoded) inputs to NRC network
-            ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringSample,
-                                   *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
             ::addTrainQuery(state, *thePrd, aux_data, trainRecordIndex);
 
             // Used for radiance prop and for next (potential) 
             // emissive hit/env miss to accumulate BSDF-sampling MIS radiance.
             thePrd->lastTrainRecordIndex = trainRecordIndex;
         }
-        else // If the train record buffer is full - we're forced to terminate the train suffix here.
+        else
         {
-            // TODO: End the train suffix by a zero-radiance unbiased 
-            // terminal vertex that links to thePrd->lastTrainRecordIndex.
-            ::endTrainSuffixUnbiased(*thePrd);
+            // If the train record buffer is full - we're forced to terminate the train suffix here.
+            // Unconditionally treat this ray as self-training to avoid bias.
+
+            // Terminate the train suffix by self-training.
+            // Add a query for this *tile* to (the training part of) radianceQueriesInference
+            ::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
 
             // If the rendering path has been completed already, we can terminate.
             if (isTrainSuffix)
