@@ -1115,6 +1115,13 @@ void Device::initNRC()
 
 	m_nrcControlBlock.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
 		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
+	m_nrcControlBlock.radianceResultsTraining = reinterpret_cast<float3*>(
+		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
+
+	// m_nrcControlBlock
+	// .radianceQueriesInference, 
+	// .radianceResultsInference,
+	// .lastRenderThroughput are allocated in render() on resize
 
 	// Copy the control block over to device
 	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
@@ -1127,24 +1134,32 @@ void Device::resizeNRC()
 
 	const auto numPixels = m_systemData.resolution.x * m_systemData.resolution.y;
 
-	// m_nrcControlBlock.lastRenderThroughput
+	// m_nrcControlBlock.lastRenderThroughput (#pixels)
 	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.lastRenderThroughput));
 	m_nrcControlBlock.lastRenderThroughput = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * numPixels, alignof(float3)));
 
-	// m_nrcControlBlock.radianceQueriesInference
+	// m_nrcControlBlock
+	// .radianceQueriesInference
+	// .radianceResultsInference (~1.25#pixels)
 	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.radianceQueriesInference));
-	auto numQueriesInference = numPixels;
-	{
-		const auto nTilesXMax = m_systemData.resolution.x / 2;
-		const auto nTilesYMax = m_systemData.resolution.y / 2;
-		numQueriesInference += (nTilesXMax * nTilesYMax);
-	}
+	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.radianceResultsInference));
+
+	const auto numTilesMax = (m_systemData.resolution.x / 2) * (m_systemData.resolution.y * 2);
+	const auto numQueriesInference = numPixels + numTilesMax;
+
 	m_nrcControlBlock.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
 		memAlloc(sizeof(RadianceQuery) * numQueriesInference, alignof(RadianceQuery)));
+	m_nrcControlBlock.radianceResultsInference = reinterpret_cast<float3*>(
+		memAlloc(sizeof(float3) * numQueriesInference, alignof(float3)));
+	
+	// m_nrcControlBlock.trainSuffixEndVertices
+	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.trainSuffixEndVertices));
+	m_nrcControlBlock.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex*>(
+		memAlloc(sizeof(TrainingSuffixEndVertex) * numQueriesInference, alignof(TrainingSuffixEndVertex)));
 
 	// Copy the control block over to device
-	// TODO: Copy only the changed part.
+	// TODO: Copy only the affected parts.
 	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
 }
 

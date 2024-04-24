@@ -31,6 +31,7 @@
 #include <optix.h>
 
 #include "system_data.h"
+#include "neural_radiance_caching.h"
 #include "per_ray_data.h"
 #include "shader_common.h"
 #include "half_common.h"
@@ -482,6 +483,15 @@ extern "C" __global__ void __raygen__path_tracer()
 
 namespace {
 
+__forceinline__ __device__ int tileIndex(const uint2& launchIndex)
+{
+	const auto tileIndexX = launchIndex.x / sysData.pf.tileSize.x;
+	const auto tileIndexY = launchIndex.y / sysData.pf.tileSize.y;
+	const auto numTilesX = sysData.resolution.x / sysData.pf.tileSize.x;
+
+	return tileIndexY * numTilesX + tileIndexX;
+}
+
 __forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
 {
 	// Discard boundary tile
@@ -517,8 +527,10 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 	prd.areaThreshold        = INFINITY;
 	prd.areaSpread           = 0.0f;
 	prd.lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_NONE;
-	//prd.lastRenderThroughput = prd.throughput;
-	prd.lastRenderThroughput = float3{ 0.0f, 1000000.0f, 0.0f };
+	prd.lastRenderThroughput = make_float3(0.0f);
+#if 0
+	prd.lastRenderThroughput = float3{ 0.0f, 1000000.0f, 0.0f }; // super green
+#endif
 
 	// Nested material handling.
 	// Small stack of MATERIAL_STACK_SIZE = 4 entries of which the first is vacuum.
@@ -619,9 +631,9 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 
 			if (probability < rng(prd.seed)) // Paths with lower probability to continue are terminated earlier.
 			{
-				// TODO: End the train suffix by a zero-radiance unbiased 
+				// End the train suffix by a zero-radiance unbiased 
 				// terminal vertex that links to thePrd->lastTrainRecordIndex.
-				//::endTrainSuffixUnbiased(prd);
+				nrc::endTrainSuffixUnbiased(prd);
 				break;
 			}
 
@@ -640,16 +652,14 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 		// Max #bounces exceeded
 		if (depth >= sysData.pathLengths.y)
 		{
-			const bool isTrain = prd.flags & FLAG_TRAIN;
-
 			prd.lastRenderThroughput = make_float3(0.f);
 
-			// Terminate training chain
-			if (isTrain)
+			// Terminate training suffix
+			if (prd.flags & FLAG_TRAIN)
 			{
-				// TODO: End the train suffix by a zero-radiance unbiased 
+				// End the train suffix by a zero-radiance unbiased 
 				// terminal vertex that links to thePrd->lastTrainRecordIndex.
-				//::endTrainSuffixUnbiased(prd);
+				nrc::endTrainSuffixUnbiased(prd);
 			}
 
 			break;
@@ -658,6 +668,7 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 
 	return prd.radiance;
 }
+
 }
 
 extern "C" __global__ void __raygen__nrc_path_tracer()
@@ -698,10 +709,12 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 		prd.flags |= FLAG_TRAIN;
 
 		// Set about 1/16 of training ray to be unbiased (terminated with RR)
-		static constexpr auto TRAIN_UNBIASED_RATIO = 1.f / 16.f;
-		if (rng(prd.seed) < TRAIN_UNBIASED_RATIO) {
+		if (rng(prd.seed) < nrc::TRAIN_UNBIASED_RATIO) {
 			prd.flags |= FLAG_TRAIN_UNBIASED;
 		}
+
+		// Record tile index.
+		prd.tileIndex = ::tileIndex(theLaunchIndex);
 	}
 
 // DEBUG INFO

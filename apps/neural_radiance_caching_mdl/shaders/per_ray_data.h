@@ -117,6 +117,7 @@ struct PerRayData
   int lastTrainRecordIndex;
 
   int pixelIndex;
+  int tileIndex;
   
   // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
   int           idxStack; 

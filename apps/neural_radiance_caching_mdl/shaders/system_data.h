@@ -52,85 +52,6 @@ struct GeometryInstanceData
 	CUdeviceptr indices;
 };
 
-namespace nrc
-{
-	constexpr int NUM_BATCHES = 4;
-	constexpr int NUM_TRAINING_RECORDS_PER_FRAME = 65536;
-
-	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
-	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
-
-	// Keep track of the ray path for radiance prop
-	struct TrainingRecord
-	{
-		// 16 byte alignment
-
-		// 8 byte alignment
-
-		// 4 byte alignment
-		int propTo/* = TRAIN_RECORD_INDEX_NONE*/; // Link to next training record in the direction of radiance prop.
-		
-		// Used to modulate radiance prop'd from *previous* record.
-		float3 localThroughput; 
-
-		// A radiance prop looks like this: (if propTo >= 0)
-		// propFrom = index of this TrainingRecord
-		// const auto &nextRec = trainingRecords[propTo];
-		// trainingRadianceTargets[propTo] += nextRec.localThroughput * trainingRadianceTargets[propFrom];
-	};
-
-	struct RadianceQuery
-	{
-		// 16 byte alignment
-
-		// 8 byte alignment
-		float2 direction;
-		float2 normal;
-
-		// 4 byte alignment
-		float3 position;
-		float3 diffuse;
-		float3 specular;
-		float3 roughness;
-	};
-
-	struct ControlBlock
-	{
-		// 16 byte alignment
-
-		// 8 byte alignment
-		
-		// Static. All point to fixed-length arrays of 65536 training records.
-		TrainingRecord *trainingRecords = nullptr; // numTrainingRecords -> 65536
-		float3 *trainingRadianceTargets = nullptr; // numTrainingRecords -> 65536
-		// The results of those queries will be used to train the NRC.
-		RadianceQuery *radianceQueriesTraining = nullptr; // numTrainingRecords -> 65536
-
-		// TODO: Allocate & Resize!
-		// Points to a dynamic array of (#pixels + #tiles) randiance queries. Note the #tiles is dynamic each frame.
-		// Capacity is (#pixels + #2x2-tiles ~= 1.25*#pixels). Re-allocate when the render resolution changes.
-		//
-		// The first #pixels queries are at the end of short rendering paths, in the flattened order of pixels.
-		// -- Results (potentially) used for rendering (Remember to modulate with `lastRenderingThroughput`)
-		// -- For rays that are terminated early by missing into envmap, the RadianceQuery contains garbage inputs. For convenience
-		//    we still query but the results won't get accumulated into the pixel buffer, since `lastRenderingThroughput` should be 0.
-		// 
-		// The following #tiles queries are at the end of training suffixes, in the flattened order of tiles.
-		// -- Results (potentially) used for initiating radiance propagation in self-training.
-		// -- For unbiased training rays, the RadianceQuery contains garbage inputs. For convenience we still query
-		//    but the results won't be used to initiate radiance propagation, as indicated by the corresponding TrainTerminalVertex.
-		RadianceQuery *radianceQueriesInference = nullptr;
-
-		// TODO: Allocate & Resize!
-		float3 *lastRenderThroughput = nullptr; // #pixels
-
-		// 4 byte alignment
-		int numTrainingRecords = 0;   // Number of training records generated. Upated per-frame
-		
-		//int maxNumTrainingRecords = NUM_TRAINING_RECORDS_PER_FRAME;
-	};
-}
-
 // Data updated per frame
 struct SystemDataPerFrame
 {
@@ -145,6 +66,8 @@ struct SystemDataPerFrame
 	int totalSubframeIndex;  // Added: total number of subframes, counting all iterations
 	int tileTrainingIndex;   // The local index of training ray within each tile. Randomly sampled from [0..tileSize) every subframe
 };
+
+namespace nrc { struct ControlBlock; }
 
 struct SystemData
 {

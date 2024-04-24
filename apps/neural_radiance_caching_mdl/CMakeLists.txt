@@ -194,6 +194,7 @@ set( SHADERS_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/half_common.h
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/light_definition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/material_definition_mdl.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/neural_radiance_caching.h
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/per_ray_data.h
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/random_number_generators.h
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader_common.h

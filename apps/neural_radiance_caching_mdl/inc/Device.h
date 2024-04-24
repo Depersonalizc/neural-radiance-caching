@@ -59,6 +59,7 @@
 #include "shaders/per_ray_data.h"
 #include "shaders/texture_handler.h"
 #include "shaders/half_common.h"
+#include "shaders/neural_radiance_caching.h"
 
 #include <map>
 #include <memory>
