@@ -579,7 +579,7 @@ __forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState,
 												const PerRayData& thePrd, 
 												const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData)
 {
-	auto& renderQuery = sysData.nrcCB->radianceQueriesInference[thePrd.pixelIndex];
+	auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
 	addQuery(mdlState, thePrd, auxData, renderQuery);
 }
 
@@ -589,7 +589,7 @@ __forceinline__ __device__ void addTrainQuery(const Mdl_state& mdlState,
 												int trainRecordIndex)
 
 {
-	auto& trainQuery = sysData.nrcCB->radianceQueriesTraining[trainRecordIndex];
+	auto& trainQuery = sysData.nrcCB->bufStatic.radianceQueriesTraining[trainRecordIndex];
 	addQuery(mdlState, thePrd, auxData, trainQuery);
 }
 
@@ -597,12 +597,14 @@ __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlStat
 														const PerRayData& thePrd, 
 														const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData)
 {
+    auto& dynBufs = sysData.nrcCB->bufDynamic;
+
 	// Add an inference query at the end vertex of the train suffix.
-	auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
+	auto& query = dynBufs.radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
 	addQuery(mdlState, thePrd, auxData, query);
 
 	// Add the TrainingSuffixEndVertex
-	auto& endVertex = sysData.nrcCB->trainSuffixEndVertices[thePrd.tileIndex];
+	auto& endVertex = dynBufs.trainSuffixEndVertices[thePrd.tileIndex];
 	endVertex.radianceMask = 1.f; // 1 for self-training: Use the inferenced radiance to initiate propagation.
 	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
 }
@@ -754,7 +756,7 @@ extern "C" __global__ void __closesthit__radiance()
                 // !! Add the BSDF-sampling part of the MIS to last vertex's target radiance.
                 if (thePrd->lastTrainRecordIndex >= 0) [[unlikely]]
                 {
-                    sysData.nrcCB->trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
+                    sysData.nrcCB->bufStatic.trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
                 }
             }
         }
@@ -922,16 +924,15 @@ extern "C" __global__ void __closesthit__radiance()
         int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
         if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
         {
-            auto allTrainRecords = sysData.nrcCB->trainingRecords;
-            auto allTrainTargets = sysData.nrcCB->trainingRadianceTargets;
+            auto& staticBufs = sysData.nrcCB->bufStatic;
 
             // Set up the record, linking it to the previous vertex.
-            auto &trainRecord = allTrainRecords[trainRecordIndex];
+            auto &trainRecord = staticBufs.trainingRecords[trainRecordIndex];
             trainRecord.propTo = thePrd->lastTrainRecordIndex;
             trainRecord.localThroughput = localThroughput;
 
             // Training target radiance - initialized to zero.
-            trainTargetRadiance = &allTrainTargets[trainRecordIndex];
+            trainTargetRadiance = &staticBufs.trainingRadianceTargets[trainRecordIndex];
             *trainTargetRadiance = make_float3(0.f);
 
             // Add a training query with (unencoded) inputs to NRC network
@@ -1238,16 +1239,15 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
         if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
         {
-            auto allTrainRecords = sysData.nrcCB->trainingRecords;
-            auto allTrainTargets = sysData.nrcCB->trainingRadianceTargets;
+            auto& staticBufs = sysData.nrcCB->bufStatic;
 
             // Set up the record, linking it to the previous vertex.
-            auto &trainRecord = allTrainRecords[trainRecordIndex];
+            auto &trainRecord = staticBufs.trainingRecords[trainRecordIndex];
             trainRecord.propTo = thePrd->lastTrainRecordIndex;
             trainRecord.localThroughput = localThroughput;
 
             // Training target radiance - initialized to zero.
-            trainTargetRadiance = &allTrainTargets[trainRecordIndex];
+            trainTargetRadiance = &staticBufs.trainingRadianceTargets[trainRecordIndex];
             *trainTargetRadiance = make_float3(0.f);
 
             // Add a training query with (unencoded) inputs to NRC network

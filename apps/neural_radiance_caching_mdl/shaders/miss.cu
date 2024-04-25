@@ -128,7 +128,7 @@ extern "C" __global__ void __miss__env_constant()
 	// !! Add the BSDF-sampling part of the MIS to last vertex's target radiance.
     if (thePrd->lastTrainRecordIndex >= 0) [[unlikely]]
     {
-        sysData.nrcCB->trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
+        sysData.nrcCB->bufStatic.trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
     }
 
 	// Terminate rendering path if it hasn't
@@ -198,7 +198,7 @@ extern "C" __global__ void __miss__env_sphere()
 	// !! Add the BSDF-sampling part of the MIS to last vertex's target radiance.
     if (thePrd->lastTrainRecordIndex >= 0) [[unlikely]]
     {
-        sysData.nrcCB->trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
+        sysData.nrcCB->bufStatic.trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
     }
 
 	// Terminate rendering path if it hasn't

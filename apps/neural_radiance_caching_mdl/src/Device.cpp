@@ -396,7 +396,7 @@ Device::Device(const int ordinal,
 	// OptixProgramGroupOptions
 	//m_pgo = {}; // This is a just placeholder.
 
-	// NRC Allocations
+	// (Static) NRC Allocations
 	initNRC();
 }
 
@@ -1099,6 +1099,7 @@ void Device::initSBT(const std::vector<OptixProgramGroup>& programGroups)
 	}
 }
 
+// Allocate static NRC buffers. Initialize train records count at 0.
 void Device::initNRC()
 {
 	using namespace nrc;
@@ -1108,59 +1109,59 @@ void Device::initNRC()
 
 	// Init host side CB. Allocate buffers
 	m_nrcControlBlock.numTrainingRecords = 0;
-	m_nrcControlBlock.trainingRecords = reinterpret_cast<TrainingRecord*>(
+
+	auto& staticBufs = m_nrcControlBlock.bufStatic;
+	staticBufs.trainingRecords = reinterpret_cast<TrainingRecord*>(
 		memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(TrainingRecord)));
-	m_nrcControlBlock.trainingRadianceTargets = reinterpret_cast<float3*>(
+	staticBufs.trainingRadianceTargets = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
 
-	m_nrcControlBlock.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
+	staticBufs.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
 		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
-	m_nrcControlBlock.radianceResultsTraining = reinterpret_cast<float3*>(
+	staticBufs.radianceResultsTraining = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
 
-	// m_nrcControlBlock
-	// .radianceQueriesInference, 
-	// .radianceResultsInference,
-	// .lastRenderThroughput are allocated in render() on resize
+	// NOTE: m_nrcControlBlock.bufDynamic are allocated in render() on resize
 
-	// Copy the control block over to device
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
+	// Copy the static buffers over to device
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufStatic), &staticBufs, sizeof(staticBufs), m_cudaStream));
 }
 
-// Resize NRC buffers according to the current screensize
+// Resize dynamic NRC buffers according to the current screensize
 void Device::resizeNRC()
 {
 	using namespace nrc;
 
 	const auto numPixels = m_systemData.resolution.x * m_systemData.resolution.y;
 
-	// m_nrcControlBlock.lastRenderThroughput (#pixels)
-	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.lastRenderThroughput));
-	m_nrcControlBlock.lastRenderThroughput = reinterpret_cast<float3*>(
+	auto& dynBufs = m_nrcControlBlock.bufDynamic;
+
+	// dynBufs.lastRenderThroughput (#pixels)
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.lastRenderThroughput));
+	dynBufs.lastRenderThroughput = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * numPixels, alignof(float3)));
 
-	// m_nrcControlBlock
+	// dynBufs
 	// .radianceQueriesInference
 	// .radianceResultsInference (~1.25#pixels)
-	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.radianceQueriesInference));
-	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.radianceResultsInference));
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceQueriesInference));
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceResultsInference));
 
 	const auto numTilesMax = (m_systemData.resolution.x / 2) * (m_systemData.resolution.y * 2);
 	const auto numQueriesInference = numPixels + numTilesMax;
 
-	m_nrcControlBlock.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
+	dynBufs.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
 		memAlloc(sizeof(RadianceQuery) * numQueriesInference, alignof(RadianceQuery)));
-	m_nrcControlBlock.radianceResultsInference = reinterpret_cast<float3*>(
+	dynBufs.radianceResultsInference = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * numQueriesInference, alignof(float3)));
 	
-	// m_nrcControlBlock.trainSuffixEndVertices
-	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.trainSuffixEndVertices));
-	m_nrcControlBlock.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex*>(
+	// dynBufs.trainSuffixEndVertices
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.trainSuffixEndVertices));
+	dynBufs.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex*>(
 		memAlloc(sizeof(TrainingSuffixEndVertex) * numQueriesInference, alignof(TrainingSuffixEndVertex)));
 
-	// Copy the control block over to device
-	// TODO: Copy only the affected parts.
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
+	// Copy the new buffer addresses to device
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), &dynBufs, sizeof(dynBufs), m_cudaStream));
 }
 
 void Device::initCameras(const std::vector<CameraDefinition>& cameras)
@@ -2015,7 +2016,7 @@ void Device::render(const unsigned int iterationIndex,
 #endif
 		}
 
-		// Resize NRC buffers
+		// Resize dynamic NRC buffers
 		resizeNRC();
 
 		m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
@@ -2044,7 +2045,7 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), &m_systemData.pf, perFrameDataSize, m_cudaStream));
 	}
 
-	// TODO: Reset the per-frame data of the NRC block
+	// Reset the per-frame data of the NRC block (currently just numTrainingRecords)
 	{
 		CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
 	}
@@ -2061,9 +2062,10 @@ void Device::render(const unsigned int iterationIndex,
 		//OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 	}
 
-	// Sync with Device to get all the training records
-	// TODO: Only download the per-frame data fields.
-	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock, reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), sizeof(nrc::ControlBlock), m_cudaStream));
+	// Sync with Device the per-frame data of the NRC block (currently just numTrainingRecords)
+	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock.numTrainingRecords, 
+							   reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 
+							   sizeof(m_nrcControlBlock.numTrainingRecords), m_cudaStream));
 
 	synchronizeStream();
 	std::cout << "[HOST] #Training records generated: " << m_nrcControlBlock.numTrainingRecords << '\n';

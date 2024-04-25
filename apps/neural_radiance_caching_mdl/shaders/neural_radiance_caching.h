@@ -82,13 +82,19 @@ namespace nrc
 
 		// 8 byte alignment
 		
+		struct {
+
 		// Training records (vertices) + target radiance
 		TrainingRecord *trainingRecords = nullptr; // numTrainingRecords -> 65536, static
 		float3 *trainingRadianceTargets = nullptr; // numTrainingRecords -> 65536, static
-		
+
 		// The results of those queries will be used to train the NRC.
 		RadianceQuery *radianceQueriesTraining = nullptr; // numTrainingRecords -> 65536, static
-		float3        *radianceResultsTraining = nullptr; // numTrainingRecords -> 65536, static
+		float3 *radianceResultsTraining = nullptr; // numTrainingRecords -> 65536, static
+		
+		} bufStatic;
+
+		struct {
 
 		// Points to a dynamic array of (#pixels + #tiles) randiance queries. Note the #tiles is dynamic each frame.
 		// Capacity is (#pixels + #2x2-tiles ~= 1.25*#pixels). Re-allocate when the render resolution changes.
@@ -109,6 +115,8 @@ namespace nrc
 
 		// End of all training suffixes
 		TrainingSuffixEndVertex *trainSuffixEndVertices = nullptr; // #tiles. Capacity is ~.25*#pixels
+		
+		} bufDynamic;
 
 		// 4 byte alignment
 		int numTrainingRecords = 0;   // Number of training records generated. Upated per-frame
@@ -171,7 +179,7 @@ namespace nrc
 		//addQuery(mdlState, thePrd, auxData, query);
 
 		// Add the TrainingSuffixEndVertex
-		auto& endVertex = sysData.nrcCB->trainSuffixEndVertices[thePrd.tileIndex];
+		auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
 		endVertex.radianceMask = 0.f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
 		endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
 	}

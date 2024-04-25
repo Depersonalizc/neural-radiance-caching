@@ -739,7 +739,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	float3 radiance = ::nrcIntegrator(prd);
 
 	// Record the last throughput.
-	sysData.nrcCB->lastRenderThroughput[index] = prd.lastRenderThroughput;
+	sysData.nrcCB->bufDynamic.lastRenderThroughput[index] = prd.lastRenderThroughput;
 
 #if USE_DEBUG_EXCEPTIONS
 	// DEBUG Highlight numerical errors.
