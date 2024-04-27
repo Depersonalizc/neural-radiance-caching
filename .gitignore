@@ -14,4 +14,6 @@
 /3rdparty/MDL_SDK
 
 /.idea
+/.vs
+
 /cmake-build*
