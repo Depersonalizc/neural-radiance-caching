@@ -695,6 +695,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	// Set ray flags
 	prd.flags = 0;
 
+#if 1
 	const bool isDebug = (theLaunchIndex.x == theLaunchDim.x / 2)
 						 && (theLaunchIndex.y == theLaunchDim.y / 2)
 						 && (sysData.pf.iterationIndex == 0);
@@ -702,6 +703,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	{
 		prd.flags |= FLAG_DEBUG;
 	}
+#endif
 
 	const bool isTrain = ::isTrainingRay(theLaunchIndex);
 	if (isTrain)
@@ -739,7 +741,8 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	float3 radiance = ::nrcIntegrator(prd);
 
 	// Record the last throughput.
-	sysData.nrcCB->bufDynamic.lastRenderThroughput[index] = prd.lastRenderThroughput;
+	float3* lastThroughputBuffer = sysData.nrcCB->bufDynamic.lastRenderThroughput;
+	lastThroughputBuffer[index] = prd.lastRenderThroughput;
 
 #if USE_DEBUG_EXCEPTIONS
 	// DEBUG Highlight numerical errors.
