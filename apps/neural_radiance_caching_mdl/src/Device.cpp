@@ -2046,9 +2046,7 @@ void Device::render(const unsigned int iterationIndex,
 	}
 
 	// Reset the per-frame data of the NRC block (currently just numTrainingRecords)
-	{
-		CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
-	}
+	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
 
 	// Path Tracing: 
 	// - Generate training data for NRC
@@ -2070,33 +2068,75 @@ void Device::render(const unsigned int iterationIndex,
 	synchronizeStream();
 	std::cout << "[HOST] #Training records generated: " << m_nrcControlBlock.numTrainingRecords << '\n';
 
-	// Inference at
-	// 1. The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
+	// [TCNN Inference]
+	// 1. @ The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
 	//	  These results are used for rendering. See next section.
-	// 2. The end of long training paths (#Actual Queries <= #Tiles; some could be unbiased and RR-terminated)
+	// 2. @ The end of long training paths (#Actual Queries <= #Tiles; some could be unbiased and RR-terminated)
 	//    These results are used as ground-truth radiance for training.
-	// INPUT: RadianceQuery[#Rays + #Tiles]
+	// ---------------------------------------------------------------------------------------
+	// INPUT : radianceQueriesInference[#pixels + #tiles]
+	// OUTPUT: radianceResultsInference[#pixels + #tiles]
 	{
-		
+		m_nrcControlBlock.bufDynamic.radianceQueriesInference; // INPUT
+
+		m_nrcControlBlock.bufDynamic.radianceResultsInference; // OUTPUT
 	}
 
-	// Accumulate the inferenced radiance for short rendering paths to output buffer
-	// INPUT: InferredRadiance[#Rays]
+	// [KERNEL]
+	// Accumulate the inferenced radiance at the end of short rendering paths to output buffer
+	// ---------------------------------------------------------------------------------------
+	// INPUT : radianceResultsInference[:#pixels]
+	//         lastRenderThroughput[:#pixels]
+	// OUTPUT: m_systemData.outputBuffer[#pixels] (+=)
 	{
+		m_nrcControlBlock.bufDynamic.radianceResultsInference;  // INPUT 0
+		m_nrcControlBlock.bufDynamic.lastRenderThroughput;      // INPUT 1
 
+		m_systemData.outputBuffer; // OUTPUT (+=)
 	}
 
-	// Back-propagate the (queried/unbiased) radiance from the end of each long path (= #Tiles)
-	// This gets all training records ready for training.
+	// [KERNEL]
+	// Back-propagate the (queried/unbiased) radiance from the end of train suffixes (#tiles).
+	// This gets ready all radiance targets for training.
+	// ---------------------------------------------------------------------------------------
+	// INPUT : trainSuffixEndVertices[:#tiles]
+	//				 .startTrainRecord indexes into `trainingRecords` to initiate radiance prop
+	//				 .radianceMask masks the inferred radiance `radianceResultsInference`)
+	//         trainingRecords[65536]
+	//		   radianceResultsInference[#pixels:#pixels+#tiles]
+	// OUTPUT: trainingRadianceTargets[65536] (+=)
 	{
+		m_nrcControlBlock.bufDynamic.trainSuffixEndVertices;   // INPUT 0
+		m_nrcControlBlock.bufStatic.trainingRecords;           // INPUT 1
+		m_nrcControlBlock.bufDynamic.radianceResultsInference; // INPUT 2
 
+		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
 	}
-
+	
+	// [KERNEL]
 	// Shuffle the training records to avoid spatial correlation.
-	// Also repeat samples if the raytracer undersampled.
+	// Also duplicate samples if the raytracer undersampled.
+	// ---------------------------------------------------------------------------------------
+	// INPUT : radianceQueriesTraining[:min(numTrainingRecords, 65536)]
+	//         trainingRadianceTargets[:min(numTrainingRecords, 65536)]
+	// OUTPUT: radianceQueriesTraining[65536]
+	//         trainingRadianceTargets[65536]
 	{
-
+		const auto actualNumRecords = std::min(m_nrcControlBlock.numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		m_nrcControlBlock.bufStatic.radianceQueriesTraining;
+		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
 	}
+
+	// [TCNN Training]
+	// INPUT: radianceQueriesTraining[65536](, radianceResultsTraining[65536]), trainingRadianceTargets[65536]
+	{
+		m_nrcControlBlock.bufStatic.radianceQueriesTraining;
+		m_nrcControlBlock.bufStatic.radianceResultsTraining;
+		
+		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
+	}
+
+
 
 	// Adjust the tile size according to #records
 	adjustTileSize(m_nrcControlBlock.numTrainingRecords);
