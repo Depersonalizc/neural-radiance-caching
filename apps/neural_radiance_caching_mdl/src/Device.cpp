@@ -286,12 +286,8 @@ Device::Device(const int ordinal,
 	CU_CHECK(cuDeviceGetLuid(m_deviceLUID, &m_nodeMask, m_cudaDevice));
 #endif
 
-	if (m_count > 1)
-	{
-		// FIXME Only load this on the primary device.
-		CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./neural_radiance_caching_mdl_core/compositor.ptx"));
-		CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
-	}
+	// Load native CUDA kernel modules
+	loadNativeModules();
 
 	// Create Optix context
 	{
@@ -310,7 +306,7 @@ Device::Device(const int ordinal,
 	// OptiX, m_deviceProperty
 	initDeviceProperties();
 
-	m_d_systemData = reinterpret_cast<SystemData *>(memAlloc(sizeof(SystemData), 16)); // Currently 8 byte alignment would be enough.
+	m_d_systemData = reinterpret_cast<SystemData *>(memAlloc(sizeof(SystemData), alignof(SystemData))); // Currently 8 byte alignment would be enough.
 
 	// Initialize all renderer system data.
 	m_systemData.deviceCount = m_count; // The number of active devices.
@@ -372,8 +368,8 @@ Device::Device(const int ordinal,
 #if (OPTIX_VERSION >= 70100)
 	// New in OptiX 7.1.0.
 	// This renderer supports triangles and cubic B-splines.
-	m_pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE |
-		OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_CUBIC_BSPLINE;
+	m_pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE 
+								 | OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_CUBIC_BSPLINE;
 #endif
 
 	// OptixPipelineLinkOptions
@@ -411,10 +407,11 @@ Device::~Device()
 		CU_CHECK_NO_THROW(cuGraphicsUnregisterResource(m_cudaGraphicsResource));
 	}
 
-	if (m_moduleCompositor)
-	{
-		CU_CHECK_NO_THROW(cuModuleUnload(m_moduleCompositor));
-	}
+	auto unloadModule = [](auto hmod) {
+		if (hmod) CU_CHECK_NO_THROW(cuModuleUnload(hmod));
+	};
+	unloadModule(m_moduleCompositor);
+	unloadModule(m_moduleNRCHelpers);
 
 	for (const auto &[_, texture] : m_mapTextures) 
 	{
@@ -658,6 +655,31 @@ void Device::initDeviceProperties()
 #endif
 }
 
+void Device::loadNativeModules()
+{
+	// Compositor
+	if (m_count > 1)
+	{
+		// FIXME Only load this on the primary device.
+		CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./neural_radiance_caching_mdl_core/compositor.ptx"));
+		CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
+	}
+
+	
+	// This single module contains all the helper kernels.
+	{
+		CU_CHECK(cuModuleLoad(&m_moduleNRCHelpers, "./neural_radiance_caching_mdl_core/nrc_helpers.ptx"));
+
+		std::size_t sysDataSize{};
+		CU_CHECK(cuModuleGetGlobal(reinterpret_cast<CUdeviceptr*>(&m_d_systemData_nrcHelpers), &sysDataSize, m_moduleNRCHelpers, "sysData"));
+		MY_ASSERT(sysDataSize == sizeof(SystemData));
+	}
+
+	// Get handles to the helper functions
+	CU_CHECK(cuModuleGetFunction(&m_fnAccumulateRenderRadiance, m_moduleNRCHelpers, "accumulate_render_radiance"));
+	CU_CHECK(cuModuleGetFunction(&m_fnPlaceholder, m_moduleNRCHelpers, "placeholder")); // just testing..
+	// ...
+}
 
 OptixResult Device::initFunctionTable()
 {
@@ -1160,8 +1182,8 @@ void Device::resizeNRC()
 	dynBufs.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex*>(
 		memAlloc(sizeof(TrainingSuffixEndVertex) * numQueriesInference, alignof(TrainingSuffixEndVertex)));
 
-	// Copy the new buffer addresses to device
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), &dynBufs, sizeof(dynBufs), m_cudaStream));
+	//// Copy the new buffer addresses to device
+	//CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), &dynBufs, sizeof(dynBufs), m_cudaStream));
 }
 
 void Device::initCameras(const std::vector<CameraDefinition>& cameras)
@@ -1928,6 +1950,7 @@ void Device::render(const unsigned int iterationIndex,
 	m_systemData.pf.iterationIndex = iterationIndex;
 	m_systemData.pf.totalSubframeIndex = totalSubframeIndex;
 	
+	bool isDirtyNRCDynamicBuffers{ false };
 	if (m_isDirtyOutputBuffer) [[unlikely]]
 	{
 		// Adjust the tile size due to screen-size change
@@ -2018,9 +2041,10 @@ void Device::render(const unsigned int iterationIndex,
 
 		// Resize dynamic NRC buffers
 		resizeNRC();
+		isDirtyNRCDynamicBuffers = true;
 
 		m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
-		m_isDirtySystemData   = true;  // Now the sysData on the device needs to be updated.
+		m_isDirtySystemData   = true;  // Now the entire sysData on the device needs to be updated.
 	}
 
 	// PER-FRAME: Update the training index, shared across all tiles
@@ -2036,6 +2060,7 @@ void Device::render(const unsigned int iterationIndex,
 	if (m_isDirtySystemData) // Update the whole SystemData block because more than per-frame data has changed. This normally means a GUI interaction.
 	{
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
+		CU_CHECK(cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData_nrcHelpers), reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), m_cudaStream));
 		m_isDirtySystemData = false;
 	}
 	else // Only update the per-frame data
@@ -2043,6 +2068,13 @@ void Device::render(const unsigned int iterationIndex,
 		// NOTE This won't work for async launches, but single-frame benchmarking doesn't make sense for NRC anyway.
 		static constexpr auto perFrameDataSize = sizeof(SystemData) - offsetof(SystemData, pf);
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), &m_systemData.pf, perFrameDataSize, m_cudaStream));
+		CU_CHECK(cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData_nrcHelpers->pf), reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), perFrameDataSize, m_cudaStream));
+	}
+
+	if (isDirtyNRCDynamicBuffers)
+	{
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), 
+								   &m_nrcControlBlock.bufDynamic, sizeof(m_nrcControlBlock.bufDynamic), m_cudaStream));
 	}
 
 	// Reset the per-frame data of the NRC block (currently just numTrainingRecords)
@@ -2080,6 +2112,9 @@ void Device::render(const unsigned int iterationIndex,
 		m_nrcControlBlock.bufDynamic.radianceQueriesInference; // INPUT
 
 		m_nrcControlBlock.bufDynamic.radianceResultsInference; // OUTPUT
+
+		// For test: Set radianceResultsInference[:#pixels] to be RED
+		
 	}
 
 	// [KERNEL]
@@ -2089,10 +2124,19 @@ void Device::render(const unsigned int iterationIndex,
 	//         lastRenderThroughput[:#pixels]
 	// OUTPUT: m_systemData.outputBuffer[#pixels] (+=)
 	{
-		m_nrcControlBlock.bufDynamic.radianceResultsInference;  // INPUT 0
-		m_nrcControlBlock.bufDynamic.lastRenderThroughput;      // INPUT 1
+		void* args[] = { &m_nrcControlBlock.bufDynamic.radianceResultsInference,
+						 &m_nrcControlBlock.bufDynamic.lastRenderThroughput };
 
-		m_systemData.outputBuffer; // OUTPUT (+=)
+		const auto blockDimX = 32u, blockDimY = 32u;
+		const auto gridDimX = (m_systemData.resolution.x + blockDimX - 1) / blockDimX;
+		const auto gridDimY = (m_systemData.resolution.y + blockDimY - 1) / blockDimY;
+
+		MY_ASSERT(gridDimX > 0 && gridDimX <= m_deviceAttribute.maxGridDimX && 
+				  gridDimY > 0 && gridDimY <= m_deviceAttribute.maxGridDimY);
+
+		CU_CHECK(cuLaunchKernel(m_fnAccumulateRenderRadiance,
+								/*gridDims*/ gridDimX, gridDimY, 1, /*blockDims*/ blockDimX, blockDimY, 1,
+								/*sharedMemBytes=*/0, m_cudaStream, args, nullptr));
 	}
 
 	// [KERNEL]

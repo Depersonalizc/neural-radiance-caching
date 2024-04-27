@@ -31,6 +31,8 @@ cmake_minimum_required(VERSION 3.17)
 project( neural_radiance_caching_mdl )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 
+set (CMAKE_CXX_STANDARD 20)
+
 find_package(OpenGL REQUIRED)
 find_package(GLFW REQUIRED)
 find_package(GLEW REQUIRED)
@@ -182,6 +184,7 @@ set( SHADERS
 set( KERNELS
   # Native CUDA kernels
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/compositor.cu
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/nrc_helpers.cu
 )
 
 set( SHADERS_HEADERS
@@ -225,7 +228,7 @@ NVCUDA_COMPILE_MODULE(
   TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
   EXTENSION ".ptx"
   GENERATED_FILES KERNEL_MODULES
-  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 )
 
 source_group( "imgui"           FILES ${IMGUI} )
@@ -233,6 +236,7 @@ source_group( "nvpro_math"      FILES ${NVPRO_MATH} )
 source_group( "headers"         FILES ${HEADERS} )
 source_group( "sources"         FILES ${SOURCES} )
 source_group( "shaders"         FILES ${SHADERS} )
+source_group( "kernels"         FILES ${KERNELS} )
 source_group( "shaders_headers" FILES ${SHADERS_HEADERS} )
 source_group( "prg"             FILES ${PROGRAM_MODULES} )
 source_group( "ptx"             FILES ${KERNEL_MODULES} )
@@ -272,6 +276,7 @@ add_executable( neural_radiance_caching_mdl
   ${SOURCES}
   ${SHADERS_HEADERS}
   ${SHADERS}
+  ${KERNELS}
   ${PROGRAM_MODULES}
   ${KERNEL_MODULES}
 )

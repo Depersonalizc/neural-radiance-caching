@@ -490,6 +490,7 @@ private:
 	OptixResult initFunctionTable();
 	void initDeviceAttributes();
 	void initDeviceProperties();
+	void loadNativeModules();
 	void initPipeline();
 	void initSBT(const std::vector<OptixProgramGroup>& programGroups);
 	void initNRC();
@@ -564,7 +565,7 @@ public:
 	std::vector<GeometryInstanceData> m_geometryInstanceData;
 	GeometryInstanceData* m_d_geometryInstanceData;
 
-	// Host-side NRC Control block.
+	// Host-side copy of NRC Control block.
 	// Device-side is pointed by m_systemData.nrcCB
 	nrc::ControlBlock m_nrcControlBlock;
 
@@ -584,7 +585,9 @@ public:
 			//.tileShift = {3, 3},
 		}
 	};
-	SystemData* m_d_systemData; // Device side CUdeviceptr of the system data.
+	SystemData* m_d_systemData;             // Device side (global-mem) CUdeviceptr of the system data.
+											// This is allocated by us and *copied to constant mem* by Optix at launch.
+	SystemData* m_d_systemData_nrcHelpers;  // Same thing, but copied for the NRC helper module and actually points to constant mem.
 
 	//std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
 
@@ -600,9 +603,17 @@ public:
 
 	CUgraphicsResource  m_cudaGraphicsResource{}; // The handle for the registered OpenGL PBO or texture image resource when using interop.
 
+	// Native CUDA kernels --------------
+	// Compositor
 	CUmodule    m_moduleCompositor{};
 	CUfunction  m_functionCompositor{};
 	CUdeviceptr m_d_compositorData{};
+
+	// A single module contains all the helper functions below.
+	CUmodule    m_moduleNRCHelpers{};
+	CUfunction  m_fnAccumulateRenderRadiance{};
+	CUfunction  m_fnPlaceholder{};
+
 
 #if USE_FP32_OUTPUT
 	std::vector<float4> m_bufferHost;
