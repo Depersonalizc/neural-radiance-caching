@@ -82,7 +82,7 @@ namespace nrc
 
 		// 8 byte alignment
 		
-		struct {
+		struct StaticBuffers {
 
 		// Training records (vertices) + target radiance
 		TrainingRecord *trainingRecords = nullptr; // numTrainingRecords -> 65536, static
@@ -94,7 +94,7 @@ namespace nrc
 		
 		} bufStatic;
 
-		struct {
+		struct DynamicBuffers {
 
 		// Points to a dynamic array of (#pixels + #tiles) randiance queries. Note the #tiles is dynamic each frame.
 		// Capacity is (#pixels + #2x2-tiles ~= 1.25*#pixels). Re-allocate when the render resolution changes.
