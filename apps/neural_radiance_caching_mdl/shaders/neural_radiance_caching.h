@@ -53,7 +53,7 @@ namespace nrc
 		// 4 byte alignment
 
 		// Start of the radiance propagation chain. 
-		// Index into ControlBlock::trainingRecords, ::trainingRadianceTargets
+		// Index into ControlBlock::trainingRecords to get the train record to prop radiance to
 		int startTrainRecord/* = TRAIN_RECORD_INDEX_NONE*/;
 
 		// Used to mask off queried radiance for unbiased rays.
