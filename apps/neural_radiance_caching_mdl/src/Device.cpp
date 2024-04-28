@@ -676,8 +676,10 @@ void Device::loadNativeModules()
 	}
 
 	// Get handles to the helper functions
-	CU_CHECK(cuModuleGetFunction(&m_fnAccumulateRenderRadiance, m_moduleNRCHelpers, "accumulate_render_radiance"));
 	CU_CHECK(cuModuleGetFunction(&m_fnPlaceholder, m_moduleNRCHelpers, "placeholder")); // just testing..
+	CU_CHECK(cuModuleGetFunction(&m_fnAccumulateRenderRadiance, m_moduleNRCHelpers, "accumulate_render_radiance"));
+	CU_CHECK(cuModuleGetFunction(&m_fnPropagateTrainRadiance, m_moduleNRCHelpers, "propagate_train_radiance"));
+
 	// ...
 }
 
@@ -1169,7 +1171,7 @@ void Device::resizeNRC()
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceQueriesInference));
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceResultsInference));
 
-	const auto numTilesMax = (m_systemData.resolution.x / 2) * (m_systemData.resolution.y * 2);
+	const auto numTilesMax = (m_systemData.resolution.x / 2) * (m_systemData.resolution.y / 2); // #tiles at min tile size (2x2)
 	const auto numQueriesInference = numPixels + numTilesMax;
 
 	dynBufs.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
@@ -1180,7 +1182,7 @@ void Device::resizeNRC()
 	// dynBufs.trainSuffixEndVertices
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.trainSuffixEndVertices));
 	dynBufs.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex*>(
-		memAlloc(sizeof(TrainingSuffixEndVertex) * numQueriesInference, alignof(TrainingSuffixEndVertex)));
+		memAlloc(sizeof(TrainingSuffixEndVertex) * numTilesMax, alignof(TrainingSuffixEndVertex)));
 
 	//// Copy the new buffer addresses to device
 	//CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), &dynBufs, sizeof(dynBufs), m_cudaStream));
@@ -1949,6 +1951,8 @@ void Device::render(const unsigned int iterationIndex,
 	// PER-FRAME: Update iteration/subframe index
 	m_systemData.pf.iterationIndex = iterationIndex;
 	m_systemData.pf.totalSubframeIndex = totalSubframeIndex;
+
+	const auto screenSize = m_systemData.resolution.x * m_systemData.resolution.y;
 	
 	bool isDirtyNRCDynamicBuffers{ false };
 	if (m_isDirtyOutputBuffer) [[unlikely]]
@@ -1956,22 +1960,22 @@ void Device::render(const unsigned int iterationIndex,
 		// Adjust the tile size due to screen-size change
 		if (!m_bufferHost.empty()) [[likely]]
 		{
-			const auto scale = static_cast<float>(m_systemData.resolution.x * m_systemData.resolution.y)
-				             / static_cast<float>(m_bufferHost.size());
+			const auto scale = static_cast<float>(screenSize) / static_cast<float>(m_bufferHost.size());
 			adjustTileSize(m_nrcControlBlock.numTrainingRecords * scale);
+			std::cout << "[HOST] Tile size adjusted to: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << "after screen resize\n";
 		}
 
 		MY_ASSERT(buffer != nullptr);
 		if (*buffer == nullptr) // The buffer is nullptr for the device which should allocate the full resolution buffers. This device is called first!
 		{
 			// Only allocate the host buffer once, not per each device.
-			m_bufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y);
+			m_bufferHost.resize(screenSize);
 
 			// Note that this requires that all other devices have finished accessing this buffer, but that is automatically the case
 			// after calling Device::setState() which is the only place which can change the resolution.
 			memFree(m_systemData.outputBuffer); // This is asynchronous and the pointer can be 0.
 #if USE_FP32_OUTPUT
-			m_systemData.outputBuffer = memAlloc(sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, sizeof(float4));
+			m_systemData.outputBuffer = memAlloc(sizeof(float4) * screenSize, sizeof(float4));
 #else
 			m_systemData.outputBuffer = memAlloc(sizeof(Half4) * m_systemData.resolution.x * m_systemData.resolution.y, sizeof(Half4));
 #endif
@@ -2017,9 +2021,9 @@ void Device::render(const unsigned int iterationIndex,
 			case INTEROP_MODE_PBO:
 				glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbo);
 #if USE_FP32_OUTPUT
-				glBufferData(GL_PIXEL_UNPACK_BUFFER, m_systemData.resolution.x * m_systemData.resolution.y * sizeof(float4), nullptr, GL_DYNAMIC_DRAW);
+				glBufferData(GL_PIXEL_UNPACK_BUFFER, screenSize * sizeof(float4), nullptr, GL_DYNAMIC_DRAW);
 #else
-				glBufferData(GL_PIXEL_UNPACK_BUFFER, m_systemData.resolution.x * m_systemData.resolution.y * sizeof(Half4), nullptr, GL_DYNAMIC_DRAW);
+				glBufferData(GL_PIXEL_UNPACK_BUFFER, screenSize * sizeof(Half4), nullptr, GL_DYNAMIC_DRAW);
 #endif
 				glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
@@ -2053,6 +2057,10 @@ void Device::render(const unsigned int iterationIndex,
 		const auto tileSize = m_systemData.pf.tileSize.x * m_systemData.pf.tileSize.y;
 		m_systemData.pf.tileTrainingIndex = rand() % tileSize;
 	}
+
+	// PER-FRAME: Update the number of tiles
+	m_systemData.pf.numTiles = { m_systemData.resolution.x / m_systemData.pf.tileSize.x,
+								 m_systemData.resolution.y / m_systemData.pf.tileSize.y };
 
 	// We simpy sync here because this NRC demo only supports interactive mode on single device
 	synchronizeStream();
@@ -2098,7 +2106,8 @@ void Device::render(const unsigned int iterationIndex,
 							   sizeof(m_nrcControlBlock.numTrainingRecords), m_cudaStream));
 
 	synchronizeStream();
-	std::cout << "[HOST] #Training records generated: " << m_nrcControlBlock.numTrainingRecords << '\n';
+	std::cout << "[HOST] #Training records generated: " << m_nrcControlBlock.numTrainingRecords
+			  << " #Tiles: " << m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y << '\n';
 
 	// [TCNN Inference]
 	// 1. @ The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
@@ -2117,6 +2126,12 @@ void Device::render(const unsigned int iterationIndex,
 		
 	}
 
+	// Kernel launch config
+	CUlaunchConfig cfg{.gridDimZ = 1u, 
+					   .blockDimX = 32u, .blockDimY = 32u, .blockDimZ = 1u,
+					   .hStream = m_cudaStream};
+
+#if 1
 	// [KERNEL]
 	// Accumulate the inferenced radiance at the end of short rendering paths to output buffer
 	// ---------------------------------------------------------------------------------------
@@ -2124,21 +2139,19 @@ void Device::render(const unsigned int iterationIndex,
 	//         lastRenderThroughput[:#pixels]
 	// OUTPUT: m_systemData.outputBuffer[#pixels] (+=)
 	{
-		void* args[] = { &m_nrcControlBlock.bufDynamic.radianceResultsInference,
-						 &m_nrcControlBlock.bufDynamic.lastRenderThroughput };
+		void* args[] = { /*float3 *endRenderRadiance   */ &m_nrcControlBlock.bufDynamic.radianceResultsInference,
+						 /*float3 *endRenderThroughput */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput };
 
-		const auto blockDimX = 32u, blockDimY = 32u;
-		const auto gridDimX = (m_systemData.resolution.x + blockDimX - 1) / blockDimX;
-		const auto gridDimY = (m_systemData.resolution.y + blockDimY - 1) / blockDimY;
+		cfg.gridDimX = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
+		cfg.gridDimY = (m_systemData.resolution.y + cfg.blockDimY - 1) / cfg.blockDimY;
+		
+		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
+			   && cfg.gridDimX > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
 
-		MY_ASSERT(gridDimX > 0 && gridDimX <= m_deviceAttribute.maxGridDimX && 
-				  gridDimY > 0 && gridDimY <= m_deviceAttribute.maxGridDimY);
-
-		CU_CHECK(cuLaunchKernel(m_fnAccumulateRenderRadiance,
-								/*gridDims*/ gridDimX, gridDimY, 1, /*blockDims*/ blockDimX, blockDimY, 1,
-								/*sharedMemBytes=*/0, m_cudaStream, args, nullptr));
+		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnAccumulateRenderRadiance, args, nullptr));
 	}
-
+#endif
+#if 1
 	// [KERNEL]
 	// Back-propagate the (queried/unbiased) radiance from the end of train suffixes (#tiles).
 	// This gets ready all radiance targets for training.
@@ -2146,17 +2159,26 @@ void Device::render(const unsigned int iterationIndex,
 	// INPUT : trainSuffixEndVertices[:#tiles]
 	//				 .startTrainRecord indexes into `trainingRecords` to initiate radiance prop
 	//				 .radianceMask masks the inferred radiance `radianceResultsInference`)
-	//         trainingRecords[65536]
 	//		   radianceResultsInference[#pixels:#pixels+#tiles]
+	//         trainingRecords[65536]
 	// OUTPUT: trainingRadianceTargets[65536] (+=)
 	{
-		m_nrcControlBlock.bufDynamic.trainSuffixEndVertices;   // INPUT 0
-		m_nrcControlBlock.bufStatic.trainingRecords;           // INPUT 1
-		m_nrcControlBlock.bufDynamic.radianceResultsInference; // INPUT 2
+		// Offset by #pixels to get to the radiance at end of train suffixes.
+		float3 *endTrainingRadiance = m_nrcControlBlock.bufDynamic.radianceResultsInference + screenSize;
+		void* args[] = { /*TrainingSuffixEndVertex *trainSuffixEndVertices */ &m_nrcControlBlock.bufDynamic.trainSuffixEndVertices,
+						 /*float3                  *endTrainRadiance       */ &endTrainingRadiance,
+						 /*TrainingRecord          *trainRecords           */ &m_nrcControlBlock.bufStatic.trainingRecords,
+						 /*float3                  *trainRadianceTargets   */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets};
 
-		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
+		cfg.gridDimX = (m_systemData.pf.numTiles.x + cfg.blockDimX - 1) / cfg.blockDimX;
+		cfg.gridDimY = (m_systemData.pf.numTiles.y + cfg.blockDimY - 1) / cfg.blockDimY;
+		
+		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
+			   && cfg.gridDimX > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+
+		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPropagateTrainRadiance, args, nullptr));
 	}
-	
+#endif
 	// [KERNEL]
 	// Shuffle the training records to avoid spatial correlation.
 	// Also duplicate samples if the raytracer undersampled.
@@ -2172,7 +2194,7 @@ void Device::render(const unsigned int iterationIndex,
 	}
 
 	// [TCNN Training]
-	// INPUT: radianceQueriesTraining[65536](, radianceResultsTraining[65536]), trainingRadianceTargets[65536]
+	// INPUT: radianceQueriesTraining[65536], (radianceResultsTraining[65536],) trainingRadianceTargets[65536]
 	{
 		m_nrcControlBlock.bufStatic.radianceQueriesTraining;
 		m_nrcControlBlock.bufStatic.radianceResultsTraining;
@@ -2182,7 +2204,7 @@ void Device::render(const unsigned int iterationIndex,
 
 
 
-	// Adjust the tile size according to #records
+	// Adjust the tile size according to #records generated
 	adjustTileSize(m_nrcControlBlock.numTrainingRecords);
 	std::cout << "[HOST] Tile size: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << '\n';
 }
