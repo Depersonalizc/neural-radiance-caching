@@ -490,16 +490,22 @@ __forceinline__ __device__ int tileIndex(const uint2& launchIndex)
 {
 	const auto tileIndexX = launchIndex.x / sysData.pf.tileSize.x;
 	const auto tileIndexY = launchIndex.y / sysData.pf.tileSize.y;
-	const auto numTilesX = sysData.resolution.x / sysData.pf.tileSize.x;
 
-	return tileIndexY * numTilesX + tileIndexX;
+	return tileIndexY * sysData.pf.numTiles.x + tileIndexX;
+}
+
+__forceinline__ __device__ bool isBoundaryRay(const uint2& launchIndex)
+{
+	const auto xEnd = sysData.pf.numTiles.x * sysData.pf.tileSize.x;
+	const auto yEnd = sysData.pf.numTiles.y * sysData.pf.tileSize.y;
+
+	return (launchIndex.x >= xEnd || launchIndex.y >= yEnd);
 }
 
 __forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
 {
 	// Discard boundary tile
-	if (launchIndex.x + sysData.pf.tileSize.x > sysData.resolution.x ||
-		launchIndex.y + sysData.pf.tileSize.y > sysData.resolution.y)
+	if (isBoundaryRay(launchIndex))
 	{
 		return false;
 	}
