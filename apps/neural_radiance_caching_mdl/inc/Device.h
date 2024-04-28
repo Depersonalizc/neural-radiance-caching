@@ -611,10 +611,10 @@ public:
 
 	// A single module contains all the helper functions below.
 	CUmodule    m_moduleNRCHelpers{};
-	CUfunction  m_fnPlaceholder{};
 	CUfunction  m_fnAccumulateRenderRadiance{},
 				m_fnPropagateTrainRadiance{};
-
+	int         m_fnAccumulateRenderRadianceBlockSize,
+			    m_fnPropagateTrainRadianceBlockSize;
 
 #if USE_FP32_OUTPUT
 	std::vector<float4> m_bufferHost;

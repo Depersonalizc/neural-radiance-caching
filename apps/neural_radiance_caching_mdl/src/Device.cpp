@@ -676,11 +676,14 @@ void Device::loadNativeModules()
 	}
 
 	// Get handles to the helper functions
-	CU_CHECK(cuModuleGetFunction(&m_fnPlaceholder, m_moduleNRCHelpers, "placeholder")); // just testing..
 	CU_CHECK(cuModuleGetFunction(&m_fnAccumulateRenderRadiance, m_moduleNRCHelpers, "accumulate_render_radiance"));
 	CU_CHECK(cuModuleGetFunction(&m_fnPropagateTrainRadiance, m_moduleNRCHelpers, "propagate_train_radiance"));
 
-	// ...
+	// Compute a good block size for each helper
+	int minGridSize;
+	auto b2dZeroFn = [](int blockSize) { return size_t{ 0 }; };
+	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnAccumulateRenderRadianceBlockSize, m_fnAccumulateRenderRadiance, b2dZeroFn, 0, 0));
+	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnPropagateTrainRadianceBlockSize, m_fnPropagateTrainRadiance, b2dZeroFn, 0, 0));
 }
 
 OptixResult Device::initFunctionTable()
@@ -2127,8 +2130,8 @@ void Device::render(const unsigned int iterationIndex,
 	}
 
 	// Kernel launch config
-	CUlaunchConfig cfg{.gridDimZ = 1u, 
-					   .blockDimX = 32u, .blockDimY = 32u, .blockDimZ = 1u,
+	CUlaunchConfig cfg{/*.gridDimX, .gridDimY,*/ .gridDimZ = 1u,
+					   .blockDimX = 32u, /*.blockDimY,*/ .blockDimZ = 1u,
 					   .hStream = m_cudaStream};
 
 #if 1
@@ -2142,8 +2145,9 @@ void Device::render(const unsigned int iterationIndex,
 		void* args[] = { /*float3 *endRenderRadiance   */ &m_nrcControlBlock.bufDynamic.radianceResultsInference,
 						 /*float3 *endRenderThroughput */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput };
 
-		cfg.gridDimX = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
-		cfg.gridDimY = (m_systemData.resolution.y + cfg.blockDimY - 1) / cfg.blockDimY;
+		cfg.blockDimY = m_fnAccumulateRenderRadianceBlockSize / cfg.blockDimX;
+		cfg.gridDimX  = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
+		cfg.gridDimY  = (m_systemData.resolution.y + cfg.blockDimY - 1) / cfg.blockDimY;
 		
 		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
 			   && cfg.gridDimX > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
@@ -2160,8 +2164,8 @@ void Device::render(const unsigned int iterationIndex,
 	//				 .startTrainRecord indexes into `trainingRecords` to initiate radiance prop
 	//				 .radianceMask masks the inferred radiance `radianceResultsInference`)
 	//		   radianceResultsInference[#pixels:#pixels+#tiles]
-	//         trainingRecords[65536]
-	// OUTPUT: trainingRadianceTargets[65536] (+=)
+	//         trainingRecords[:min(numTrainingRecords, 65536)]
+	// OUTPUT: trainingRadianceTargets[:min(numTrainingRecords, 65536)] (+=)
 	{
 		// Offset by #pixels to get to the radiance at end of train suffixes.
 		float3 *endTrainingRadiance = m_nrcControlBlock.bufDynamic.radianceResultsInference + screenSize;
@@ -2170,6 +2174,7 @@ void Device::render(const unsigned int iterationIndex,
 						 /*TrainingRecord          *trainRecords           */ &m_nrcControlBlock.bufStatic.trainingRecords,
 						 /*float3                  *trainRadianceTargets   */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets};
 
+		cfg.blockDimY = m_fnPropagateTrainRadianceBlockSize / cfg.blockDimX;
 		cfg.gridDimX = (m_systemData.pf.numTiles.x + cfg.blockDimX - 1) / cfg.blockDimX;
 		cfg.gridDimY = (m_systemData.pf.numTiles.y + cfg.blockDimY - 1) / cfg.blockDimY;
 		
