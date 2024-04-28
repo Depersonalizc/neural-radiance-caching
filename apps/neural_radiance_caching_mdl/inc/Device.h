@@ -572,7 +572,7 @@ public:
 	SystemData m_systemData{
 		// Static Data ==========
 		// This contains the root traversable handle as well.
-		.resolution     = {1, 1},
+		.resolution     = {2, 2},
 		.pathLengths    = {2, 5},
 		.walkLength     = 1,
 		.sceneEpsilon   = 500.0f * SCENE_EPSILON_SCALE,
@@ -611,8 +611,9 @@ public:
 
 	// A single module contains all the helper functions below.
 	CUmodule    m_moduleNRCHelpers{};
-	CUfunction  m_fnAccumulateRenderRadiance{};
 	CUfunction  m_fnPlaceholder{};
+	CUfunction  m_fnAccumulateRenderRadiance{},
+				m_fnPropagateTrainRadiance{};
 
 
 #if USE_FP32_OUTPUT

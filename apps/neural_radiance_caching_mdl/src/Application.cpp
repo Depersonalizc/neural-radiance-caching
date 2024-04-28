@@ -719,8 +719,8 @@ void Application::guiWindow()
 		if (ImGui::Button("Match Resolution"))
 		{
 			// Match the rendering resolution to the current client window size.
-			m_resolution.x = std::max(1, m_width);
-			m_resolution.y = std::max(1, m_height);
+			m_resolution.x = std::max(2, m_width);
+			m_resolution.y = std::max(2, m_height);
 
 			m_camera.setResolution(m_resolution.x, m_resolution.y);
 			m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
@@ -730,8 +730,8 @@ void Application::guiWindow()
 		}
 		if (ImGui::InputInt2("Resolution", &m_resolution.x, ImGuiInputTextFlags_EnterReturnsTrue)) // This requires RETURN to apply a new value.
 		{
-			m_resolution.x = std::max(1, m_resolution.x);
-			m_resolution.y = std::max(1, m_resolution.y);
+			m_resolution.x = std::max(2, m_resolution.x);
+			m_resolution.y = std::max(2, m_resolution.y);
 
 			m_camera.setResolution(m_resolution.x, m_resolution.y);
 			m_rasterizer->setResolution(m_resolution.x, m_resolution.y);

@@ -58,8 +58,9 @@ struct SystemDataPerFrame
 	// 16 byte alignment
 
 	// 8 byte alignment
-	int2 tileSize = { 8, 8 };    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
+	int2 tileSize{ 8, 8 };    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
 	//int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
+	int2 numTiles{ 0, 0 }; // Screen resolution / tileSize
 
 	// 4 byte alignment
 	int iterationIndex;
