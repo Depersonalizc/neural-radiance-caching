@@ -3,18 +3,6 @@
 #ifndef NEURAL_RADIANCE_CACHING_H
 #define NEURAL_RADIANCE_CACHING_H
 
-#include <optix.h>
-
-#include "system_data.h"
-#include "material_definition_mdl.h"
-#include "per_ray_data.h"
-#include "shader_common.h"
-#include <mi/neuraylib/target_code_types.h>
-
-using Mdl_state = mi::neuraylib::Shading_state_material;
-
-extern "C" __constant__ SystemData sysData;
-
 namespace nrc
 {
 	constexpr int NUM_BATCHES = 4;
@@ -76,6 +64,30 @@ namespace nrc
 		float3 roughness;
 	};
 
+	template<typename T>
+	struct DoubleBuffer
+	{
+		T* data[2]{ nullptr, nullptr };
+
+		__forceinline__ __device__ __host__ T* & buffer(int idx) { return data[idx]; }
+		__forceinline__ __device__ __host__ T* getBuffer(int idx) { return data[idx]; }
+		
+		// operator[] gets an entry in the first buffer
+		__forceinline__ __device__ T& operator[](int idx) { return data[0][idx]; }
+		__forceinline__ __device__ const T& operator[](int idx) const { return data[0][idx]; }
+
+		// operator() gets an entry in the second buffer
+		__forceinline__ __device__ T& operator()(int idx) { return data[1][idx]; }
+		__forceinline__ __device__ const T& operator()(int idx) const { return data[1][idx]; }
+
+		// Copy data from the first buffer to the second buffer
+		//__host__ void copy0To1Async(int numElems, CUstream hStream)
+		//{
+		//	MY_ASSERT(data[0] && data[1]);
+		//	CU_CHECK(cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(data[1]), reinterpret_cast<CUdeviceptr>(data[0]), numElems * sizeof(T), hStream));
+		//}
+	};
+
 	struct ControlBlock
 	{
 		// 16 byte alignment
@@ -86,12 +98,20 @@ namespace nrc
 
 		// Training records (vertices) + target radiance
 		TrainingRecord *trainingRecords = nullptr; // numTrainingRecords -> 65536, static
-		float3 *trainingRadianceTargets = nullptr; // numTrainingRecords -> 65536, static
+		DoubleBuffer<float3> trainingRadianceTargets{}; // numTrainingRecords -> 65536, static
 
 		// The results of those queries will be used to train the NRC.
-		RadianceQuery *radianceQueriesTraining = nullptr; // numTrainingRecords -> 65536, static
+		DoubleBuffer<RadianceQuery> radianceQueriesTraining{}; // numTrainingRecords -> 65536, static
 		float3 *radianceResultsTraining = nullptr; // numTrainingRecords -> 65536, static
+
+		// Auxiliary buffers for shuffling
+		// Use randomValues as keys to sort trainingRecordIndices.buffer(0) - which is just the indices [0..65536)
+		// into trainingRecordIndices.buffer(1) - which becomes a permutation for shuffling the training data.
+		DoubleBuffer<unsigned int> randomValues{}; // 65536, static. We don't really need the second buffer (the sorted random values), but cub::DeviceRadixSort demands it.
+		DoubleBuffer<int> trainingRecordIndices{}; // buffer0: [0..65536), buffer1: shuffled indices used to permute radianceQueriesTraining/trainingRadianceTargets.
 		
+		void *tempStorage = nullptr; // Temporary storage for cub::DeviceRadixSort
+		size_t tempStorageBytes = 0;
 		} bufStatic;
 
 		struct DynamicBuffers {
@@ -124,65 +144,16 @@ namespace nrc
 		//int maxNumTrainingRecords = NUM_TRAINING_RECORDS_PER_FRAME;
 	};
 
-	// These inlines unfortunately must be put into the hit.cu module, because MDL types cannot be converted to regular floatX here.
-#if 0
-	__forceinline__ __device__ void addQuery(const Mdl_state& mdlState, 
-											 const PerRayData& thePrd, 
-											 const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
-											 /*out:*/ RadianceQuery& radianceQuery)
-	{
-		radianceQuery.normal    = cartesianToSphericalUnitVector(mdlState.normal);
-		radianceQuery.direction = cartesianToSphericalUnitVector(thePrd.wo);
-		radianceQuery.position  = mdlState.position;
-		radianceQuery.diffuse   = auxData.albedo_diffuse;
-		radianceQuery.specular  = auxData.albedo_glossy;
-		radianceQuery.roughness = auxData.roughness;
-	}
-
-	__forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState, 
-												   const PerRayData& thePrd, 
-												   const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData)
-	{
-		auto& renderQuery = sysData.nrcCB->radianceQueriesInference[thePrd.pixelIndex];
-		addQuery(mdlState, thePrd, auxData, renderQuery);
-	}
-
-	__forceinline__ __device__ void addTrainQuery(const Mdl_state& mdlState, 
-												  const PerRayData& thePrd, 
-												  const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
-												  int trainRecordIndex)
-
-	{
-		auto& trainQuery = sysData.nrcCB->radianceQueriesTraining[trainRecordIndex];
-		addQuery(mdlState, thePrd, auxData, trainQuery);
-	}
-
-	__forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlState, 
-															const PerRayData& thePrd, 
-															const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData)
-	{
-		// Add an inference query at the end vertex of the train suffix.
-		auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
-		addQuery(mdlState, thePrd, auxData, query);
-
-		// Add the TrainingSuffixEndVertex
-		auto& endVertex = sysData.nrcCB->trainSuffixEndVertices[thePrd.tileIndex];
-		endVertex.radianceMask = 1.f; // 1 for self-training: Use the inferenced radiance to initiate propagation.
-		endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
-	}
-#endif
-
-	__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
-	{
-		// Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
-		//auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
-		//addQuery(mdlState, thePrd, auxData, query);
-
-		// Add the TrainingSuffixEndVertex
-		auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
-		endVertex.radianceMask = 0.f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
-		endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
-	}
+	//__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
+	//{
+	//	// Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
+	//	//auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
+	//	//addQuery(mdlState, thePrd, auxData, query);
+	//	// Add the TrainingSuffixEndVertex
+	//	auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
+	//	endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
+	//	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
+	//}
 }
 
 

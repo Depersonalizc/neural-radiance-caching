@@ -88,5 +88,28 @@
   } \
 }
 
+#define CURAND_CHECK(call) \
+{ \
+  const curandStatus_t status = call; \
+  if (status != CURAND_STATUS_SUCCESS) \
+  { \
+    std::ostringstream message; \
+    message << "ERROR: " << __FILE__ << "(" << __LINE__ << "): " << #call << " (" << status << ")"; \
+    MY_ASSERT(!"CURAND_CHECK"); \
+    throw std::runtime_error(message.str()); \
+  } \
+}
+
+#define CURAND_CHECK_NOTHROW(call) \
+{ \
+  const curandStatus_t status = call; \
+  if (status != CURAND_STATUS_SUCCESS) \
+  { \
+    std::cerr << "ERROR: " << __FILE__ << "(" << __LINE__ << "): " << #call << " (" << status << ")\n"; \
+    MY_ASSERT(!"CURAND_CHECK"); \
+  } \
+}
+
+
 
 #endif // CHECK_MACROS_H

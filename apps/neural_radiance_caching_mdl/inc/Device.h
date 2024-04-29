@@ -36,6 +36,7 @@
 #include <cuda.h>
  // This is needed for the __align__ only.
 #include <cuda_runtime.h>
+#include <curand.h>
 
 #include <optix.h>
 
@@ -568,6 +569,9 @@ public:
 	// Host-side copy of NRC Control block.
 	// Device-side is pointed by m_systemData.nrcCB
 	nrc::ControlBlock m_nrcControlBlock;
+
+	// We only use this for shuffling the NRC training records.
+	curandGenerator_t m_curandGenerator{};
 
 	SystemData m_systemData{
 		// Static Data ==========

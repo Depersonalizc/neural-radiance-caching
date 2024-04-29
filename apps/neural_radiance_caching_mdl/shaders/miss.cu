@@ -39,6 +39,21 @@
 
 extern "C" __constant__ SystemData sysData;
 
+namespace nrc {
+
+__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
+{
+	// Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
+	//auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
+	//addQuery(mdlState, thePrd, auxData, query);
+
+	// Add the TrainingSuffixEndVertex
+	auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
+	endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
+	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
+}
+
+}
 
 // Take the step along the volume scattering random walk.
 __forceinline__ __device__ void stepVolume(PerRayData* thePrd)

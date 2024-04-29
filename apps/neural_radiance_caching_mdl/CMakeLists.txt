@@ -28,7 +28,7 @@
 # Use FindCUDAToolkit.cmake added in CMake 3.17 instead.
 cmake_minimum_required(VERSION 3.17)
 
-project( neural_radiance_caching_mdl )
+project( neural_radiance_caching_mdl LANGUAGES CUDA CXX )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 
 set (CMAKE_CXX_STANDARD 20)
@@ -140,6 +140,8 @@ set( HEADERS
   inc/Timer.h
   inc/TonemapperGUI.h
   inc/ShaderConfiguration.h
+
+  inc/NRCUtil.h
 )
 
 set( SOURCES
@@ -166,6 +168,8 @@ set( SOURCES
   src/Texture.cpp
   src/Timer.cpp
   src/Torus.cpp
+
+  src/NRCUtil.cu
 )
 
 # Prefix the shaders with the full path name to allow stepping through errors with F8.
@@ -274,9 +278,9 @@ add_executable( neural_radiance_caching_mdl
   ${NVPRO_MATH}
   ${HEADERS}
   ${SOURCES}
-  ${SHADERS_HEADERS}
-  ${SHADERS}
-  ${KERNELS}
+  #${SHADERS_HEADERS}
+  #${SHADERS}
+  #${KERNELS}
   ${PROGRAM_MODULES}
   ${KERNEL_MODULES}
 )
@@ -286,6 +290,7 @@ target_link_libraries( neural_radiance_caching_mdl
   ${GLEW_LIBRARIES}
   ${GLFW_LIBRARIES}
   CUDA::cuda_driver
+  CUDA::curand
   ${IL_LIBRARIES}
   ${ILU_LIBRARIES}
   ${ILUT_LIBRARIES}

@@ -29,9 +29,9 @@
 #include "inc/Device.h"
 
 #include "inc/CheckMacros.h"
+#include "inc/NRCUtil.h"
 
 #include "shaders/compositor_data.h"
-
 
 #ifdef _WIN32
 #if !defined WIN32_LEAN_AND_MEAN
@@ -58,6 +58,7 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <numeric>
 #include <string.h>
 
 #ifdef _WIN32
@@ -394,6 +395,10 @@ Device::Device(const int ordinal,
 
 	// (Static) NRC Allocations
 	initNRC();
+	
+	// Curand RNG, only used for shuffling NRC training data right now.
+	CURAND_CHECK(curandCreateGenerator(&m_curandGenerator, CURAND_RNG_PSEUDO_DEFAULT));
+	CURAND_CHECK(curandSetStream(m_curandGenerator, m_cudaStream));
 }
 
 
@@ -488,6 +493,10 @@ Device::~Device()
 
 	delete m_allocator; // This frees all CUDA allocations done with the arena allocator!
 
+	if (m_curandGenerator)
+	{
+		CURAND_CHECK_NOTHROW(curandDestroyGenerator(m_curandGenerator));
+	}
 	if (m_cudaStream) 
 	{
 		CU_CHECK_NO_THROW(cuStreamDestroy(m_cudaStream));
@@ -1140,17 +1149,48 @@ void Device::initNRC()
 	auto& staticBufs = m_nrcControlBlock.bufStatic;
 	staticBufs.trainingRecords = reinterpret_cast<TrainingRecord*>(
 		memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(TrainingRecord)));
-	staticBufs.trainingRadianceTargets = reinterpret_cast<float3*>(
+	
+	staticBufs.trainingRadianceTargets.buffer(0) = reinterpret_cast<float3*>(
+		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
+	staticBufs.trainingRadianceTargets.buffer(1) = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
 
-	staticBufs.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
+	staticBufs.radianceQueriesTraining.buffer(0) = reinterpret_cast<RadianceQuery*>(
 		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
+	staticBufs.radianceQueriesTraining.buffer(1) = reinterpret_cast<RadianceQuery*>(
+		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
+	
 	staticBufs.radianceResultsTraining = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
 
-	// NOTE: m_nrcControlBlock.bufDynamic are allocated in render() on resize
+	// Auxiliary
 
-	// Copy the static buffers over to device
+	// trainingRecordIndices
+	staticBufs.trainingRecordIndices.buffer(0) = reinterpret_cast<int*>(
+		memAlloc(sizeof(int) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(int)));
+	{
+		// trainingRecordIndices.buffer(0) contains the constant indices [0..NUM_TRAINING_RECORDS_PER_FRAME)
+		std::vector<int> indices(NUM_TRAINING_RECORDS_PER_FRAME);
+		std::iota(indices.begin(), indices.end(), 0);
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(staticBufs.trainingRecordIndices.buffer(0)),
+			indices.data(), sizeof(int) * NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
+	}
+	staticBufs.trainingRecordIndices.buffer(1) = reinterpret_cast<int*>(
+		memAlloc(sizeof(int) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(int)));
+
+	// randomValues
+	staticBufs.randomValues.buffer(0) = reinterpret_cast<unsigned int*>(
+		memAlloc(sizeof(unsigned int) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(unsigned int)));
+	staticBufs.randomValues.buffer(1) = reinterpret_cast<unsigned int*>(
+		memAlloc(sizeof(unsigned int) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(unsigned int)));
+
+	// tmpStorage
+	staticBufs.tempStorageBytes = nrc::getRadixSortTempStorageBytes(m_nrcControlBlock, m_cudaStream);
+	staticBufs.tempStorage = reinterpret_cast<void*>(memAlloc(staticBufs.tempStorageBytes, 4));
+
+	// NOTE: m_nrcControlBlock.bufDynamic are allocated in render() on resize
+	
+	// Copy the static buffers (pointers) over to device
 	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufStatic), &staticBufs, sizeof(staticBufs), m_cudaStream));
 }
 
@@ -2095,13 +2135,8 @@ void Device::render(const unsigned int iterationIndex,
 	// - Generate training data for NRC
 	// - Populate queries, training records           
 	// Note the launch width per device to render in tiles.
-	{
-		const auto res_ = m_api.optixLaunch(m_pipeline, m_cudaStream, 
-											reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), 
-											&m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1);
-		OPTIX_CHECK(res_);
-		//OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
-	}
+	OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), 
+								  &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 
 	// Sync with Device the per-frame data of the NRC block (currently just numTrainingRecords)
 	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock.numTrainingRecords, 
@@ -2109,8 +2144,11 @@ void Device::render(const unsigned int iterationIndex,
 							   sizeof(m_nrcControlBlock.numTrainingRecords), m_cudaStream));
 
 	synchronizeStream();
-	std::cout << "[HOST] #Training records generated: " << m_nrcControlBlock.numTrainingRecords
-			  << " #Tiles: " << m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y << '\n';
+
+	const auto numTrainRecords = std::min(m_nrcControlBlock.numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+	std::cout << "[HOST] #Training records: " << numTrainRecords
+			  << " (" << m_nrcControlBlock.numTrainingRecords
+			  << "); #Tiles: " << m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y << '\n';
 
 	// [TCNN Inference]
 	// 1. @ The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
@@ -2184,6 +2222,7 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPropagateTrainRadiance, args, nullptr));
 	}
 #endif
+#if 1
 	// [KERNEL]
 	// Shuffle the training records to avoid spatial correlation.
 	// Also duplicate samples if the raytracer undersampled.
@@ -2193,11 +2232,22 @@ void Device::render(const unsigned int iterationIndex,
 	// OUTPUT: radianceQueriesTraining[65536]
 	//         trainingRadianceTargets[65536]
 	{
-		const auto actualNumRecords = std::min(m_nrcControlBlock.numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		// Generate random permuatation by sorting random keys
+		nrc::generateRandomPermutationForTrain(m_nrcControlBlock, m_cudaStream, m_curandGenerator);
+
+#if 0
+		// DEBUG: Check the random permutation
+		std::array<int, nrc::NUM_TRAINING_RECORDS_PER_FRAME> keys;
+		CU_CHECK(cuMemcpyDtoH(keys.data(), reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(1)), sizeof(keys)));
+		int hi = 0;
+#endif
+
+		// Main kernel: Use the sort keys to shuffle the buffers
+
 		m_nrcControlBlock.bufStatic.radianceQueriesTraining;
 		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
 	}
-
+#endif
 	// [TCNN Training]
 	// INPUT: radianceQueriesTraining[65536], (radianceResultsTraining[65536],) trainingRadianceTargets[65536]
 	{

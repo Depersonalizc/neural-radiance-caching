@@ -609,6 +609,18 @@ __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlStat
 	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
 }
 
+__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
+{
+    // Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
+    //auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
+    //addQuery(mdlState, thePrd, auxData, query);
+
+    // Add the TrainingSuffixEndVertex
+    auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
+    endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
+    endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
+}
+
 }
 #endif
 
@@ -1136,9 +1148,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 #if 0
     ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
                            *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
-    thePrd->radiance = aux_data.albedo_diffuse;
+    //thePrd->radiance = aux_data.albedo_diffuse;
     //thePrd->radiance = aux_data.albedo_glossy;
-    //thePrd->radiance = { aux_data.roughness.x, aux_data.roughness.y, 0.f };
+    thePrd->radiance = { aux_data.roughness.x, aux_data.roughness.y, 0.f };
     thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     return;
 #endif

@@ -6,7 +6,6 @@
 #include "neural_radiance_caching.h"
 #include "vector_math.h"
 
-
 // NOTE: This is a separate copy of sys data from the one managed by Optix.
 extern "C" __constant__ SystemData sysData;
 
@@ -14,7 +13,7 @@ extern "C" __global__ void placeholder() { return; }
 
 namespace {
 
-__forceinline__ __device__ uint2 getLaunchIndex()
+__forceinline__ __device__ uint2 getLaunchIndex2D()
 {
 	return { blockDim.x * blockIdx.x + threadIdx.x, 
 			 blockDim.y * blockIdx.y + threadIdx.y };
@@ -27,7 +26,7 @@ __forceinline__ __device__ uint2 getLaunchIndex()
 // at the end of the rendering paths to the output buffer.
 extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance, float3 *endRenderThroughput)
 {
-	const auto launchIndex = getLaunchIndex();
+	const auto launchIndex = getLaunchIndex2D();
 	if (launchIndex.x >= sysData.resolution.x || launchIndex.y >= sysData.resolution.y) return;
 	
 	const unsigned int index = launchIndex.y * sysData.resolution.x + launchIndex.x; // Pixel index
@@ -49,7 +48,7 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 													nrc::TrainingRecord *trainRecords, // [65536]
 													float3 *trainRadianceTargets) // [65536]
 {
-	const auto launchIndex = getLaunchIndex();
+	const auto launchIndex = getLaunchIndex2D();
 	if (launchIndex.x >= sysData.pf.numTiles.x || launchIndex.y >= sysData.pf.numTiles.y) return;
 
 	const unsigned int tileIndex = launchIndex.y * sysData.pf.numTiles.x + launchIndex.x; // Tile index
@@ -58,10 +57,12 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 	float3 lastRadiance = endTrainRadiance[tileIndex] * endVert.radianceMask;
 
 	int iTo = endVert.startTrainRecord;
-#if 1
+
+// Sanity check
+#if 0
 	if (iTo >= sysData.nrcCB->numTrainingRecords || !(endVert.radianceMask == 0.f || endVert.radianceMask == 1.f))
 	{
-		printf("[Tile %d/%d] Invalid end vertex: startTrainRecord(int) = %d (/%d). radianceMask(float) = %f\n", 
+		printf("[TILE %d/%d] Invalid end vertex: startTrainRecord(int) = %d (/%d). radianceMask(float) = %f\n", 
 			   tileIndex+1, sysData.pf.numTiles.x * sysData.pf.numTiles.y, iTo, sysData.nrcCB->numTrainingRecords, endVert.radianceMask);
 		return;
 	}
