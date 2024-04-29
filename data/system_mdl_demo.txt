@@ -149,7 +149,7 @@ prefixScreenshot "./mdl_demo"
 # and set the searchPaths in the desired order here.
 
 searchPath "./"
- 
+
 # Tonemapper settings.
 # Can be adjusted in the GUI.
 # Can be overriden inside the scene description!
