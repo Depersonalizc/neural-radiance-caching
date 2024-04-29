@@ -616,9 +616,11 @@ public:
 	// A single module contains all the helper functions below.
 	CUmodule    m_moduleNRCHelpers{};
 	CUfunction  m_fnAccumulateRenderRadiance{},
-				m_fnPropagateTrainRadiance{};
+				m_fnPropagateTrainRadiance{},
+				m_fnPermuteTrainData{};
 	int         m_fnAccumulateRenderRadianceBlockSize,
-			    m_fnPropagateTrainRadianceBlockSize;
+			    m_fnPropagateTrainRadianceBlockSize,
+				m_fnPermuteTrainDataBlockSize;
 
 #if USE_FP32_OUTPUT
 	std::vector<float4> m_bufferHost;

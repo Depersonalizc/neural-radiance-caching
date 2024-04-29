@@ -687,12 +687,14 @@ void Device::loadNativeModules()
 	// Get handles to the helper functions
 	CU_CHECK(cuModuleGetFunction(&m_fnAccumulateRenderRadiance, m_moduleNRCHelpers, "accumulate_render_radiance"));
 	CU_CHECK(cuModuleGetFunction(&m_fnPropagateTrainRadiance, m_moduleNRCHelpers, "propagate_train_radiance"));
+	CU_CHECK(cuModuleGetFunction(&m_fnPermuteTrainData, m_moduleNRCHelpers, "permute_train_data"));
 
 	// Compute a good block size for each helper
 	int minGridSize;
 	auto b2dZeroFn = [](int blockSize) { return size_t{ 0 }; };
 	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnAccumulateRenderRadianceBlockSize, m_fnAccumulateRenderRadiance, b2dZeroFn, 0, 0));
 	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnPropagateTrainRadianceBlockSize, m_fnPropagateTrainRadiance, b2dZeroFn, 0, 0));
+	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnPermuteTrainDataBlockSize, m_fnPermuteTrainData, b2dZeroFn, 0, 0));
 }
 
 OptixResult Device::initFunctionTable()
@@ -2172,7 +2174,6 @@ void Device::render(const unsigned int iterationIndex,
 					   .blockDimX = 32u, /*.blockDimY,*/ .blockDimZ = 1u,
 					   .hStream = m_cudaStream};
 
-#if 1
 	// [KERNEL]
 	// Accumulate the inferenced radiance at the end of short rendering paths to output buffer
 	// ---------------------------------------------------------------------------------------
@@ -2188,75 +2189,94 @@ void Device::render(const unsigned int iterationIndex,
 		cfg.gridDimY  = (m_systemData.resolution.y + cfg.blockDimY - 1) / cfg.blockDimY;
 		
 		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
-			   && cfg.gridDimX > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+			   && cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnAccumulateRenderRadiance, args, nullptr));
 	}
-#endif
-#if 1
-	// [KERNEL]
-	// Back-propagate the (queried/unbiased) radiance from the end of train suffixes (#tiles).
-	// This gets ready all radiance targets for training.
-	// ---------------------------------------------------------------------------------------
-	// INPUT : trainSuffixEndVertices[:#tiles]
-	//				 .startTrainRecord indexes into `trainingRecords` to initiate radiance prop
-	//				 .radianceMask masks the inferred radiance `radianceResultsInference`)
-	//		   radianceResultsInference[#pixels:#pixels+#tiles]
-	//         trainingRecords[:min(numTrainingRecords, 65536)]
-	// OUTPUT: trainingRadianceTargets[:min(numTrainingRecords, 65536)] (+=)
+
+	// Training
+	if (numTrainRecords > 0) [[likely]]
 	{
+#if 1
+		// [KERNEL]
+		// Back-propagate the (queried/unbiased) radiance from the end of train suffixes (#tiles).
+		// This gets ready all radiance targets for training.
+		// ---------------------------------------------------------------------------------------
+		// INPUT : trainSuffixEndVertices[:#tiles]
+		//				 .startTrainRecord indexes into `trainingRecords` to initiate radiance prop
+		//				 .radianceMask masks the inferred radiance `radianceResultsInference`)
+		//		   radianceResultsInference[#pixels:#pixels+#tiles]
+		//         trainingRecords[:min(numTrainingRecords, 65536)]
+		// OUTPUT: trainingRadianceTargets[:min(numTrainingRecords, 65536)] (+=)
+		{
 		// Offset by #pixels to get to the radiance at end of train suffixes.
 		float3 *endTrainingRadiance = m_nrcControlBlock.bufDynamic.radianceResultsInference + screenSize;
 		void* args[] = { /*TrainingSuffixEndVertex *trainSuffixEndVertices */ &m_nrcControlBlock.bufDynamic.trainSuffixEndVertices,
-						 /*float3                  *endTrainRadiance       */ &endTrainingRadiance,
-						 /*TrainingRecord          *trainRecords           */ &m_nrcControlBlock.bufStatic.trainingRecords,
-						 /*float3                  *trainRadianceTargets   */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets};
+							/*float3                  *endTrainRadiance       */ &endTrainingRadiance,
+							/*TrainingRecord          *trainRecords           */ &m_nrcControlBlock.bufStatic.trainingRecords,
+							/*float3                  *trainRadianceTargets   */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets};
 
 		cfg.blockDimY = m_fnPropagateTrainRadianceBlockSize / cfg.blockDimX;
 		cfg.gridDimX = (m_systemData.pf.numTiles.x + cfg.blockDimX - 1) / cfg.blockDimX;
 		cfg.gridDimY = (m_systemData.pf.numTiles.y + cfg.blockDimY - 1) / cfg.blockDimY;
 		
 		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
-			   && cfg.gridDimX > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+				&& cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPropagateTrainRadiance, args, nullptr));
-	}
+		}
 #endif
 #if 1
-	// [KERNEL]
-	// Shuffle the training records to avoid spatial correlation.
-	// Also duplicate samples if the raytracer undersampled.
-	// ---------------------------------------------------------------------------------------
-	// INPUT : radianceQueriesTraining[:min(numTrainingRecords, 65536)]
-	//         trainingRadianceTargets[:min(numTrainingRecords, 65536)]
-	// OUTPUT: radianceQueriesTraining[65536]
-	//         trainingRadianceTargets[65536]
-	{
-		// Generate random permuatation by sorting random keys
+		// [KERNEL]
+		// Shuffle the training records to avoid spatial correlation.
+		// Also duplicate samples if the raytracer undersampled.
+		// ---------------------------------------------------------------------------------------
+		// INPUT : radianceQueriesTraining.buffer(0)[:min(numTrainingRecords, 65536)]
+		//         trainingRadianceTargets.buffer(0)[:min(numTrainingRecords, 65536)]
+		// OUTPUT: radianceQueriesTraining.buffer(1)[65536]
+		//         trainingRadianceTargets.buffer(1)[65536]
+		{
+		// Generate a random permuatation by sorting random key values.
 		nrc::generateRandomPermutationForTrain(m_nrcControlBlock, m_cudaStream, m_curandGenerator);
 
 #if 0
-		// DEBUG: Check the random permutation
+		// DEBUG: Inspect the shuffled indices
 		std::array<int, nrc::NUM_TRAINING_RECORDS_PER_FRAME> keys;
 		CU_CHECK(cuMemcpyDtoH(keys.data(), reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(1)), sizeof(keys)));
-		int hi = 0;
+		keys = {};
 #endif
 
-		// Main kernel: Use the sort keys to shuffle the buffers
+		// At this point trainingRecordIndices.buffer(1) contains the shuffled indices.
+		// Use it as the permutation keys to shuffle the training data (from buffer 0 -> buffer 1)
+		int*  permutation = m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(1); // Buffer 1 is the shuffled indices
+		void* args[] = { /*DoubleBuffer<RadianceQuery> trainRadianceQueries */ &m_nrcControlBlock.bufStatic.radianceQueriesTraining,
+						 /*DoubleBuffer<float3>        trainRadianceTargets */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets,
+						 /*int                         *permutation         */ &permutation};
 
-		m_nrcControlBlock.bufStatic.radianceQueriesTraining;
-		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
-	}
+		cfg.blockDimX = m_fnPermuteTrainDataBlockSize;
+		cfg.blockDimY = 1;
+
+		cfg.gridDimX = (nrc::NUM_TRAINING_RECORDS_PER_FRAME + cfg.blockDimX - 1) / cfg.blockDimX;
+		cfg.gridDimY = 1;
+
+		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX);
+
+		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPermuteTrainData, args, nullptr));
+		}
 #endif
-	// [TCNN Training]
-	// INPUT: radianceQueriesTraining[65536], (radianceResultsTraining[65536],) trainingRadianceTargets[65536]
-	{
-		m_nrcControlBlock.bufStatic.radianceQueriesTraining;
+
+		// At this point, the training data is ready at radianceQueriesTraining.buffer(1) and trainingRadianceTargets.buffer(1)
+
+		// [TCNN Training]
+		// INPUT: radianceQueriesTraining[65536], trainingRadianceTargets[65536], (radianceResultsTraining[65536])
+		{
+		m_nrcControlBlock.bufStatic.radianceQueriesTraining.buffer(1);
+		m_nrcControlBlock.bufStatic.trainingRadianceTargets.buffer(1);
+
 		m_nrcControlBlock.bufStatic.radianceResultsTraining;
-		
-		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
-	}
+		}
 
+	}
 
 
 	// Adjust the tile size according to #records generated
