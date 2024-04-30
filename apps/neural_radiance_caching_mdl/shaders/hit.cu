@@ -572,7 +572,7 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
 	radianceQuery.position  = mdlState.position;
 	radianceQuery.diffuse   = auxData.albedo_diffuse;
 	radianceQuery.specular  = auxData.albedo_glossy;
-	radianceQuery.roughness = auxData.roughness;
+	radianceQuery.roughness = make_float2(auxData.roughness);
 }
 
 __forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState, 
@@ -833,9 +833,9 @@ extern "C" __global__ void __closesthit__radiance()
 #if 0
     ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
                            *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
-    thePrd->radiance = aux_data.albedo_diffuse;
+    //thePrd->radiance = aux_data.albedo_diffuse;
     //thePrd->radiance = aux_data.albedo_glossy;
-    //thePrd->radiance = { aux_data.roughness.x, aux_data.roughness.y, 0.f };
+    thePrd->radiance = { aux_data.roughness.x, aux_data.roughness.y, 0.f };
     thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     return;
 #endif
