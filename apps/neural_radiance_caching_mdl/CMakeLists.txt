@@ -31,10 +31,10 @@ cmake_minimum_required(VERSION 3.17)
 project( neural_radiance_caching_mdl LANGUAGES CUDA CXX )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 
-set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_EXTENSIONS OFF)
-set (CMAKE_CUDA_STANDARD 17) # must be <= 17 for compatiblity with tiny-cuda-nn
-set (CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CUDA_STANDARD 17) # must be <= 17 for compatiblity with tiny-cuda-nn
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 find_package(OpenGL REQUIRED)
 find_package(GLFW REQUIRED)
@@ -240,7 +240,9 @@ NVCUDA_COMPILE_MODULE(
   TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
   EXTENSION "${OPTIX_MODULE_EXTENSION}"
   GENERATED_FILES PROGRAM_MODULES
-  NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders" 
+  NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "--gpu-architecture=compute_${CMAKE_CUDA_ARCHITECTURES}" 
+               "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" 
+               "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders" 
 )
 
 # The native CUDA Kernels will be translated to *.ptx unconditionally.
@@ -250,7 +252,9 @@ NVCUDA_COMPILE_MODULE(
   TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
   EXTENSION ".ptx"
   GENERATED_FILES KERNEL_MODULES
-  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_${CMAKE_CUDA_ARCHITECTURES}" 
+               "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" 
+               "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 )
 
 source_group( "imgui"           FILES ${IMGUI} )
