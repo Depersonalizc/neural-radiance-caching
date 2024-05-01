@@ -51,6 +51,8 @@
 #include "inc/Texture.h"
 #include "inc/MyAssert.h"
 
+#include "inc/NRCNetwork.h"
+
 #include "inc/CompileResult.h"
 #include "inc/MaterialMDL.h"
 #include "inc/ShaderConfiguration.h"
@@ -569,6 +571,8 @@ public:
 	// Host-side copy of NRC Control block.
 	// Device-side is pointed by m_systemData.nrcCB
 	nrc::ControlBlock m_nrcControlBlock;
+
+	nrc::Network m_nrcNetwork;
 
 	// We only use this for shuffling the NRC training records.
 	curandGenerator_t m_curandGenerator{};

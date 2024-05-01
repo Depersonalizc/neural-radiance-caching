@@ -399,6 +399,8 @@ Device::Device(const int ordinal,
 	// Curand RNG, only used for shuffling NRC training data right now.
 	CURAND_CHECK(curandCreateGenerator(&m_curandGenerator, CURAND_RNG_PSEUDO_DEFAULT));
 	CURAND_CHECK(curandSetStream(m_curandGenerator, m_cudaStream));
+
+	m_nrcNetwork.init<true>(m_cudaStream);
 }
 
 
@@ -406,6 +408,8 @@ Device::~Device()
 {
 	CU_CHECK_NO_THROW(cuCtxSetCurrent(m_cudaContext)); // Activate this CUDA context. Not using activate() because this needs a no-throw check.
 	CU_CHECK_NO_THROW(cuCtxSynchronize());             // Make sure everthing running on this CUDA context has finished.
+
+	m_nrcNetwork.destroy();
 
 	if (m_cudaGraphicsResource)
 	{
@@ -497,7 +501,7 @@ Device::~Device()
 	{
 		CURAND_CHECK_NOTHROW(curandDestroyGenerator(m_curandGenerator));
 	}
-	if (m_cudaStream) 
+	if (m_cudaStream)
 	{
 		CU_CHECK_NO_THROW(cuStreamDestroy(m_cudaStream));
 	}
@@ -2152,6 +2156,13 @@ void Device::render(const unsigned int iterationIndex,
 			  << " (" << m_nrcControlBlock.numTrainingRecords
 			  << "); #Tiles: " << m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y << '\n';
 
+#define TCNN_INFER 1
+#define KERN_ACCUM 1
+
+#define TCNN_TRAIN 1
+#define KERN_PROP  1
+#define KERN_SHUFFLE 1
+
 	// [TCNN Inference]
 	// 1. @ The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
 	//	  These results are used for rendering. See next section.
@@ -2173,7 +2184,7 @@ void Device::render(const unsigned int iterationIndex,
 	CUlaunchConfig cfg{/*.gridDimX, .gridDimY,*/ .gridDimZ = 1u,
 					   .blockDimX = 32u, /*.blockDimY,*/ .blockDimZ = 1u,
 					   .hStream = m_cudaStream};
-
+#if KERN_ACCUM
 	// [KERNEL]
 	// Accumulate the inferenced radiance at the end of short rendering paths to output buffer
 	// ---------------------------------------------------------------------------------------
@@ -2193,11 +2204,12 @@ void Device::render(const unsigned int iterationIndex,
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnAccumulateRenderRadiance, args, nullptr));
 	}
+#endif
 
 	// Training
 	if (numTrainRecords > 0) [[likely]]
 	{
-#if 1
+#if KERN_PROP
 		// [KERNEL]
 		// Back-propagate the (queried/unbiased) radiance from the end of train suffixes (#tiles).
 		// This gets ready all radiance targets for training.
@@ -2221,12 +2233,12 @@ void Device::render(const unsigned int iterationIndex,
 		cfg.gridDimY = (m_systemData.pf.numTiles.y + cfg.blockDimY - 1) / cfg.blockDimY;
 		
 		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
-				&& cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+			   && cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPropagateTrainRadiance, args, nullptr));
 		}
 #endif
-#if 1
+#if KERN_SHUFFLE
 		// [KERNEL]
 		// Shuffle the training records to avoid spatial correlation.
 		// Also duplicate samples if the raytracer undersampled.
@@ -2265,7 +2277,27 @@ void Device::render(const unsigned int iterationIndex,
 		}
 #endif
 
-		// At this point, the training data is ready at radianceQueriesTraining.buffer(1) and trainingRadianceTargets.buffer(1)
+		// At this point, the training data is ready at 
+		// radianceQueriesTraining.buffer(1) and trainingRadianceTargets.buffer(1)
+
+#if 0
+		{
+		// DEBUG: Inspect the shuffled training samples
+		std::vector<nrc::RadianceQuery> queries(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		std::vector<float3>             targets(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		CU_CHECK(cuMemcpyDtoH(queries.data(), 
+							  reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1)), 
+							  sizeof(nrc::RadianceQuery) * nrc::NUM_TRAINING_RECORDS_PER_FRAME));
+
+		CU_CHECK(cuMemcpyDtoH(targets.data(),
+						      reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(1)),
+						      sizeof(float3) * nrc::NUM_TRAINING_RECORDS_PER_FRAME));
+
+		const auto& query = queries[0];
+		const auto& target = targets[0];
+		target;
+		}
+#endif
 
 		// [TCNN Training]
 		// INPUT: radianceQueriesTraining[65536], trainingRadianceTargets[65536], (radianceResultsTraining[65536])

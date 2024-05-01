@@ -1,0 +1,3 @@
+[submodule "3rdparty/tiny-cuda-nn"]
+	path = 3rdparty/tiny-cuda-nn
+	url = https://github.com/Depersonalizc/tiny-cuda-nn.git

@@ -32,6 +32,9 @@ project( neural_radiance_caching_mdl LANGUAGES CUDA CXX )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 
 set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_EXTENSIONS OFF)
+set (CMAKE_CUDA_STANDARD 17) # must be <= 17 for compatiblity with tiny-cuda-nn
+set (CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 find_package(OpenGL REQUIRED)
 find_package(GLFW REQUIRED)
@@ -45,6 +48,18 @@ if(MDL_SDK_FOUND)
 else()
   message(FATAL_ERROR "MDL SDK not found.")
 endif()
+
+# tiny-cuda-nn
+get_target_property(TCNN_INCLUDE_DIRS tiny-cuda-nn INCLUDE_DIRECTORIES)
+get_target_property(CMAKE_CUDA_ARCHITECTURES tiny-cuda-nn TCNN_CUDA_ARCHITECTURES)
+
+if(TCNN_INCLUDE_DIRS)
+  message("TCNN_INCLUDE_DIRS = " "${TCNN_INCLUDE_DIRS}")
+  message("TCNN_CUDA_ARCHITECTURES = ${CMAKE_CUDA_ARCHITECTURES}")
+else()
+  message(FATAL_ERROR "TCNN not found.")
+endif()
+
 
 # OptiX SDK 7.x and 8.x versions are searched inside the top-level CMakeLists.txt.
 # Make the build work with all currently released OptiX SDK 7.x and 8.x versions.
@@ -141,6 +156,8 @@ set( HEADERS
   inc/TonemapperGUI.h
   inc/ShaderConfiguration.h
 
+  inc/NRCNetwork.h
+  inc/NRCNetworkConfigs.h
   inc/NRCUtil.h
 )
 
@@ -169,6 +186,7 @@ set( SOURCES
   src/Timer.cpp
   src/Torus.cpp
 
+  src/NRCNetwork.cu
   src/NRCUtil.cu
 )
 
@@ -256,6 +274,7 @@ include_directories(
   ${IL_INCLUDE_DIR}
   ${ASSIMP_INCLUDE_DIRS}
   ${MDL_SDK_INCLUDE_DIRS}
+  ${TCNN_INCLUDE_DIRS}
 )
 
 add_definitions(
@@ -295,6 +314,7 @@ target_link_libraries( neural_radiance_caching_mdl
   ${ILU_LIBRARIES}
   ${ILUT_LIBRARIES}
   ${ASSIMP_LIBRARIES}
+  tiny-cuda-nn
 )
 
 if (UNIX)
