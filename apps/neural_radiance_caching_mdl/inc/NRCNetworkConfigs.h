@@ -5,8 +5,9 @@
 namespace nrc {
 namespace cfg {
 
+	// pos(3), dir(2), normal(2), roughness(2), diffuse(3), specular(3)
 	inline constexpr auto INPUT_DIMS  = 3 + 2+2+2 + 3+3;
-	inline constexpr auto OUTPUT_DIMS = 3; // radiance
+	inline constexpr auto OUTPUT_DIMS = 3; // RGB radiance
 
 	inline const nlohmann::json MODEL_CONFIG_PAPER{
 		{"loss", {
@@ -15,11 +16,11 @@ namespace cfg {
 		// https://github.com/NVlabs/tiny-cuda-nn/blob/master/DOCUMENTATION.md#exponential-moving-average-ema
 		{"optimizer", {
 			{"otype", "EMA"},
-			{"decay", 0.99},
+			{"decay", 0.99f},
 			{"nested", {
 				// https://github.com/NVlabs/tiny-cuda-nn/blob/master/DOCUMENTATION.md#adam
 				{"otype", "Adam"},
-				{"learning_rate", 1e-3},
+				{"learning_rate", 1e-3f},
 			}}
 		}},
 		// https://github.com/NVlabs/tiny-cuda-nn/blob/master/DOCUMENTATION.md#composite

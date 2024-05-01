@@ -20,7 +20,7 @@ public:
 	}
 
 	template <bool Verbose = false>
-	void init(CUstream stream, double lr, double emaDecay = 0.99)
+	void init(CUstream stream, float lr, float emaDecay = 0.99f)
 	{
 		if constexpr (Verbose)
 			printConfig_();
@@ -40,7 +40,7 @@ private:
 	bool m_destroyed{ false };
 
 	void init_(CUstream stream);
-	void init_(CUstream stream, double lr, double emaDecay = 0.99);
+	void init_(CUstream stream, float lr, float emaDecay = 0.99f);
 	void printConfig_() const;
 };
 

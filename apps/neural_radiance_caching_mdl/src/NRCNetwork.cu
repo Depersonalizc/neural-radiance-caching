@@ -47,7 +47,7 @@ void Network::init_(CUstream stream)
 	pImpl->model = tcnn::create_from_config(cfg::INPUT_DIMS, cfg::OUTPUT_DIMS, pImpl->config);
 }
 
-void Network::init_(CUstream stream, double lr, double emaDecay/* = 0.99*/)
+void Network::init_(CUstream stream, float lr, float emaDecay/* = 0.99f*/)
 {
 	auto& opt = pImpl->config["optimizer"];
 	opt["nested"]["learning_rate"] = lr;
