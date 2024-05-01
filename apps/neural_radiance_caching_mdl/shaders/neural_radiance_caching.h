@@ -51,17 +51,14 @@ namespace nrc
 
 	struct RadianceQuery
 	{
-		// 16 byte alignment
+		float3 position;
 
-		// 8 byte alignment
 		float2 direction;
 		float2 normal;
+		float2 roughness;
 
-		// 4 byte alignment
-		float3 position;
 		float3 diffuse;
 		float3 specular;
-		float3 roughness;
 	};
 
 	template<typename T>

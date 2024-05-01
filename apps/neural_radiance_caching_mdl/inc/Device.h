@@ -51,6 +51,8 @@
 #include "inc/Texture.h"
 #include "inc/MyAssert.h"
 
+#include "inc/NRCNetwork.h"
+
 #include "inc/CompileResult.h"
 #include "inc/MaterialMDL.h"
 #include "inc/ShaderConfiguration.h"
@@ -570,6 +572,8 @@ public:
 	// Device-side is pointed by m_systemData.nrcCB
 	nrc::ControlBlock m_nrcControlBlock;
 
+	nrc::Network m_nrcNetwork;
+
 	// We only use this for shuffling the NRC training records.
 	curandGenerator_t m_curandGenerator{};
 
@@ -616,9 +620,11 @@ public:
 	// A single module contains all the helper functions below.
 	CUmodule    m_moduleNRCHelpers{};
 	CUfunction  m_fnAccumulateRenderRadiance{},
-				m_fnPropagateTrainRadiance{};
+				m_fnPropagateTrainRadiance{},
+				m_fnPermuteTrainData{};
 	int         m_fnAccumulateRenderRadianceBlockSize,
-			    m_fnPropagateTrainRadianceBlockSize;
+			    m_fnPropagateTrainRadianceBlockSize,
+				m_fnPermuteTrainDataBlockSize;
 
 #if USE_FP32_OUTPUT
 	std::vector<float4> m_bufferHost;

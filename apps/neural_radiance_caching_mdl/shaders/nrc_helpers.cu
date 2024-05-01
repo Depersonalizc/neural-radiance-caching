@@ -13,6 +13,11 @@ extern "C" __global__ void placeholder() { return; }
 
 namespace {
 
+__forceinline__ __device__ unsigned int getLaunchIndex1D()
+{
+	return blockDim.x * blockIdx.x + threadIdx.x;
+}
+
 __forceinline__ __device__ uint2 getLaunchIndex2D()
 {
 	return { blockDim.x * blockIdx.x + threadIdx.x, 
@@ -83,4 +88,27 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 	}
 	//if (launchIndex.x == sysData.pf.numTiles.x / 2 && launchIndex.y == sysData.pf.numTiles.y / 2)
 	//	printf("[END]\n");
+}
+
+extern "C" __global__ void permute_train_data(nrc::DoubleBuffer<nrc::RadianceQuery> trainRadianceQueries,
+											  nrc::DoubleBuffer<float3>             trainRadianceTargets,
+											  int                                   *permutation)
+{
+	const auto launchIndex = getLaunchIndex1D();
+	if (launchIndex >= nrc::NUM_TRAINING_RECORDS_PER_FRAME) return;
+
+	// Modulo this to duplicate training data in case RT undersampled.
+	const auto numRecords = min(sysData.nrcCB->numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+	if (numRecords <= 0) return;
+
+	const auto queriesSrc = trainRadianceQueries.getBuffer(0);
+	const auto queriesDst = trainRadianceQueries.getBuffer(1);
+	const auto targetsSrc = trainRadianceTargets.getBuffer(0);
+	const auto targetsDst = trainRadianceTargets.getBuffer(1);
+	
+	const auto d = launchIndex;
+	const auto s = permutation[d] % numRecords;
+
+	queriesDst[d] = queriesSrc[s];
+	targetsDst[d] = targetsSrc[s];
 }
