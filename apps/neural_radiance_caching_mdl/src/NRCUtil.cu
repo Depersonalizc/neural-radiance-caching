@@ -1,7 +1,6 @@
 #include "inc/NRCUtil.h"
 
 #include <cub/cub.cuh>
-//#include <iostream>
 
 __host__ size_t nrc::getRadixSortTempStorageBytes(nrc::ControlBlock& cb, CUstream hStream)
 {
