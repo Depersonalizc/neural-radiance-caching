@@ -28,6 +28,14 @@ public:
 	}
 
 	void destroy();
+
+	// Perform a single training step
+	void train(float *batchInputs_d, float *batchTargets_d, float *loss_h = nullptr);
+	void train(float *batchInputs_d, float *batchTargets_d, CUstream stream, float *loss_h = nullptr);
+
+	// Perform inference on the input
+	void infer(float* inputs_d, float* outputs_d, uint32_t numInputs);
+	void infer(float* inputs_d, float* outputs_d, uint32_t numInputs, CUstream stream);
 	
 	void setStream(CUstream stream);
 	

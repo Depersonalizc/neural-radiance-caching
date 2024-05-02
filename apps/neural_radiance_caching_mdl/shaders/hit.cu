@@ -567,12 +567,26 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
 											const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
 											/*out:*/ RadianceQuery& radianceQuery)
 {
-	radianceQuery.normal    = cartesianToSphericalUnitVector(mdlState.normal);
-	radianceQuery.direction = cartesianToSphericalUnitVector(thePrd.wo);
-	radianceQuery.position  = mdlState.position;
+    radianceQuery.position  = mdlState.position;
+    
+    const auto direction = cartesianToSphericalUnitVector(thePrd.wo);
+    const auto normal = cartesianToSphericalUnitVector(mdlState.normal);
+#if USE_COMPACT_RADIANCE_QUERY
+    radianceQuery.direction1 = direction.x;
+    radianceQuery.direction2 = direction.y;
+    radianceQuery.normal1    = normal.x;
+    radianceQuery.normal2    = normal.y;
+    radianceQuery.roughness1 = auxData.roughness.x;
+    radianceQuery.roughness2 = auxData.roughness.y;
+#else
+    radianceQuery.pad_      = 0.0f; // 1-float pad after position
+    radianceQuery.direction = direction;
+    radianceQuery.normal    = normal;
+    radianceQuery.roughness = make_float2(auxData.roughness);
+#endif
+
 	radianceQuery.diffuse   = auxData.albedo_diffuse;
 	radianceQuery.specular  = auxData.albedo_glossy;
-	radianceQuery.roughness = make_float2(auxData.roughness);
 }
 
 __forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState, 

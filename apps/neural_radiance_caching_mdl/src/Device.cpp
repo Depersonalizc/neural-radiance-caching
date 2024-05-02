@@ -400,7 +400,7 @@ Device::Device(const int ordinal,
 	CURAND_CHECK(curandCreateGenerator(&m_curandGenerator, CURAND_RNG_PSEUDO_DEFAULT));
 	CURAND_CHECK(curandSetStream(m_curandGenerator, m_cudaStream));
 
-	m_nrcNetwork.init<true>(m_cudaStream);
+	m_nrcNetwork.init<true>(m_cudaStream, 1e-3f);
 }
 
 
@@ -1166,9 +1166,6 @@ void Device::initNRC()
 	staticBufs.radianceQueriesTraining.buffer(1) = reinterpret_cast<RadianceQuery*>(
 		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
 	
-	staticBufs.radianceResultsTraining = reinterpret_cast<float3*>(
-		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
-
 	// Auxiliary
 
 	// trainingRecordIndices
@@ -2152,9 +2149,10 @@ void Device::render(const unsigned int iterationIndex,
 	synchronizeStream();
 
 	const auto numTrainRecords = std::min(m_nrcControlBlock.numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+	const auto numTiles = m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y;
 	std::cout << "[HOST] #Training records: " << numTrainRecords
 			  << " (" << m_nrcControlBlock.numTrainingRecords
-			  << "); #Tiles: " << m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y << '\n';
+			  << "); #Tiles: " << numTiles << '\n';
 
 #define TCNN_INFER 1
 #define KERN_ACCUM 1
@@ -2162,6 +2160,8 @@ void Device::render(const unsigned int iterationIndex,
 #define TCNN_TRAIN 1
 #define KERN_PROP  1
 #define KERN_SHUFFLE 1
+
+	auto flatten = [](auto pdata) { return reinterpret_cast<float*>(pdata); };
 
 	// [TCNN Inference]
 	// 1. @ The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
@@ -2172,12 +2172,11 @@ void Device::render(const unsigned int iterationIndex,
 	// INPUT : radianceQueriesInference[#pixels + #tiles]
 	// OUTPUT: radianceResultsInference[#pixels + #tiles]
 	{
-		m_nrcControlBlock.bufDynamic.radianceQueriesInference; // INPUT
+		m_nrcNetwork.infer(flatten(m_nrcControlBlock.bufDynamic.radianceQueriesInference), // INPUT
+						   flatten(m_nrcControlBlock.bufDynamic.radianceResultsInference), // OUTPUT
+						   screenSize + numTiles);
 
-		m_nrcControlBlock.bufDynamic.radianceResultsInference; // OUTPUT
-
-		// For test: Set radianceResultsInference[:#pixels] to be RED
-		
+		// For test: Set radianceResultsInference[:#pixels] to be RED?
 	}
 
 	// Kernel launch config
@@ -2279,7 +2278,6 @@ void Device::render(const unsigned int iterationIndex,
 
 		// At this point, the training data is ready at 
 		// radianceQueriesTraining.buffer(1) and trainingRadianceTargets.buffer(1)
-
 #if 0
 		{
 		// DEBUG: Inspect the shuffled training samples
@@ -2300,16 +2298,21 @@ void Device::render(const unsigned int iterationIndex,
 #endif
 
 		// [TCNN Training]
-		// INPUT: radianceQueriesTraining[65536], trainingRadianceTargets[65536], (radianceResultsTraining[65536])
+		// INPUT: radianceQueriesTraining[65536], trainingRadianceTargets[65536]
+		auto batchInputs = m_nrcControlBlock.bufStatic.radianceQueriesTraining.buffer(1);
+		auto batchTargets = m_nrcControlBlock.bufStatic.trainingRadianceTargets.buffer(1);
+		float batchLoss, totalLoss{ 0.f };
+		for (auto b = 0; b < nrc::NUM_BATCHES; b++)
 		{
-		m_nrcControlBlock.bufStatic.radianceQueriesTraining.buffer(1);
-		m_nrcControlBlock.bufStatic.trainingRadianceTargets.buffer(1);
+			m_nrcNetwork.train(flatten(batchInputs), flatten(batchTargets), &batchLoss);
+			totalLoss += batchLoss;
 
-		m_nrcControlBlock.bufStatic.radianceResultsTraining;
+			batchInputs  += nrc::BATCH_SIZE;
+			batchTargets += nrc::BATCH_SIZE;
 		}
-
+		static constexpr float normalizer = 1.0f / nrc::NUM_BATCHES;
+		std::cout << "[HOST] Avg. Training Batch Loss: " << totalLoss * normalizer << std::endl;
 	}
-
 
 	// Adjust the tile size according to #records generated
 	adjustTileSize(m_nrcControlBlock.numTrainingRecords);

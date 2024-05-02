@@ -1,13 +1,10 @@
+#include "shaders/config.h"
 #include <tiny-cuda-nn/config.h>
 
 #include <memory>
 
 namespace nrc {
 namespace cfg {
-
-	// pos(3), dir(2), normal(2), roughness(2), diffuse(3), specular(3)
-	inline constexpr auto INPUT_DIMS  = 3 + 2+2+2 + 3+3;
-	inline constexpr auto OUTPUT_DIMS = 3; // RGB radiance
 
 	inline const nlohmann::json MODEL_CONFIG_PAPER{
 		{"loss", {
@@ -34,15 +31,23 @@ namespace cfg {
 					{"n_dims_to_encode", 3},
 					{"n_frequencies", 12},
 				},
+#if !USE_COMPACT_RADIANCE_QUERY
+				// Padding (1)
+				{
+					{"otype", "Identity"},
+					{"n_dims_to_encode", 1},
+				}
+#endif
 				// Direction, normal, roughness (2+2+2)
 				{
 					{"otype", "OneBlob"},
 					{"n_dims_to_encode", 2+2+2},
 					{"n_bins", 4},
 				},
-				// Diffuse, specular albedos (3+3, automatically derived)
+				// Diffuse, specular albedos (3+3)
 				{
 					{"otype", "Identity"},
+					{"n_dims_to_encode", 6},
 				},
 			}}
 		}},

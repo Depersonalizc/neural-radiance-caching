@@ -7,10 +7,21 @@ namespace nrc
 {
 	constexpr int NUM_BATCHES = 4;
 	constexpr int NUM_TRAINING_RECORDS_PER_FRAME = 65536;
+	constexpr int BATCH_SIZE = NUM_TRAINING_RECORDS_PER_FRAME / NUM_BATCHES;
+
+#if USE_COMPACT_RADIANCE_QUERY
+	// pos(3), dir(2), normal(2), roughness(2), diffuse(3), specular(3)
+	constexpr int NN_INPUT_DIMS = 3 + 2+2+2 + 3+3;
+#else
+	// Additional padding float after pos
+	constexpr int NN_INPUT_DIMS = 3+1 + 2+2+2 + 3+3;
+#endif
+	constexpr int NN_OUTPUT_DIMS = 3; // RGB radiance
 
 	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
 	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
 	constexpr float TRAIN_UNBIASED_RATIO = 1.f / 16.f;
+	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 1.f;
 
 	// Keep track of the ray path for radiance prop
 	struct TrainingRecord
@@ -52,11 +63,17 @@ namespace nrc
 	struct RadianceQuery
 	{
 		float3 position;
-
+#if USE_COMPACT_RADIANCE_QUERY
+		// Split float2 to save some space
+		float direction1, direction2;
+		float normal1, normal2;
+		float roughness1, roughness2;
+#else
+		float  pad_;
 		float2 direction;
 		float2 normal;
 		float2 roughness;
-
+#endif
 		float3 diffuse;
 		float3 specular;
 	};
@@ -76,13 +93,6 @@ namespace nrc
 		// operator() gets an entry in the second buffer
 		__forceinline__ __device__ T& operator()(int idx) { return data[1][idx]; }
 		__forceinline__ __device__ const T& operator()(int idx) const { return data[1][idx]; }
-
-		// Copy data from the first buffer to the second buffer
-		//__host__ void copy0To1Async(int numElems, CUstream hStream)
-		//{
-		//	MY_ASSERT(data[0] && data[1]);
-		//	CU_CHECK(cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(data[1]), reinterpret_cast<CUdeviceptr>(data[0]), numElems * sizeof(T), hStream));
-		//}
 	};
 
 	struct ControlBlock
@@ -99,7 +109,6 @@ namespace nrc
 
 		// The results of those queries will be used to train the NRC.
 		DoubleBuffer<RadianceQuery> radianceQueriesTraining{}; // numTrainingRecords -> 65536, static
-		float3 *radianceResultsTraining = nullptr; // numTrainingRecords -> 65536, static
 
 		// Auxiliary buffers for shuffling
 		// Use randomValues as keys to sort trainingRecordIndices.buffer(0) - which is just the indices [0..65536)
