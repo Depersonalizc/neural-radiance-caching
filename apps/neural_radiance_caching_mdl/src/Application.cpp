@@ -1908,9 +1908,15 @@ bool Application::loadSceneDescription(const std::string& filename)
 					std::string filenameModel;
 					tokenType = parser.getNextToken(filenameModel); // Needs to be a path in quotation marks.
 					MY_ASSERT(tokenType == PTT_STRING);
+
+					std::string material_name;
+					tokenType = parser.getNextToken(material_name);
+					MY_ASSERT(tokenType == PTT_ID);
+					printf(" encountered material name %s \n", material_name.c_str());
+
 					convertPath(filenameModel);
 
-					std::shared_ptr<sg::Group> model = createASSIMP(getAssetPathStr(filenameModel));
+					std::shared_ptr<sg::Group> model = createASSIMP(getAssetPathStr(filenameModel), material_name);
 
 					// nvpro-pipeline matrices are row-major multiplied from the right, means the translation is in the last row. Transpose!
 					const float trafo[12] =
