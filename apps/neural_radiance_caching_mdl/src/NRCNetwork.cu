@@ -71,7 +71,7 @@ void Network::infer(float* inputs_d, float* outputs_d, uint32_t numInputs)
 	const GPUMatrix_t inputs { inputs_d,  NN_INPUT_DIMS,  numInputs };
 	GPUMatrix_t       outputs{ outputs_d, NN_OUTPUT_DIMS, numInputs };
 
-	network->inference(inputs, outputs);
+	network->inference(m_stream, inputs, outputs);
 }
 
 void Network::infer(float* inputs_d, float* outputs_d, uint32_t numInputs, CUstream stream)
