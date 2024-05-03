@@ -106,4 +106,9 @@
 // 1 == Use SER when OptiX SDK 8.0.0 or newer is used.
 #define USE_SHADER_EXECUTION_REORDERING 1
 
+// Split float2 members in the RadianceQuery struct to compactify queries
+// 0 == Do not split float2's. This also requires another padding float.
+// 1 == Split float2's to compactify radiance queries.
+#define USE_COMPACT_RADIANCE_QUERY 1
+
 #endif // CONFIG_H

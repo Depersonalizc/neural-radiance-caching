@@ -20,7 +20,7 @@ public:
 	}
 
 	template <bool Verbose = false>
-	void init(CUstream stream, double lr, double emaDecay = 0.99)
+	void init(CUstream stream, float lr, float emaDecay = 0.99f)
 	{
 		if constexpr (Verbose)
 			printConfig_();
@@ -28,6 +28,14 @@ public:
 	}
 
 	void destroy();
+
+	// Perform a single training step
+	void train(float *batchInputs_d, float *batchTargets_d, float *loss_h = nullptr);
+	void train(float *batchInputs_d, float *batchTargets_d, CUstream stream, float *loss_h = nullptr);
+
+	// Perform inference on the input
+	void infer(float* inputs_d, float* outputs_d, uint32_t numInputs);
+	void infer(float* inputs_d, float* outputs_d, uint32_t numInputs, CUstream stream);
 	
 	void setStream(CUstream stream);
 	
@@ -40,7 +48,7 @@ private:
 	bool m_destroyed{ false };
 
 	void init_(CUstream stream);
-	void init_(CUstream stream, double lr, double emaDecay = 0.99);
+	void init_(CUstream stream, float lr, float emaDecay = 0.99f);
 	void printConfig_() const;
 };
 

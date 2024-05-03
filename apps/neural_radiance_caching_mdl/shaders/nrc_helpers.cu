@@ -24,6 +24,11 @@ __forceinline__ __device__ uint2 getLaunchIndex2D()
 			 blockDim.y * blockIdx.y + threadIdx.y };
 }
 
+__forceinline__ __device__ bool allZero(float3 v)
+{
+	return v.x == 0.f && v.y == 0.f && v.z == 0.f;
+}
+
 
 }
 
@@ -37,15 +42,25 @@ extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance,
 	const unsigned int index = launchIndex.y * sysData.resolution.x + launchIndex.x; // Pixel index
 	const auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
 	
-	// Make sure endRenderRadiance doesn't contain garbage here.
-	//const float3 radiance = endRenderThroughput[index] * endRenderRadiance[index];
-	const float3 radiance = endRenderThroughput[index] * make_float3(1.0f);
-	//const float3 radiance = endRenderRadiance[index];
+#if 0
+	const float3 radiance = endRenderThroughput[index] * endRenderRadiance[index];
 	const float accWeight = 1.0f / float(sysData.pf.iterationIndex + 1);
-	
 	float3 dst = make_float3(buffer[index]);
 	dst += (radiance * accWeight);	
 	buffer[index] = make_float4(dst, 1.0f);
+#elif 1 // DEBUG: directly visualize radiance at terminal veretex
+	if (allZero(endRenderThroughput[index])) {
+		buffer[index] = { 0.f, 0.f, 0.f, 1.f };
+	}
+	else {
+		buffer[index] = make_float4(endRenderRadiance[index], 1.0f);
+	}
+#elif 0 // DEBUG: visualize radiance * throughput
+	float3 dst = endRenderRadiance[index] * endRenderThroughput[index];
+	buffer[index] = make_float4(dst, 1.0f);
+#else
+	return;
+#endif
 }
 
 extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex *trainSuffixEndVertices, // [:#tiles]
@@ -64,7 +79,7 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 	int iTo = endVert.startTrainRecord;
 
 // Sanity check
-#if 0
+#if 1
 	if (iTo >= sysData.nrcCB->numTrainingRecords || !(endVert.radianceMask == 0.f || endVert.radianceMask == 1.f))
 	{
 		printf("[TILE %d/%d] Invalid end vertex: startTrainRecord(int) = %d (/%d). radianceMask(float) = %f\n", 
@@ -72,6 +87,7 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 		return;
 	}
 #endif
+
 	while (iTo >= 0)
 	{
 		//if (launchIndex.x == sysData.pf.numTiles.x / 2 && launchIndex.y == sysData.pf.numTiles.y / 2)
@@ -85,6 +101,13 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 		// Go to next record
 		lastRadiance = radianceTo;
 		iTo = recordTo.propTo;
+
+#if 0
+		// Zero radiance targets might cause issues in training...?
+		if (radianceTo.x + radianceTo.y + radianceTo.z == 0.0f) {
+			radianceTo = make_float3(0.001f);
+		}
+#endif
 	}
 	//if (launchIndex.x == sysData.pf.numTiles.x / 2 && launchIndex.y == sysData.pf.numTiles.y / 2)
 	//	printf("[END]\n");

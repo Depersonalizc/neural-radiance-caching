@@ -53,6 +53,12 @@ __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
 	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
 }
 
+__forceinline__ __device__ void addNullRenderQuey(const PerRayData& thePrd)
+{
+	auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
+	renderQuery = nrc::RadianceQuery{};
+}
+
 }
 
 // Take the step along the volume scattering random walk.
@@ -96,6 +102,9 @@ extern "C" __global__ void __miss__env_null()
 	if (!isTrainSuffix) // Either pure rendering, or rendering path of training ray
 	{
 		thePrd->lastRenderThroughput = make_float3(0.f);
+
+		// Not strictly needed, because lastRenderThroughput is 0
+		nrc::addNullRenderQuey(*thePrd);
 	}
 
 	// Terminate (unbiased) if training.
@@ -153,6 +162,9 @@ extern "C" __global__ void __miss__env_constant()
 		// Set rendering throughput to zero because the emission has already
 		// been accounted for by Direct Lighting. Avoid double counting!
 		thePrd->lastRenderThroughput = make_float3(0.f);
+
+		// Not strictly needed, because lastRenderThroughput is 0
+		nrc::addNullRenderQuey(*thePrd);
 	}
 
 	// Terminate (unbiased) if training.
@@ -223,6 +235,9 @@ extern "C" __global__ void __miss__env_sphere()
 		// Set rendering throughput to zero because the emission has already
 		// been accounted for by Direct Lighting. Avoid double counting!
 		thePrd->lastRenderThroughput = make_float3(0.f);
+
+		// Not strictly needed, because lastRenderThroughput is 0
+		nrc::addNullRenderQuey(*thePrd);
 	}
 
 	// Terminate (unbiased) if training.
