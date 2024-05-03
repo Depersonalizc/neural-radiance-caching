@@ -563,11 +563,12 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
 namespace nrc {
 
 __forceinline__ __device__ void addQuery(const Mdl_state& mdlState, 
-											const PerRayData& thePrd, 
-											const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
-											/*out:*/ RadianceQuery& radianceQuery)
+									     const PerRayData& thePrd, 
+										 const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+										 /*out:*/ RadianceQuery& radianceQuery)
 {
-    radianceQuery.position  = mdlState.position;
+    radianceQuery.position = mdlState.position;
+    //radianceQuery.position *= 0.01f;
     
     const auto direction = cartesianToSphericalUnitVector(thePrd.wo);
     const auto normal = cartesianToSphericalUnitVector(mdlState.normal);
@@ -590,19 +591,21 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
 }
 
 __forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState, 
-												const PerRayData& thePrd, 
-												const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData)
+											   const PerRayData& thePrd, 
+											   const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData)
 {
+    //printf("added render query\n");
 	auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
 	addQuery(mdlState, thePrd, auxData, renderQuery);
 }
 
 __forceinline__ __device__ void addTrainQuery(const Mdl_state& mdlState, 
-												const PerRayData& thePrd, 
-												const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
-												int trainRecordIndex)
+											  const PerRayData& thePrd, 
+											  const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+											  int trainRecordIndex)
 
 {
+    //printf("added train query (for self-train)\n");
 	auto& trainQuery = sysData.nrcCB->bufStatic.radianceQueriesTraining[trainRecordIndex];
 	addQuery(mdlState, thePrd, auxData, trainQuery);
 }
@@ -862,7 +865,7 @@ extern "C" __global__ void __closesthit__radiance()
         {
             // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
-            //nrc::addRenderQuery(state, *thePrd, aux_data);
+            nrc::addRenderQuery(state, *thePrd, aux_data);
 
             // No radiance will be added because the ray has been absorbed.
             thePrd->lastRenderThroughput = make_float3(0.f);
@@ -878,6 +881,9 @@ extern "C" __global__ void __closesthit__radiance()
 
         return;
     }
+
+    //printf("NOT an ABSORB event\n\n\n\n\n");
+
 
     // Handle terminating vertex due to area spread.
     // Can be sure it's not an unbiased train suffix.
@@ -1177,7 +1183,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         {
             // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
-            //nrc::addRenderQuery(state, *thePrd, aux_data);
+            nrc::addRenderQuery(state, *thePrd, aux_data);
 
             // No radiance will be added because the ray has been absorbed.
             thePrd->lastRenderThroughput = make_float3(0.f);
@@ -1193,6 +1199,16 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
         return;
     }
+
+    // DEBUG: Remove later!!!
+#if 0
+    {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+        nrc::addRenderQuery(state, *thePrd, aux_data);
+        thePrd->lastRenderThroughput = make_float3(1.f);
+    }
+#endif
     
     // Handle terminating vertex due to area spread.
     // Can be sure it's not an unbiased train suffix.

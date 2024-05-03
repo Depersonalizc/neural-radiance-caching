@@ -24,6 +24,11 @@ __forceinline__ __device__ uint2 getLaunchIndex2D()
 			 blockDim.y * blockIdx.y + threadIdx.y };
 }
 
+__forceinline__ __device__ bool allZero(float3 v)
+{
+	return v.x == 0.f && v.y == 0.f && v.z == 0.f;
+}
+
 
 }
 
@@ -43,8 +48,18 @@ extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance,
 	float3 dst = make_float3(buffer[index]);
 	dst += (radiance * accWeight);	
 	buffer[index] = make_float4(dst, 1.0f);
-#else // DEBUG: directly visualize radiance at terminal veretex
-	buffer[index] = make_float4(endRenderRadiance[index], 1.0f);
+#elif 1 // DEBUG: directly visualize radiance at terminal veretex
+	if (allZero(endRenderThroughput[index])) {
+		buffer[index] = { 0.f, 0.f, 0.f, 1.f };
+	}
+	else {
+		buffer[index] = make_float4(endRenderRadiance[index], 1.0f);
+	}
+#elif 0 // DEBUG: visualize radiance * throughput
+	float3 dst = endRenderRadiance[index] * endRenderThroughput[index];
+	buffer[index] = make_float4(dst, 1.0f);
+#else
+	return;
 #endif
 }
 

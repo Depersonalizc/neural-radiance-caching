@@ -2172,11 +2172,29 @@ void Device::render(const unsigned int iterationIndex,
 	// INPUT : radianceQueriesInference[#pixels + #tiles]
 	// OUTPUT: radianceResultsInference[#pixels + #tiles]
 	{
+		const auto numQueries = screenSize + numTiles;
+
 		m_nrcNetwork.infer(flatten(m_nrcControlBlock.bufDynamic.radianceQueriesInference), // INPUT
 						   flatten(m_nrcControlBlock.bufDynamic.radianceResultsInference), // OUTPUT
-						   screenSize + numTiles);
+						   numQueries);
 
-		// For test: Set radianceResultsInference[:#pixels] to be RED?
+		// DEBUG: Inspect inferred radiance
+#if 1
+		std::vector<nrc::RadianceQuery> queries(numQueries);
+		std::vector<float3> results(numQueries);
+
+		CU_CHECK(cuMemcpyDtoHAsync(queries.data(), 
+			reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufDynamic.radianceQueriesInference), 
+			sizeof(nrc::RadianceQuery) * numQueries, m_cudaStream));
+
+		CU_CHECK(cuMemcpyDtoHAsync(results.data(),
+			reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufDynamic.radianceResultsInference),
+			sizeof(float3) * numQueries, m_cudaStream));
+
+		synchronizeStream();
+
+		queries; results;
+#endif
 	}
 
 	// Kernel launch config
@@ -2237,7 +2255,7 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPropagateTrainRadiance, args, nullptr));
 		}
 #endif
-#if KERN_SHUFFLE
+
 		// [KERNEL]
 		// Shuffle the training records to avoid spatial correlation.
 		// Also duplicate samples if the raytracer undersampled.
@@ -2247,6 +2265,7 @@ void Device::render(const unsigned int iterationIndex,
 		// OUTPUT: radianceQueriesTraining.buffer(1)[65536]
 		//         trainingRadianceTargets.buffer(1)[65536]
 		{
+#if KERN_SHUFFLE
 		// Generate a random permuatation by sorting random key values.
 		nrc::generateRandomPermutationForTrain(m_nrcControlBlock, m_cudaStream, m_curandGenerator);
 
@@ -2259,7 +2278,10 @@ void Device::render(const unsigned int iterationIndex,
 
 		// At this point trainingRecordIndices.buffer(1) contains the shuffled indices.
 		// Use it as the permutation keys to shuffle the training data (from buffer 0 -> buffer 1)
-		int*  permutation = m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(1); // Buffer 1 is the shuffled indices
+		int* permutation = m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(1); // Buffer 1 is the shuffled indices
+#else
+		int* permutation = m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(0); // Buffer 0 is the unshuffled indices
+#endif
 		void* args[] = { /*DoubleBuffer<RadianceQuery> trainRadianceQueries */ &m_nrcControlBlock.bufStatic.radianceQueriesTraining,
 						 /*DoubleBuffer<float3>        trainRadianceTargets */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets,
 						 /*int                         *permutation         */ &permutation};
@@ -2274,34 +2296,34 @@ void Device::render(const unsigned int iterationIndex,
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPermuteTrainData, args, nullptr));
 		}
-#endif
 
 		// At this point, the training data is ready at 
 		// radianceQueriesTraining.buffer(1) and trainingRadianceTargets.buffer(1)
-#if 0
+#if 1
 		{
 		// DEBUG: Inspect the shuffled training samples
 		std::vector<nrc::RadianceQuery> queries(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 		std::vector<float3>             targets(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
-		CU_CHECK(cuMemcpyDtoH(queries.data(), 
-							  reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1)), 
-							  sizeof(nrc::RadianceQuery) * nrc::NUM_TRAINING_RECORDS_PER_FRAME));
+		CU_CHECK(cuMemcpyDtoHAsync(queries.data(), 
+			reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1)), 
+			sizeof(nrc::RadianceQuery) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
 
-		CU_CHECK(cuMemcpyDtoH(targets.data(),
-						      reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(1)),
-						      sizeof(float3) * nrc::NUM_TRAINING_RECORDS_PER_FRAME));
+		CU_CHECK(cuMemcpyDtoHAsync(targets.data(),
+			reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(1)),
+			sizeof(float3) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
 
-		const auto& query = queries[0];
-		const auto& target = targets[0];
-		target;
+		synchronizeStream();
+
+		queries; targets;
 		}
 #endif
 
 		// [TCNN Training]
 		// INPUT: radianceQueriesTraining[65536], trainingRadianceTargets[65536]
-		auto batchInputs = m_nrcControlBlock.bufStatic.radianceQueriesTraining.buffer(1);
-		auto batchTargets = m_nrcControlBlock.bufStatic.trainingRadianceTargets.buffer(1);
+		nrc::RadianceQuery *batchInputs  = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1);
+		float3             *batchTargets = m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(1);
 		float batchLoss, totalLoss{ 0.f };
+		
 		for (auto b = 0; b < nrc::NUM_BATCHES; b++)
 		{
 			m_nrcNetwork.train(flatten(batchInputs), flatten(batchTargets), &batchLoss);
