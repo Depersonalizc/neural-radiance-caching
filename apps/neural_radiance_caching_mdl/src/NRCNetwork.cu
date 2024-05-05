@@ -85,6 +85,11 @@ void Network::setStream(CUstream stream)
 	m_stream = stream;
 }
 
+void Network::setHyperParams(const HyperParams& hp)
+{
+	pImpl->model.optimizer->set_learning_rate(hp.learningRate);
+}
+
 void Network::init_(CUstream stream)
 {
 	setStream(stream);

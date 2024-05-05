@@ -1458,7 +1458,7 @@ void Device::setState(const DeviceState& state)
 	}
 
 	// Special handling from the previous DeviceMultiGPULocalCopy class.
-	if (m_systemData.resolution != state.resolution 
+	if (m_systemData.resolution != state.resolution
 		//|| m_systemData.pf.tileSize != state.tileSize
 		)
 	{
@@ -1542,6 +1542,18 @@ void Device::setState(const DeviceState& state)
 		m_isDirtySystemData = true;
 	}
 #endif
+
+	if (m_systemData.pf.nrcTrainUnbiasedRatio != state.nrcTrainUnbiasedRatio)
+	{
+		m_systemData.pf.nrcTrainUnbiasedRatio = state.nrcTrainUnbiasedRatio;
+		// Per-frame data, will always be copied.
+	}
+
+	if (m_nrcHyperParams.learningRate != state.nrcTrainLearningRate)
+	{
+		m_nrcHyperParams.learningRate = state.nrcTrainLearningRate;
+		m_isDirtyHyperParams = true;
+	}
 }
 
 
@@ -2097,6 +2109,12 @@ void Device::render(const unsigned int iterationIndex,
 		m_isDirtySystemData   = true;  // Now the entire sysData on the device needs to be updated.
 	}
 
+	if (m_isDirtyHyperParams)
+	{
+		m_nrcNetwork.setHyperParams(m_nrcHyperParams);
+		m_isDirtyHyperParams = false;
+	}
+
 	// PER-FRAME: Update the training index, shared across all tiles
 	{
 		//const auto tileSize = 1 << (m_systemData.pf.tileShift.x + m_systemData.pf.tileShift.y);
@@ -2132,14 +2150,14 @@ void Device::render(const unsigned int iterationIndex,
 	}
 
 	// Reset the per-frame data of the NRC block (currently just numTrainingRecords)
-	//if (totalSubframeIndex < 2)
+	//if (totalSubframeIndex < 2) // DEBUG
 	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
 
 	// Path Tracing: 
 	// - Generate training data for NRC
 	// - Populate queries, training records           
 	// Note the launch width per device to render in tiles.
-	//if (totalSubframeIndex < 2)
+	//if (totalSubframeIndex < 2) // DEBUG
 	OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), 
 								&m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 
@@ -2153,7 +2171,7 @@ void Device::render(const unsigned int iterationIndex,
 	const auto numTrainRecords = std::min(m_nrcControlBlock.numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 	const auto numTiles = m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y;
 
-	m_trainStat.numTrainRecords = numTrainRecords;
+	m_nrcTrainStat.numTrainRecords = numTrainRecords;
 
 	//std::cout << "[HOST] #Training records: " << numTrainRecords
 	//		  << " (" << m_nrcControlBlock.numTrainingRecords
@@ -2231,7 +2249,7 @@ void Device::render(const unsigned int iterationIndex,
 #endif
 
 	// Training
-	m_trainStat.loss = 0.f;
+	m_nrcTrainStat.loss = 0.f;
 	if (numTrainRecords > 0) [[likely]]
 	{
 #if KERN_PROP
@@ -2356,7 +2374,7 @@ void Device::render(const unsigned int iterationIndex,
 			//break;
 		}
 		static constexpr float normalizer = 1.0f / nrc::NUM_BATCHES;
-		m_trainStat.loss = totalLoss * normalizer;
+		m_nrcTrainStat.loss = totalLoss * normalizer;
 		//std::cout << "[HOST] Avg. Training Batch Loss: " << totalLoss * normalizer << std::endl;
 #endif
 	}

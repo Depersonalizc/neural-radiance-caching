@@ -1,6 +1,7 @@
 #include "shaders/config.h"
-#include <tiny-cuda-nn/config.h>
+#include "shaders/neural_radiance_caching.h"
 
+#include <tiny-cuda-nn/config.h>
 #include <memory>
 
 namespace nrc {
@@ -22,11 +23,10 @@ namespace cfg {
 			{"nested", {
 				// https://github.com/NVlabs/tiny-cuda-nn/blob/master/DOCUMENTATION.md#adam
 				{"otype", "Adam"},
-				{"learning_rate", 5e-3f},
+				{"learning_rate", nrc::TRAIN_LEARNING_RATE},
 				//{"learning_rate", 0.0f},
 				//{"beta1", 0.9f},
 				//{"beta2", 0.99f},
-				//{"l2_reg", 1e-6f},
 				//{"epsilon", 1e-8f},
 			}}
 		}},

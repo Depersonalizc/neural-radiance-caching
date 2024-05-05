@@ -30,6 +30,7 @@
 #include "inc/LoaderIES.h"
 #include "inc/Parser.h"
 #include "inc/Raytracer.h"
+#include "shaders/neural_radiance_caching.h"
 
 #include <algorithm>
 #include <fstream>
@@ -190,7 +191,7 @@ Application::Application(GLFWwindow* window, const Options& options)
 		// Initialize the system options to minimum defaults to work, but require useful settings inside the system options file.
 		// The minimum path length values will generate useful direct lighting results, but transmissions will be mostly black.
 		m_resolution = make_int2(1, 1);
-		m_tileSize = make_int2(8, 8);
+		//m_tileSize = make_int2(8, 8);
 		m_pathLengths = make_int2(0, 2);
 		m_walkLength = 1; // Number of random walk steps until the maximum distance is selected.
 
@@ -338,6 +339,9 @@ Application::Application(GLFWwindow* window, const Options& options)
 		m_state.epsilonFactor = m_epsilonFactor;
 		m_state.clockFactor = m_clockFactor;
 		m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
+		m_state.nrcTrainUnbiasedRatio = nrc::TRAIN_UNBIASED_RATIO;
+
+		m_state.nrcTrainLearningRate = nrc::TRAIN_LEARNING_RATE;
 
 		// Sync the state with the default GUI data.
 		m_raytracer->initState(m_state);
@@ -989,10 +993,11 @@ void Application::guiWindow()
 	ImGui::End();
 
 	// Stats window
-	static auto& sysDataPf = m_raytracer->m_devicesActive[0]->m_systemData.pf;
-	static auto& trainStat = m_raytracer->m_devicesActive[0]->m_trainStat;
+	static auto& mainDevice = m_raytracer->m_devicesActive[0];
+	static auto& sysDataPf = mainDevice->m_systemData.pf;
+	static auto& trainStat = mainDevice->m_nrcTrainStat;
 
-	static std::array<float, 100> networkLosses = { 0.f };
+	static std::array<float, 256> networkLosses = { 0.f };
 	static int networkLossesOffset = 0;
 
 	window_flags = 0;
@@ -1003,6 +1008,15 @@ void Application::guiWindow()
 
 		if (ImGui::CollapsingHeader("Network"))
 		{
+			if (ImGui::DragFloat("Learning rate", &m_state.nrcTrainLearningRate, 1e-4f, 0.0f, 5e-2f, "%.4f"))
+			{
+				m_raytracer->updateStateNoRestart(m_state);
+			}
+			if (ImGui::DragFloat("Unbiased samples ratio", &m_state.nrcTrainUnbiasedRatio, 0.02f, 0.0f, 1.0f, "%.2f"))
+			{
+				m_raytracer->updateStateNoRestart(m_state);
+			}
+
 			ImGui::Text("Tile size: (%d, %d)", sysDataPf.tileSize.x, sysDataPf.tileSize.y);
 			ImGui::Text("#Tiles: (%d, %d)", sysDataPf.numTiles, sysDataPf.numTiles);
 			ImGui::Text("#Train records: %d", trainStat.numTrainRecords);
@@ -1133,27 +1147,26 @@ bool Application::loadSystemDescription(const std::string& filename)
 				MY_ASSERT(tokenType == PTT_VAL);
 				m_resolution.y = std::max(1, atoi(token.c_str()));
 			}
-			else if (token == "tileSize")
-			{
-				tokenType = parser.getNextToken(token);
-				MY_ASSERT(tokenType == PTT_VAL);
-				m_tileSize.x = std::max(1, atoi(token.c_str()));
-				tokenType = parser.getNextToken(token);
-				MY_ASSERT(tokenType == PTT_VAL);
-				m_tileSize.y = std::max(1, atoi(token.c_str()));
-
-				// Make sure the values are power-of-two.
-				if (m_tileSize.x & (m_tileSize.x - 1))
-				{
-					std::cerr << "ERROR: loadSystemDescription() tileSize.x = " << m_tileSize.x << " is not power-of-two, using 8.\n";
-					m_tileSize.x = 8;
-				}
-				if (m_tileSize.y & (m_tileSize.y - 1))
-				{
-					std::cerr << "ERROR: loadSystemDescription() tileSize.y = " << m_tileSize.y << " is not power-of-two, using 8.\n";
-					m_tileSize.y = 8;
-				}
-			}
+			//else if (token == "tileSize")
+			//{
+			//	tokenType = parser.getNextToken(token);
+			//	MY_ASSERT(tokenType == PTT_VAL);
+			//	m_tileSize.x = std::max(1, atoi(token.c_str()));
+			//	tokenType = parser.getNextToken(token);
+			//	MY_ASSERT(tokenType == PTT_VAL);
+			//	m_tileSize.y = std::max(1, atoi(token.c_str()));
+			//	// Make sure the values are power-of-two.
+			//	if (m_tileSize.x & (m_tileSize.x - 1))
+			//	{
+			//		std::cerr << "ERROR: loadSystemDescription() tileSize.x = " << m_tileSize.x << " is not power-of-two, using 8.\n";
+			//		m_tileSize.x = 8;
+			//	}
+			//	if (m_tileSize.y & (m_tileSize.y - 1))
+			//	{
+			//		std::cerr << "ERROR: loadSystemDescription() tileSize.y = " << m_tileSize.y << " is not power-of-two, using 8.\n";
+			//		m_tileSize.y = 8;
+			//	}
+			//}
 			else if (token == "samplesSqrt")
 			{
 				tokenType = parser.getNextToken(token);
@@ -1313,7 +1326,7 @@ bool Application::saveSystemDescription()
 	description << "interop " << m_interop << '\n';
 	description << "present " << ((m_present) ? "1" : "0") << '\n';
 	description << "resolution " << m_resolution.x << " " << m_resolution.y << '\n';
-	description << "tileSize " << m_tileSize.x << " " << m_tileSize.y << '\n';
+	//description << "tileSize " << m_tileSize.x << " " << m_tileSize.y << '\n';
 	description << "samplesSqrt " << m_samplesSqrt << '\n';
 	description << "clockFactor " << m_clockFactor << '\n';
 	description << "pathLengths " << m_pathLengths.x << " " << m_pathLengths.y << '\n';

@@ -740,7 +740,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 		prd.flags |= FLAG_TRAIN;
 
 		// Set about 1/16 of training ray to be unbiased (terminated with RR)
-		if (rng(prd.seed) < nrc::TRAIN_UNBIASED_RATIO) {
+		if (rng(prd.seed) < sysData.pf.nrcTrainUnbiasedRatio/*nrc::TRAIN_UNBIASED_RATIO*/) {
 			prd.flags |= FLAG_TRAIN_UNBIASED;
 		}
 

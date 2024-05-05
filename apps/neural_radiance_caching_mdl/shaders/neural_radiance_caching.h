@@ -27,6 +27,8 @@ namespace nrc
 	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 2.f;
 	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 1.f;
 
+	constexpr float TRAIN_LEARNING_RATE = 5e-3f;
+
 	// Keep track of the ray path for radiance prop
 	struct TrainingRecord
 	{
@@ -159,9 +161,7 @@ namespace nrc
 		} bufDynamic;
 
 		// 4 byte alignment
-		int numTrainingRecords = 0;   // Number of training records generated. Upated per-frame
-		
-		//int maxNumTrainingRecords = NUM_TRAINING_RECORDS_PER_FRAME;
+		int numTrainingRecords = 0;   // Number of training records generated. Updated per-frame		
 	};
 
 	//__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
