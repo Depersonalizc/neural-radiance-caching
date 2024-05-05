@@ -805,7 +805,7 @@ void Device::initPipeline()
 
 void Device::adjustTileSize(int numTrainRecords)
 {
-	const auto ratio = static_cast<float>(numTrainRecords * 2) 
+	const auto ratio = static_cast<float>(numTrainRecords * 1.5f) 
 					 / static_cast<float>(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 	const auto r = std::sqrtf(ratio);
 	
@@ -1209,7 +1209,7 @@ void Device::resizeNRC()
 	// dynBufs.lastRenderThroughput (#pixels)
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.lastRenderThroughput));
 	dynBufs.lastRenderThroughput = reinterpret_cast<float3*>(
-		memAlloc(sizeof(float3) * numPixels, /*alignof(float3)*/64));
+		memAlloc(sizeof(float3) * numPixels, alignof(float3)/*64*/));
 
 	// dynBufs
 	// .radianceQueriesInference
@@ -1221,14 +1221,14 @@ void Device::resizeNRC()
 	const auto numQueriesInference = numPixels + numTilesMax;
 
 	dynBufs.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
-		memAlloc(sizeof(RadianceQuery) * numQueriesInference, /*alignof(RadianceQuery)*/64));
+		memAlloc(sizeof(RadianceQuery) * numQueriesInference, alignof(RadianceQuery)/*64*/));
 	dynBufs.radianceResultsInference = reinterpret_cast<float3*>(
-		memAlloc(sizeof(float3) * numQueriesInference, /*alignof(float3)*/64));
+		memAlloc(sizeof(float3) * numQueriesInference, alignof(float3)/*64*/));
 	
 	// dynBufs.trainSuffixEndVertices
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.trainSuffixEndVertices));
 	dynBufs.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex*>(
-		memAlloc(sizeof(TrainingSuffixEndVertex) * numTilesMax, /*alignof(TrainingSuffixEndVertex)*/64));
+		memAlloc(sizeof(TrainingSuffixEndVertex) * numTilesMax, alignof(TrainingSuffixEndVertex)/*64*/));
 
 	//// Copy the new buffer addresses to device
 	//CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), &dynBufs, sizeof(dynBufs), m_cudaStream));
@@ -2141,7 +2141,7 @@ void Device::render(const unsigned int iterationIndex,
 	// Note the launch width per device to render in tiles.
 	//if (totalSubframeIndex < 2)
 	OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), 
-								  &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
+								&m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 
 	// Sync with Device the per-frame data of the NRC block (currently just numTrainingRecords)
 	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock.numTrainingRecords, 
@@ -2152,9 +2152,12 @@ void Device::render(const unsigned int iterationIndex,
 
 	const auto numTrainRecords = std::min(m_nrcControlBlock.numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 	const auto numTiles = m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y;
-	std::cout << "[HOST] #Training records: " << numTrainRecords
-			  << " (" << m_nrcControlBlock.numTrainingRecords
-			  << "); #Tiles: " << numTiles << '\n';
+
+	m_trainStat.numTrainRecords = numTrainRecords;
+
+	//std::cout << "[HOST] #Training records: " << numTrainRecords
+	//		  << " (" << m_nrcControlBlock.numTrainingRecords
+	//		  << "); #Tiles: " << numTiles << '\n';
 
 #define TCNN_INFER 1
 #define KERN_ACCUM 1
@@ -2182,7 +2185,7 @@ void Device::render(const unsigned int iterationIndex,
 						   numQueries);
 
 		// DEBUG: Inspect inferred radiance
-#if 1
+#if 0
 		std::vector<nrc::RadianceQuery> queries(numQueries);
 		std::vector<float3> results(numQueries);
 
@@ -2197,10 +2200,7 @@ void Device::render(const unsigned int iterationIndex,
 		synchronizeStream();
 
 		queries; results;
-
 #endif
-
-
 	}
 #endif
 
@@ -2231,6 +2231,7 @@ void Device::render(const unsigned int iterationIndex,
 #endif
 
 	// Training
+	m_trainStat.loss = 0.f;
 	if (numTrainRecords > 0) [[likely]]
 	{
 #if KERN_PROP
@@ -2264,11 +2265,6 @@ void Device::render(const unsigned int iterationIndex,
 		}
 #endif
 
-		nrc::RadianceQuery* queriesShuffleSrc = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(0);
-		nrc::RadianceQuery* queriesShuffleDst = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1);
-		float3* targetsShuffleSrc = m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(0);
-		float3* targetsShuffleDst = m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(1);
-
 		// [KERNEL]
 		// Shuffle the training records to avoid spatial correlation.
 		// Also duplicate samples if the raytracer undersampled.
@@ -2296,10 +2292,8 @@ void Device::render(const unsigned int iterationIndex,
 		int* permutation = m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(0); // Buffer 0 is the unshuffled indices
 #endif
 
-		void* args[] = { // /*DoubleBuffer<RadianceQuery> trainRadianceQueries */ &m_nrcControlBlock.bufStatic.radianceQueriesTraining,
-						 // /*DoubleBuffer<float3>        trainRadianceTargets */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets,
-						 &queriesShuffleSrc, &queriesShuffleDst,
-						 &targetsShuffleSrc, &targetsShuffleDst,
+		void* args[] = { /*DoubleBuffer<RadianceQuery> trainRadianceQueries */ &m_nrcControlBlock.bufStatic.radianceQueriesTraining,
+						 /*DoubleBuffer<float3>        trainRadianceTargets */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets,
 						 /*int                         *permutation         */ &permutation};
 
 		cfg.blockDimX = m_fnPermuteTrainDataBlockSize;
@@ -2321,18 +2315,21 @@ void Device::render(const unsigned int iterationIndex,
 		//			nrc::NUM_TRAINING_RECORDS_PER_FRAME * 3ull,
 		//			m_cudaStream));
 
-		// At this point, all training data is ready at queriesShuffleDst and targetsShuffleDst
-#if 1
+		// At this point, all training data is ready
+		const auto queriesShuffled = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1);
+		const auto targetsShuffled = m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(1);
+
+#if 0
 		// DEBUG: Inspect the shuffled training samples
 		{
 		std::vector<nrc::RadianceQuery> queries(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 		std::vector<float3>             targets(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 		CU_CHECK(cuMemcpyDtoHAsync(queries.data(), 
-			reinterpret_cast<CUdeviceptr>(queriesShuffleDst),
+			reinterpret_cast<CUdeviceptr>(queriesShuffled),
 			sizeof(nrc::RadianceQuery) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
 
 		CU_CHECK(cuMemcpyDtoHAsync(targets.data(),
-			reinterpret_cast<CUdeviceptr>(targetsShuffleDst),
+			reinterpret_cast<CUdeviceptr>(targetsShuffled),
 			sizeof(float3) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
 		synchronizeStream();
 
@@ -2342,8 +2339,8 @@ void Device::render(const unsigned int iterationIndex,
 #if TCNN_TRAIN
 		// [TCNN Training]
 		// INPUT: radianceQueriesTraining[65536], trainingRadianceTargets[65536]
-		nrc::RadianceQuery *batchInputs  = queriesShuffleDst;
-		float3             *batchTargets = targetsShuffleDst;
+		nrc::RadianceQuery *batchInputs  = queriesShuffled;
+		float3             *batchTargets = targetsShuffled;
 		//nrc::RadianceQuery *batchInputs  = queriesShuffleSrc;
 		//float3             *batchTargets = targetsShuffleSrc;
 		float batchLoss, totalLoss{ 0.f };
@@ -2359,13 +2356,14 @@ void Device::render(const unsigned int iterationIndex,
 			//break;
 		}
 		static constexpr float normalizer = 1.0f / nrc::NUM_BATCHES;
-		std::cout << "[HOST] Avg. Training Batch Loss: " << totalLoss * normalizer << std::endl;
+		m_trainStat.loss = totalLoss * normalizer;
+		//std::cout << "[HOST] Avg. Training Batch Loss: " << totalLoss * normalizer << std::endl;
 #endif
 	}
 
 	// Adjust the tile size according to #records generated
 	adjustTileSize(m_nrcControlBlock.numTrainingRecords);
-	std::cout << "[HOST] Tile size: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << '\n';
+	//std::cout << "[HOST] Tile size: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << '\n';
 }
 
 

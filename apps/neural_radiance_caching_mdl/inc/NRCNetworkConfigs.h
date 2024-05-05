@@ -22,7 +22,7 @@ namespace cfg {
 			{"nested", {
 				// https://github.com/NVlabs/tiny-cuda-nn/blob/master/DOCUMENTATION.md#adam
 				{"otype", "Adam"},
-				{"learning_rate", 1e-2f},
+				{"learning_rate", 5e-3f},
 				//{"learning_rate", 0.0f},
 				//{"beta1", 0.9f},
 				//{"beta2", 0.99f},
@@ -52,8 +52,8 @@ namespace cfg {
 				// Direction, normal, roughness (2+2+2) -> 24
 				{
 					{"otype", "OneBlob"},
-					//{"n_dims_to_encode", 2+2+2},
-					{"n_dims_to_encode", 2+2+1},
+					{"n_dims_to_encode", 2+2+2},
+					//{"n_dims_to_encode", 2+2+1},
 					{"n_bins", 4},
 				},
 				// Diffuse, specular albedos (3+3) -> 6

@@ -11,8 +11,8 @@ namespace nrc
 
 #if USE_COMPACT_RADIANCE_QUERY
 	// pos(3), dir(2), normal(2), roughness(2), diffuse(3), specular(3)
-	//constexpr int NN_INPUT_DIMS = 3 + 2+2+2 + 3+3;
-	constexpr int NN_INPUT_DIMS = 3 + 2+2+1 + 3+3;
+	constexpr int NN_INPUT_DIMS = 3 + 2+2+2 + 3+3;
+	//constexpr int NN_INPUT_DIMS = 3 + 2+2+1 + 3+3;
 #else
 	// Additional padding float after pos
 	constexpr int NN_INPUT_DIMS = 3+1 + 2+2+2 + 3+3;
@@ -21,9 +21,11 @@ namespace nrc
 
 	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
 	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
-	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 16.f;
+	constexpr float TRAIN_UNBIASED_RATIO = 1.f / 16.f;
+	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 8.f;
+	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 4.f;
 	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 2.f;
-	constexpr float TRAIN_UNBIASED_RATIO = 1.f / 1.f;
+	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 1.f;
 
 	// Keep track of the ray path for radiance prop
 	struct TrainingRecord
@@ -78,8 +80,8 @@ namespace nrc
 		// Split float2 to save some space
 		float direction1, direction2;
 		float normal1, normal2;
-		//float roughness1, roughness2;
-		float roughness;
+		float roughness1, roughness2;
+		//float roughness;
 #else
 		float  pad_;
 		float2 direction;

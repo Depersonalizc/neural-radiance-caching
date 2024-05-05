@@ -577,9 +577,9 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
     radianceQuery.direction2 = direction.y;
     radianceQuery.normal1    = normal.x;
     radianceQuery.normal2    = normal.y;
-    //radianceQuery.roughness1 = auxData.roughness.x;
-    //radianceQuery.roughness2 = auxData.roughness.y;
-    radianceQuery.roughness = (auxData.roughness.x + auxData.roughness.y) * 0.5f;
+    radianceQuery.roughness1 = auxData.roughness.x;
+    radianceQuery.roughness2 = auxData.roughness.y;
+    //radianceQuery.roughness = (auxData.roughness.x + auxData.roughness.y) * 0.5f;
 #else
     radianceQuery.pad_      = 0.0f; // 1-float pad after position
     radianceQuery.direction = direction;

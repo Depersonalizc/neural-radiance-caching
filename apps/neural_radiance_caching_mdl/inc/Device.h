@@ -336,8 +336,15 @@ struct DeviceState
 	float    epsilonFactor;
 	float    clockFactor;
 	int      directLighting;
+
+	// TODO: Training hyperparams
 };
 
+struct TrainingStat
+{
+	float loss{ std::numeric_limits<float>::quiet_NaN() };
+	int numTrainRecords{ 0 };
+};
 
 class Device;
 
@@ -573,6 +580,8 @@ public:
 	nrc::ControlBlock m_nrcControlBlock;
 
 	nrc::Network m_nrcNetwork;
+
+	TrainingStat m_trainStat;
 
 	// We only use this for shuffling the NRC training records.
 	curandGenerator_t m_curandGenerator{};

@@ -49,12 +49,6 @@ void Network::train(float* batchInputs_d, float* batchTargets_d, float* loss_h)
 	const GPUMatrix_t inputs { batchInputs_d,  NN_INPUT_DIMS,  BATCH_SIZE };
 	const GPUMatrix_t targets{ batchTargets_d, NN_OUTPUT_DIMS, BATCH_SIZE };
 	auto ctx = trainer->training_step(m_stream, inputs, targets);
-	//{
-	//	const auto outputs = ctx->output.to_cpu_vector();
-	//	outputs;
-	//	const auto loss = ctx->L.to_cpu_vector();
-	//	loss;
-	//}
 	if (loss_h)
 		*loss_h = trainer->loss(m_stream, *ctx);
 }

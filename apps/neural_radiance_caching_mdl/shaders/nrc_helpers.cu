@@ -22,12 +22,12 @@ __forceinline__ __device__ uint2 getLaunchIndex2D()
 			 blockDim.y * blockIdx.y + threadIdx.y };
 }
 
-__forceinline__ __device__ bool allZero(float3 v)
+[[maybe_unused]] __forceinline__ __device__ bool allZero(const float3 &v)
 {
 	return v.x == 0.f && v.y == 0.f && v.z == 0.f;
 }
 
-__forceinline__ __device__ void debug_fill_tile(float3 rgb, uint2 launchIndex)
+[[maybe_unused]] __forceinline__ __device__ void debug_fill_tile(const float3 &rgb, const uint2 &launchIndex)
 {
 	float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
 	const int xBase = launchIndex.x * sysData.pf.tileSize.x;
@@ -54,16 +54,18 @@ extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance,
 	const unsigned int index = launchIndex.y * sysData.resolution.x + launchIndex.x; // Pixel index
 	const auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
 	
-#if 0
+#if 1
 	const float3 radiance = endRenderThroughput[index] * endRenderRadiance[index];
 	const float accWeight = 1.0f / float(sysData.pf.iterationIndex + 1);
 	float3 dst = make_float3(buffer[index]);
 	dst += (radiance * accWeight);
 	buffer[index] = make_float4(dst, 1.0f);
-#elif 1 // DEBUG: directly visualize radiance at terminal vertex of rendering path
-	if (allZero(endRenderThroughput[index]))
-		buffer[index] = { 0.f, 0.f, 0.f, 1.f };
-	else
+#elif 0 // DEBUG: Throughput
+	buffer[index] = make_float4(endRenderThroughput[index], 1.0f);
+#elif 0 // DEBUG: directly visualize radiance at terminal vertex of rendering path
+	//if (allZero(endRenderThroughput[index]))
+	//	buffer[index] = { 0.f, 0.f, 0.f, 1.f };
+	//else
 		buffer[index] = make_float4(endRenderRadiance[index], 1.0f);
 #elif 0 // DEBUG: visualize radiance * throughput
 	float3 dst = endRenderRadiance[index] * endRenderThroughput[index];
@@ -97,16 +99,11 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 	int iTo = endVert.startTrainRecord;
 
 // Sanity check
-#if 1
+#if 0
 	if (iTo >= sysData.nrcCB->numTrainingRecords || !(endVert.radianceMask == 0.f || endVert.radianceMask == 1.f))
 	{
 		printf("[TILE %d/%d] Invalid end vertex: startTrainRecord(int) = %d (/%d). radianceMask(float) = %f\n", 
 			   tileIndex+1, sysData.pf.numTiles.x * sysData.pf.numTiles.y, iTo, sysData.nrcCB->numTrainingRecords, endVert.radianceMask);
-		return;
-	}
-	if (endVert.tileIndex != tileIndex)
-	{
-		printf("ERROR: Tile index mismatch!\n");
 		return;
 	}
 #endif
@@ -114,7 +111,7 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 	// DEBUG: SUPER BLUE if no prop happens
 	//if (iTo < 0) { debug_fill_tile({ 0.f, 0.f, 100000.f }, launchIndex); return; }
 	
-	float3 secondToLastRadiance = lastRadiance;
+	[[maybe_unused]] float3 secondToLastRadiance = lastRadiance;
 
 	while (iTo >= 0)
 	{
@@ -144,13 +141,12 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 
 	// DEBUG: second to last
 	//debug_fill_tile(secondToLastRadiance, launchIndex);
-
 }
 
-extern "C" __global__ void permute_train_data(/*nrc::DoubleBuffer<nrc::RadianceQuery> trainRadianceQueries,
-											  nrc::DoubleBuffer<float3>             trainRadianceTargets,*/
-											  nrc::RadianceQuery *queriesSrc, nrc::RadianceQuery *queriesDst,
-											  float3 *targetsSrc, float3 *targetsDst,
+extern "C" __global__ void permute_train_data(nrc::DoubleBuffer<nrc::RadianceQuery> trainRadianceQueries,
+											  nrc::DoubleBuffer<float3>             trainRadianceTargets,
+											  //nrc::RadianceQuery *queriesSrc, nrc::RadianceQuery *queriesDst,
+											  //float3 *targetsSrc, float3 *targetsDst,
 											  int                                   *permutation)
 {
 	const auto launchIndex = getLaunchIndex1D();
@@ -160,10 +156,10 @@ extern "C" __global__ void permute_train_data(/*nrc::DoubleBuffer<nrc::RadianceQ
 	const auto numRecords = min(sysData.nrcCB->numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 	if (numRecords <= 0) return;
 
-	//const auto queriesSrc = trainRadianceQueries.getBuffer(0);
-	//const auto queriesDst = trainRadianceQueries.getBuffer(1);
-	//const auto targetsSrc = trainRadianceTargets.getBuffer(0);
-	//const auto targetsDst = trainRadianceTargets.getBuffer(1);
+	const auto queriesSrc = trainRadianceQueries.getBuffer(0);
+	const auto queriesDst = trainRadianceQueries.getBuffer(1);
+	const auto targetsSrc = trainRadianceTargets.getBuffer(0);
+	const auto targetsDst = trainRadianceTargets.getBuffer(1);
 	
 	const auto d = launchIndex;
 	const auto s = permutation[d] % numRecords;
