@@ -11,17 +11,23 @@ namespace cfg {
 			{"otype", "RelativeL2Luminance"},
 			//{"otype", "L2"},
 			//{"otype", "L1"},
-		}},
 			//{"otype", "RelativeL1"},
+		}},
 		// https://github.com/NVlabs/tiny-cuda-nn/blob/master/DOCUMENTATION.md#exponential-moving-average-ema
 		{"optimizer", {
 			{"otype", "EMA"},
-			//{"decay", 0.99f},
-			{"decay", 0.90f},
+			{"decay", 0.99f},
+			//{"decay", 0.90f},
+			//{"decay", 0.00f},
 			{"nested", {
 				// https://github.com/NVlabs/tiny-cuda-nn/blob/master/DOCUMENTATION.md#adam
 				{"otype", "Adam"},
 				{"learning_rate", 1e-2f},
+				//{"learning_rate", 0.0f},
+				//{"beta1", 0.9f},
+				//{"beta2", 0.99f},
+				//{"l2_reg", 1e-6f},
+				//{"epsilon", 1e-8f},
 			}}
 		}},
 #if 1
@@ -30,7 +36,7 @@ namespace cfg {
 		{"encoding", {
 			{"otype", "Composite"},
 			{"nested", {
-				// Position (3)
+				// Position (3) -> 36
 				{
 					{"otype", "TriangleWave"},
 					{"n_dims_to_encode", 3},
@@ -43,13 +49,14 @@ namespace cfg {
 					{"n_dims_to_encode", 1},
 				}
 #endif
-				// Direction, normal, roughness (2+2+2)
+				// Direction, normal, roughness (2+2+2) -> 24
 				{
 					{"otype", "OneBlob"},
-					{"n_dims_to_encode", 2+2+2},
+					//{"n_dims_to_encode", 2+2+2},
+					{"n_dims_to_encode", 2+2+1},
 					{"n_bins", 4},
 				},
-				// Diffuse, specular albedos (3+3)
+				// Diffuse, specular albedos (3+3) -> 6
 				{
 					{"otype", "Identity"},
 					{"n_dims_to_encode", 6},

@@ -496,6 +496,10 @@ __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
 	auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
 	endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
 	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
+
+	// DEBUG
+	//endVertex.pixelIndex = thePrd.pixelIndex;
+	//endVertex.tileIndex = thePrd.tileIndex;
 }
 
 }
