@@ -462,7 +462,7 @@ push
 rotate 1 0 0 22.5
 rotate 0 0 1 22.5
 translate 45 1.6 -5
-model box edf_backface_cutout
+#model box edf_backface_cutout
 pop
 
 push

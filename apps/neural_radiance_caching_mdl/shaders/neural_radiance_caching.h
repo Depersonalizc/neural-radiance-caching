@@ -12,6 +12,7 @@ namespace nrc
 #if USE_COMPACT_RADIANCE_QUERY
 	// pos(3), dir(2), normal(2), roughness(2), diffuse(3), specular(3)
 	constexpr int NN_INPUT_DIMS = 3 + 2+2+2 + 3+3;
+	//constexpr int NN_INPUT_DIMS = 3 + 2+2+1 + 3+3;
 #else
 	// Additional padding float after pos
 	constexpr int NN_INPUT_DIMS = 3+1 + 2+2+2 + 3+3;
@@ -21,8 +22,12 @@ namespace nrc
 	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
 	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
 	constexpr float TRAIN_UNBIASED_RATIO = 1.f / 16.f;
+	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 8.f;
+	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 4.f;
 	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 2.f;
 	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 1.f;
+
+	constexpr float TRAIN_LEARNING_RATE = 5e-3f;
 
 	// Keep track of the ray path for radiance prop
 	struct TrainingRecord
@@ -41,6 +46,11 @@ namespace nrc
 		// propFrom = index of this TrainingRecord
 		// const auto &nextRec = trainingRecords[propTo];
 		// trainingRadianceTargets[propTo] += nextRec.localThroughput * trainingRadianceTargets[propFrom];
+
+		// DEBUG
+		int pixelIndex;
+		int tileIndex;
+		int propLength;
 	};
 
 	// Terminal vertex of a training suffix. Used to initiate a radiance prop.
@@ -59,6 +69,10 @@ namespace nrc
 		// Used to mask off queried radiance for unbiased rays.
 		// = 1.0f if self-training, 0.0f if unbiased.
 		float radianceMask;
+
+		// DEBUG
+		int pixelIndex;
+		int tileIndex;
 	};
 
 	struct RadianceQuery
@@ -69,6 +83,7 @@ namespace nrc
 		float direction1, direction2;
 		float normal1, normal2;
 		float roughness1, roughness2;
+		//float roughness;
 #else
 		float  pad_;
 		float2 direction;
@@ -146,9 +161,7 @@ namespace nrc
 		} bufDynamic;
 
 		// 4 byte alignment
-		int numTrainingRecords = 0;   // Number of training records generated. Upated per-frame
-		
-		//int maxNumTrainingRecords = NUM_TRAINING_RECORDS_PER_FRAME;
+		int numTrainingRecords = 0;   // Number of training records generated. Updated per-frame		
 	};
 
 	//__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)

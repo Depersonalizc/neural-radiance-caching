@@ -258,11 +258,13 @@ private:
 	int2       m_pathLengths;         // "pathLengths"   // min, max
 	int        m_walkLength;          // "walkLength"    // Number of volume scattering random walk steps until the maximum distance is to try gettting out of the volumes. Minimum 1 for single scattering.
 	int2       m_resolution;          // "resolution"    // The actual size of the rendering, independent of the window's client size. (Preparation for final frame rendering.)
-	int2       m_tileSize;            // "tileSize"      // Multi-GPU distribution tile size. Must be power-of-two values.
+	//int2       m_tileSize;            // "tileSize"      // Multi-GPU distribution tile size. Must be power-of-two values.
 	int        m_samplesSqrt;         // "sampleSqrt"
 	float      m_epsilonFactor;       // "epsilonFactor"
 	float      m_clockFactor;         // "clockFactor"
 	bool       m_useDirectLighting;
+	// GUI Data for NRC training hyperparams
+	//float      m_trainUnbiasedRatio;
 
 	TypeLight m_typeEnv;                // The type of the light in m_lightsGUI[0]. Used to determine the miss shader.
 	float     m_rotationEnvironment[3]; // The Euler rotation angles for the spherical environment light.

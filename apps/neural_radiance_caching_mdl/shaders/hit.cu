@@ -568,7 +568,7 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
 										 /*out:*/ RadianceQuery& radianceQuery)
 {
     radianceQuery.position = mdlState.position;
-    //radianceQuery.position *= 0.01f;
+    radianceQuery.position *= 0.1f;
     
     const auto direction = cartesianToSphericalUnitVector(thePrd.wo);
     const auto normal = cartesianToSphericalUnitVector(mdlState.normal);
@@ -579,6 +579,7 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
     radianceQuery.normal2    = normal.y;
     radianceQuery.roughness1 = auxData.roughness.x;
     radianceQuery.roughness2 = auxData.roughness.y;
+    //radianceQuery.roughness = (auxData.roughness.x + auxData.roughness.y) * 0.5f;
 #else
     radianceQuery.pad_      = 0.0f; // 1-float pad after position
     radianceQuery.direction = direction;
@@ -624,6 +625,10 @@ __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlStat
 	auto& endVertex = dynBufs.trainSuffixEndVertices[thePrd.tileIndex];
 	endVertex.radianceMask = 1.f; // 1 for self-training: Use the inferenced radiance to initiate propagation.
 	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
+
+    // DEBUG
+    //endVertex.pixelIndex = thePrd.pixelIndex;
+    //endVertex.tileIndex = thePrd.tileIndex;
 }
 
 __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
@@ -635,7 +640,11 @@ __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
     // Add the TrainingSuffixEndVertex
     auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
     endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
-    endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
+    endVertex.startTrainRecord = thePrd.lastTrainRecordIndex; // Index into static trainRecords[65536]
+
+    // DEBUG
+    //endVertex.pixelIndex = thePrd.pixelIndex;
+    //endVertex.tileIndex = thePrd.tileIndex;
 }
 
 }

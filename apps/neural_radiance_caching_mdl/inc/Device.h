@@ -336,8 +336,13 @@ struct DeviceState
 	float    epsilonFactor;
 	float    clockFactor;
 	int      directLighting;
-};
 
+	// NRC training hyperparams
+	//struct {
+	float nrcTrainUnbiasedRatio;
+	float nrcTrainLearningRate;
+	//} nrcHyperParams;
+};
 
 class Device;
 
@@ -571,8 +576,9 @@ public:
 	// Host-side copy of NRC Control block.
 	// Device-side is pointed by m_systemData.nrcCB
 	nrc::ControlBlock m_nrcControlBlock;
-
-	nrc::Network m_nrcNetwork;
+	nrc::Network      m_nrcNetwork;
+	nrc::HyperParams  m_nrcHyperParams;
+	nrc::TrainingStat m_nrcTrainStat;
 
 	// We only use this for shuffling the NRC training records.
 	curandGenerator_t m_curandGenerator{};
@@ -603,6 +609,7 @@ public:
 
 	bool m_isDirtySystemData;
 	bool m_isDirtyOutputBuffer;
+	bool m_isDirtyHyperParams;
 	bool m_ownsSharedBuffer; // DEBUG This flag is only evaluated in asserts.
 
 	std::map<std::string, Texture*> m_mapTextures;

@@ -734,15 +734,25 @@ void Raytracer::updateMaterial(const int idMaterial, const MaterialMDL* material
 
 void Raytracer::updateState(const DeviceState& state)
 {
-  m_samplesPerPixel = (unsigned int)(state.samplesSqrt * state.samplesSqrt);
+  /*m_samplesPerPixel = (unsigned int)(state.samplesSqrt * state.samplesSqrt);
 
   for (size_t i = 0; i < m_devicesActive.size(); ++i)
   {
     m_devicesActive[i]->setState(state);
-  }
+  }*/
+  updateStateNoRestart(state);
   m_iterationIndex = 0; // Restart accumulation.
 }
 
+void Raytracer::updateStateNoRestart(const DeviceState& state)
+{
+    m_samplesPerPixel = (unsigned int)(state.samplesSqrt * state.samplesSqrt);
+
+    for (size_t i = 0; i < m_devicesActive.size(); ++i)
+    {
+        m_devicesActive[i]->setState(state);
+    }
+}
 
 // The public function which does the multi-GPU wrapping.
 // Returns the count of renderered iterations (m_iterationIndex after it has been incremented).

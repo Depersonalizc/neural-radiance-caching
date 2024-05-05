@@ -13,7 +13,7 @@ namespace nrc {
 
 struct Network::Impl {
 
-	tcnn::TrainableModel model;
+	tcnn::TrainableModel model{};
 
 	// The network (hyper)parameters 
 	// Default as specified in the paper
@@ -46,8 +46,8 @@ void Network::train(float* batchInputs_d, float* batchTargets_d, float* loss_h)
 	using namespace tcnn;
 	static auto& trainer = pImpl->model.trainer;
 
-	const GPUMatrix_t inputs { batchInputs_d, NN_INPUT_DIMS,  BATCH_SIZE };
-	const GPUMatrix_t targets{ batchInputs_d, NN_OUTPUT_DIMS, BATCH_SIZE };
+	const GPUMatrix_t inputs { batchInputs_d,  NN_INPUT_DIMS,  BATCH_SIZE };
+	const GPUMatrix_t targets{ batchTargets_d, NN_OUTPUT_DIMS, BATCH_SIZE };
 	auto ctx = trainer->training_step(m_stream, inputs, targets);
 	if (loss_h)
 		*loss_h = trainer->loss(m_stream, *ctx);
@@ -83,6 +83,11 @@ void Network::infer(float* inputs_d, float* outputs_d, uint32_t numInputs, CUstr
 void Network::setStream(CUstream stream)
 {
 	m_stream = stream;
+}
+
+void Network::setHyperParams(const HyperParams& hp)
+{
+	pImpl->model.optimizer->set_learning_rate(hp.learningRate);
 }
 
 void Network::init_(CUstream stream)

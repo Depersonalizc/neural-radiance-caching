@@ -6,6 +6,17 @@
 
 namespace nrc {
 
+struct HyperParams {
+	//float trainUnbiasedRatio; // This is merged into SystemData
+	float learningRate;
+};
+
+struct TrainingStat
+{
+	float loss{ std::numeric_limits<float>::quiet_NaN() };
+	int numTrainRecords{ 0 };
+};
+
 class Network {
 public:
 	Network();
@@ -38,6 +49,7 @@ public:
 	void infer(float* inputs_d, float* outputs_d, uint32_t numInputs, CUstream stream);
 	
 	void setStream(CUstream stream);
+	void setHyperParams(const HyperParams& hyperParams);
 	
 private:
 	// PIMPL idiom to enable #include of this header into pure cpp files

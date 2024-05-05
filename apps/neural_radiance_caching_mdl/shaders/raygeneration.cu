@@ -496,6 +496,10 @@ __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
 	auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
 	endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
 	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
+
+	// DEBUG
+	//endVertex.pixelIndex = thePrd.pixelIndex;
+	//endVertex.tileIndex = thePrd.tileIndex;
 }
 
 }
@@ -736,7 +740,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 		prd.flags |= FLAG_TRAIN;
 
 		// Set about 1/16 of training ray to be unbiased (terminated with RR)
-		if (rng(prd.seed) < nrc::TRAIN_UNBIASED_RATIO) {
+		if (rng(prd.seed) < sysData.pf.nrcTrainUnbiasedRatio/*nrc::TRAIN_UNBIASED_RATIO*/) {
 			prd.flags |= FLAG_TRAIN_UNBIASED;
 		}
 
