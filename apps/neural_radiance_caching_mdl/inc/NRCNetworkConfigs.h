@@ -27,6 +27,7 @@ namespace cfg {
 				//{"learning_rate", 0.0f},
 				//{"beta1", 0.9f},
 				//{"beta2", 0.99f},
+				{"l2_reg", 0.0f},
 				//{"epsilon", 1e-8f},
 			}}
 		}},

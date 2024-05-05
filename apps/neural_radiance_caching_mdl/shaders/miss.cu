@@ -44,7 +44,8 @@ namespace nrc {
 __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
 {
 	// Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
-	//auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
+	//const auto offset = sysData.resolution.x * sysData.resolution.y;
+	//auto& query = sysData.nrcCB->radianceQueriesInference[offset + thePrd.tileIndex];
 	//addQuery(mdlState, thePrd, auxData, query);
 
 	// Add the TrainingSuffixEndVertex
@@ -57,7 +58,7 @@ __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
 	//endVertex.tileIndex = thePrd.tileIndex;
 }
 
-__forceinline__ __device__ void addNullRenderQuey(const PerRayData& thePrd)
+[[maybe_unused]] __forceinline__ __device__ void addNullRenderQuey(const PerRayData& thePrd)
 {
 	auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
 	renderQuery = nrc::RadianceQuery{};
@@ -107,7 +108,8 @@ extern "C" __global__ void __miss__env_null()
 	{
 		thePrd->lastRenderThroughput = make_float3(0.f);
 
-		// Not strictly needed, because lastRenderThroughput is 0
+		// Add a null query to aid debugging. 
+		// Not strictly needed, because lastRenderThroughput is 0.
 		nrc::addNullRenderQuey(*thePrd);
 	}
 
@@ -167,7 +169,8 @@ extern "C" __global__ void __miss__env_constant()
 		// been accounted for by Direct Lighting. Avoid double counting!
 		thePrd->lastRenderThroughput = make_float3(0.f);
 
-		// Not strictly needed, because lastRenderThroughput is 0
+		// Add a null query to aid debugging. 
+		// Not strictly needed, because lastRenderThroughput is 0.
 		nrc::addNullRenderQuey(*thePrd);
 	}
 
@@ -240,7 +243,8 @@ extern "C" __global__ void __miss__env_sphere()
 		// been accounted for by Direct Lighting. Avoid double counting!
 		thePrd->lastRenderThroughput = make_float3(0.f);
 
-		// Not strictly needed, because lastRenderThroughput is 0
+		// Add a null query to aid debugging. 
+		// Not strictly needed, because lastRenderThroughput is 0.
 		nrc::addNullRenderQuey(*thePrd);
 	}
 

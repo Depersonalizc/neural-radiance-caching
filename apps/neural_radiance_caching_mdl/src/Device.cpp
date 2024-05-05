@@ -2020,7 +2020,7 @@ void Device::render(const unsigned int iterationIndex,
 		{
 			const auto scale = static_cast<float>(screenSize) / static_cast<float>(m_bufferHost.size());
 			adjustTileSize(m_nrcControlBlock.numTrainingRecords * scale);
-			std::cout << "[HOST] Tile size adjusted to: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << "after screen resize\n";
+			//std::cout << "[HOST] Tile size adjusted to: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << "after screen resize\n";
 		}
 
 		MY_ASSERT(buffer != nullptr);
@@ -2159,7 +2159,7 @@ void Device::render(const unsigned int iterationIndex,
 	// Note the launch width per device to render in tiles.
 	//if (totalSubframeIndex < 2) // DEBUG
 	OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), 
-								&m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
+								  &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 
 	// Sync with Device the per-frame data of the NRC block (currently just numTrainingRecords)
 	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock.numTrainingRecords, 
@@ -2324,14 +2324,6 @@ void Device::render(const unsigned int iterationIndex,
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPermuteTrainData, args, nullptr));
 		}
-
-		//// DEBUG: Set all targets to a hard-coded value
-		//float fval = 0.5f;
-		//unsigned int valp = *reinterpret_cast<unsigned int*>(&fval);
-		//CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(targetsShuffleDst), 
-		//			valp,
-		//			nrc::NUM_TRAINING_RECORDS_PER_FRAME * 3ull,
-		//			m_cudaStream));
 
 		// At this point, all training data is ready
 		const auto queriesShuffled = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1);

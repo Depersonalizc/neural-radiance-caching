@@ -618,7 +618,8 @@ __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlStat
     auto& dynBufs = sysData.nrcCB->bufDynamic;
 
 	// Add an inference query at the end vertex of the train suffix.
-	auto& query = dynBufs.radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
+    const auto offset = sysData.resolution.x * sysData.resolution.y;
+	auto& query = dynBufs.radianceQueriesInference[offset + thePrd.tileIndex];
 	addQuery(mdlState, thePrd, auxData, query);
 
 	// Add the TrainingSuffixEndVertex
@@ -634,7 +635,8 @@ __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlStat
 __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
 {
     // Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
-    //auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
+    //const auto offset = sysData.resolution.x * sysData.resolution.y;
+    //auto& query = sysData.nrcCB->radianceQueriesInference[offset + thePrd.tileIndex];
     //addQuery(mdlState, thePrd, auxData, query);
 
     // Add the TrainingSuffixEndVertex

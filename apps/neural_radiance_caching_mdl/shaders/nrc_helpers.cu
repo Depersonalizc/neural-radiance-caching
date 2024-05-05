@@ -111,11 +111,11 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 	// DEBUG: SUPER BLUE if no prop happens
 	//if (iTo < 0) { debug_fill_tile({ 0.f, 0.f, 100000.f }, launchIndex); return; }
 	
-	[[maybe_unused]] float3 secondToLastRadiance = lastRadiance;
+	//[[maybe_unused]] float3 secondToLastRadiance = lastRadiance;
 
 	while (iTo >= 0)
 	{
-		secondToLastRadiance = lastRadiance;
+		//secondToLastRadiance = lastRadiance;
 
 		//if (launchIndex.x == sysData.pf.numTiles.x / 2 && launchIndex.y == sysData.pf.numTiles.y / 2)
 		//	printf("%d->", iTo);
