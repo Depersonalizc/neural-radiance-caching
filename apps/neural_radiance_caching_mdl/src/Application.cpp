@@ -660,335 +660,369 @@ void Application::guiWindow()
 	}
 
 	bool refresh = false;
+	bool expanded = false;
 
 	ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiSetCond_FirstUseEver);
 
 	ImGuiWindowFlags window_flags = 0;
-	if (!ImGui::Begin("MDL_renderer", nullptr, window_flags)) // No bool flag to omit the close button.
+	expanded = ImGui::Begin("Neural Radiance Caching x MDL", nullptr, window_flags); // No bool flag to omit the close button.
+	if (expanded)
 	{
-		// Early out if the window is collapsed, as an optimization.
-		ImGui::End();
-		return;
-	}
+		ImGui::PushItemWidth(-200); // Right-aligned, keep pixels for the labels.
 
-	ImGui::PushItemWidth(-200); // Right-aligned, keep pixels for the labels.
-
-	if (ImGui::CollapsingHeader("System"))
-	{
-		if (ImGui::DragFloat("Mouse Ratio", &m_mouseSpeedRatio, 0.1f, 0.1f, 1000.0f, "%.1f"))
+		if (ImGui::CollapsingHeader("System"))
 		{
-			m_camera.setSpeedRatio(m_mouseSpeedRatio);
-		}
-		if (ImGui::Checkbox("Present", &m_present))
-		{
-			// No action needed, happens automatically on next render invocation.
-		}
-		if (ImGui::Checkbox("Direct Lighting", &m_useDirectLighting))
-		{
-			m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-		if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
-		{
-			if (ImGui::DragFloat3("Environment Rotation", m_rotationEnvironment, 1.0f, 0.0f, 360.0f))
+			if (ImGui::DragFloat("Mouse Ratio", &m_mouseSpeedRatio, 0.1f, 0.1f, 1000.0f, "%.1f"))
 			{
-				const dp::math::Quatf xRot(dp::math::Vec3f(1.0f, 0.0f, 0.0f), dp::math::degToRad(m_rotationEnvironment[0]));
-				const dp::math::Quatf yRot(dp::math::Vec3f(0.0f, 1.0f, 0.0f), dp::math::degToRad(m_rotationEnvironment[1]));
-				const dp::math::Quatf zRot(dp::math::Vec3f(0.0f, 0.0f, 1.0f), dp::math::degToRad(m_rotationEnvironment[2]));
-				m_lightsGUI[0].orientation = xRot * yRot * zRot;
+				m_camera.setSpeedRatio(m_mouseSpeedRatio);
+			}
+			if (ImGui::Checkbox("Present", &m_present))
+			{
+				// No action needed, happens automatically on next render invocation.
+			}
+			if (ImGui::Checkbox("Direct Lighting", &m_useDirectLighting))
+			{
+				m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
+			{
+				if (ImGui::DragFloat3("Environment Rotation", m_rotationEnvironment, 1.0f, 0.0f, 360.0f))
+				{
+					const dp::math::Quatf xRot(dp::math::Vec3f(1.0f, 0.0f, 0.0f), dp::math::degToRad(m_rotationEnvironment[0]));
+					const dp::math::Quatf yRot(dp::math::Vec3f(0.0f, 1.0f, 0.0f), dp::math::degToRad(m_rotationEnvironment[1]));
+					const dp::math::Quatf zRot(dp::math::Vec3f(0.0f, 0.0f, 1.0f), dp::math::degToRad(m_rotationEnvironment[2]));
+					m_lightsGUI[0].orientation = xRot * yRot * zRot;
 
-				const dp::math::Quatf xRotInv(dp::math::Vec3f(1.0f, 0.0f, 0.0f), dp::math::degToRad(-m_rotationEnvironment[0]));
-				const dp::math::Quatf yRotInv(dp::math::Vec3f(0.0f, 1.0f, 0.0f), dp::math::degToRad(-m_rotationEnvironment[1]));
-				const dp::math::Quatf zRotInv(dp::math::Vec3f(0.0f, 0.0f, 1.0f), dp::math::degToRad(-m_rotationEnvironment[2]));
-				m_lightsGUI[0].orientationInv = zRotInv * yRotInv * xRotInv;
+					const dp::math::Quatf xRotInv(dp::math::Vec3f(1.0f, 0.0f, 0.0f), dp::math::degToRad(-m_rotationEnvironment[0]));
+					const dp::math::Quatf yRotInv(dp::math::Vec3f(0.0f, 1.0f, 0.0f), dp::math::degToRad(-m_rotationEnvironment[1]));
+					const dp::math::Quatf zRotInv(dp::math::Vec3f(0.0f, 0.0f, 1.0f), dp::math::degToRad(-m_rotationEnvironment[2]));
+					m_lightsGUI[0].orientationInv = zRotInv * yRotInv * xRotInv;
 
-				m_lightsGUI[0].matrix = dp::math::Mat44f(m_lightsGUI[0].orientation, dp::math::Vec3f(0.0f, 0.0f, 0.0f));
-				m_lightsGUI[0].matrixInv = dp::math::Mat44f(m_lightsGUI[0].orientationInv, dp::math::Vec3f(0.0f, 0.0f, 0.0f));
+					m_lightsGUI[0].matrix = dp::math::Mat44f(m_lightsGUI[0].orientation, dp::math::Vec3f(0.0f, 0.0f, 0.0f));
+					m_lightsGUI[0].matrixInv = dp::math::Mat44f(m_lightsGUI[0].orientationInv, dp::math::Vec3f(0.0f, 0.0f, 0.0f));
 
-				m_raytracer->updateLight(0, m_lightsGUI[0]);
+					m_raytracer->updateLight(0, m_lightsGUI[0]);
+					refresh = true;
+				}
+			}
+			if (ImGui::Combo("Camera", (int*)&m_typeLens, "Pinhole\0Fisheye\0Spherical\0\0"))
+			{
+				m_state.typeLens = m_typeLens;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			if (ImGui::Button("Match Resolution"))
+			{
+				// Match the rendering resolution to the current client window size.
+				m_resolution.x = std::max(2, m_width);
+				m_resolution.y = std::max(2, m_height);
+
+				m_camera.setResolution(m_resolution.x, m_resolution.y);
+				m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
+				m_state.resolution = m_resolution;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			if (ImGui::InputInt2("Resolution", &m_resolution.x, ImGuiInputTextFlags_EnterReturnsTrue)) // This requires RETURN to apply a new value.
+			{
+				m_resolution.x = std::max(2, m_resolution.x);
+				m_resolution.y = std::max(2, m_resolution.y);
+
+				m_camera.setResolution(m_resolution.x, m_resolution.y);
+				m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
+				m_state.resolution = m_resolution;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			if (ImGui::InputInt("SamplesSqrt", &m_samplesSqrt, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue))
+			{
+				m_samplesSqrt = clamp(m_samplesSqrt, 1, 256); // Samples per pixel are squares in the range [1, 65536].
+				m_state.samplesSqrt = m_samplesSqrt;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			if (ImGui::DragInt2("Path Lengths", &m_pathLengths.x, 1.0f, 0, 100))
+			{
+				m_state.pathLengths = m_pathLengths;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			if (ImGui::DragInt("Random Walk Length", &m_walkLength, 1.0f, 1, 100))
+			{
+				m_state.walkLength = m_walkLength;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			if (ImGui::DragFloat("Scene Epsilon", &m_epsilonFactor, 1.0f, 0.0f, 10000.0f))
+			{
+				m_state.epsilonFactor = m_epsilonFactor;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+	#if USE_TIME_VIEW
+			if (ImGui::DragFloat("Clock Factor", &m_clockFactor, 1.0f, 0.0f, 1000000.0f, "%.0f"))
+			{
+				m_state.clockFactor = m_clockFactor;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+	#endif
+		}
+
+	#if !USE_TIME_VIEW
+		if (ImGui::CollapsingHeader("Tonemapper"))
+		{
+			bool changed = false;
+			if (ImGui::ColorEdit3("Balance", (float*)&m_tonemapperGUI.colorBalance))
+			{
+				changed = true;
+			}
+			if (ImGui::DragFloat("Gamma", &m_tonemapperGUI.gamma, 0.01f, 0.01f, 10.0f)) // Must not get 0.0f
+			{
+				changed = true;
+			}
+			if (ImGui::DragFloat("White Point", &m_tonemapperGUI.whitePoint, 0.01f, 0.01f, 255.0f, "%.2f", 2.0f)) // Must not get 0.0f
+			{
+				changed = true;
+			}
+			if (ImGui::DragFloat("Burn Lights", &m_tonemapperGUI.burnHighlights, 0.01f, 0.0f, 10.0f, "%.2f"))
+			{
+				changed = true;
+			}
+			if (ImGui::DragFloat("Crush Blacks", &m_tonemapperGUI.crushBlacks, 0.01f, 0.0f, 1.0f, "%.2f"))
+			{
+				changed = true;
+			}
+			if (ImGui::DragFloat("Saturation", &m_tonemapperGUI.saturation, 0.01f, 0.0f, 10.0f, "%.2f"))
+			{
+				changed = true;
+			}
+			if (ImGui::DragFloat("Brightness", &m_tonemapperGUI.brightness, 0.01f, 0.0f, 100.0f, "%.2f", 2.0f))
+			{
+				changed = true;
+			}
+			if (changed)
+			{
+				m_rasterizer->setTonemapper(m_tonemapperGUI); // This doesn't need a refresh.
+			}
+		}
+	#endif // !USE_TIME_VIEW
+
+		if (ImGui::CollapsingHeader("Materials"))
+		{
+			// My material reference names are unique identifiers.
+			std::string labelCombo = m_materialsMDL[m_indexMaterialGUI]->getReference();
+
+			if (ImGui::BeginCombo("Reference", labelCombo.c_str()))
+			{
+				// add selectable materials to the combo box
+				for (size_t i = 0; i < m_materialsMDL.size(); ++i)
+				{
+					bool isSelected = (i == m_indexMaterialGUI);
+
+					std::string label = m_materialsMDL[i]->getReference();
+
+					if (ImGui::Selectable(label.c_str(), isSelected))
+					{
+						m_indexMaterialGUI = i;
+					}
+					if (isSelected)
+					{
+						ImGui::SetItemDefaultFocus();
+					}
+				};
+
+				ImGui::EndCombo();
+			}
+
+			const auto &material = m_materialsMDL[m_indexMaterialGUI];
+
+			const char* group_name = nullptr;
+
+			bool changed = false;
+
+			int id = 0;
+			for (auto it = material->m_params.begin(), end = material->params().end(); it != end; ++it, ++id)
+			{
+				Param_info& param = *it;
+
+				// Ensure unique ID even for parameters with same display names.
+				ImGui::PushID(id);
+
+				// Group name changed? Start new group with new header.
+				if ((!param.group_name() != !group_name) ||
+					(param.group_name() && (!group_name || strcmp(group_name, param.group_name()) != 0)))
+				{
+					ImGui::Separator();
+
+					if (param.group_name() != nullptr)
+					{
+						ImGui::Text("%s", param.group_name());
+					}
+
+					group_name = param.group_name();
+				}
+
+				// Choose proper edit control depending on the parameter kind
+				switch (param.kind())
+				{
+				case Param_info::PK_FLOAT:
+					changed |= ImGui::SliderFloat(param.display_name(), &param.data<float>(), param.range_min(), param.range_max());
+					break;
+				case Param_info::PK_FLOAT2:
+					changed |= ImGui::SliderFloat2(param.display_name(), &param.data<float>(), param.range_min(), param.range_max());
+					break;
+				case Param_info::PK_FLOAT3:
+					changed |= ImGui::SliderFloat3(param.display_name(), &param.data<float>(), param.range_min(), param.range_max());
+					break;
+				case Param_info::PK_COLOR:
+					changed |= ImGui::ColorEdit3(param.display_name(), &param.data<float>());
+					break;
+				case Param_info::PK_BOOL:
+					changed |= ImGui::Checkbox(param.display_name(), &param.data<bool>());
+					break;
+				case Param_info::PK_INT:
+					changed |= ImGui::SliderInt(param.display_name(), &param.data<int>(), int(param.range_min()), int(param.range_max()));
+					break;
+				case Param_info::PK_ARRAY:
+				{
+					ImGui::Text("%s", param.display_name());
+					ImGui::Indent(16.0f);
+
+					char* ptr = &param.data<char>();
+
+					for (mi::Size i = 0, n = param.array_size(); i < n; ++i)
+					{
+						std::string idx_str = std::to_string(i);
+
+						switch (param.array_elem_kind())
+						{
+						case Param_info::PK_FLOAT:
+							changed |= ImGui::SliderFloat(idx_str.c_str(), reinterpret_cast<float*>(ptr), param.range_min(), param.range_max());
+							break;
+						case Param_info::PK_FLOAT2:
+							changed |= ImGui::SliderFloat2(idx_str.c_str(), reinterpret_cast<float*>(ptr), param.range_min(), param.range_max());
+							break;
+						case Param_info::PK_FLOAT3:
+							changed |= ImGui::SliderFloat3(idx_str.c_str(), reinterpret_cast<float*>(ptr), param.range_min(), param.range_max());
+							break;
+						case Param_info::PK_COLOR:
+							changed |= ImGui::ColorEdit3(idx_str.c_str(), reinterpret_cast<float*>(ptr));
+							break;
+						case Param_info::PK_BOOL:
+							changed |= ImGui::Checkbox(param.display_name(), reinterpret_cast<bool*>(ptr));
+							break;
+						case Param_info::PK_INT:
+							changed |= ImGui::SliderInt(param.display_name(), reinterpret_cast<int*>(ptr), int(param.range_min()), int(param.range_max()));
+							break;
+						default:
+							std::cerr << "ERROR: guiWindow() Material parameter " << param.display_name() << " array element " << idx_str << " type invalid or unhandled.\n";
+						}
+						ptr += param.array_pitch();
+					}
+					ImGui::Unindent(16.0f);
+				}
+				break;
+				case Param_info::PK_ENUM:
+				{
+					int value = param.data<int>();
+					std::string curr_value;
+
+					const Enum_type_info* info = param.enum_info();
+					for (size_t i = 0, n = info->values.size(); i < n; ++i)
+					{
+						if (info->values[i].value == value)
+						{
+							curr_value = info->values[i].name;
+							break;
+						}
+					}
+
+					if (ImGui::BeginCombo(param.display_name(), curr_value.c_str()))
+					{
+						for (size_t i = 0, n = info->values.size(); i < n; ++i)
+						{
+							const std::string& name = info->values[i].name;
+
+							bool is_selected = (curr_value == name);
+
+							if (ImGui::Selectable(info->values[i].name.c_str(), is_selected))
+							{
+								param.data<int>() = info->values[i].value;
+								changed = true;
+							}
+							if (is_selected)
+							{
+								ImGui::SetItemDefaultFocus();
+							}
+						}
+						ImGui::EndCombo();
+					}
+				}
+				break;
+
+				case Param_info::PK_STRING:
+				case Param_info::PK_TEXTURE:
+				case Param_info::PK_LIGHT_PROFILE:
+				case Param_info::PK_BSDF_MEASUREMENT:
+					// Editing these parameter types is currently not supported by this example
+					break;
+
+				default:
+					break;
+				}
+
+				ImGui::PopID();
+			}
+
+			if (changed)
+			{
+				m_raytracer->updateMaterial(m_indexMaterialGUI, material.get());
 				refresh = true;
 			}
 		}
-		if (ImGui::Combo("Camera", (int*)&m_typeLens, "Pinhole\0Fisheye\0Spherical\0\0"))
-		{
-			m_state.typeLens = m_typeLens;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-		if (ImGui::Button("Match Resolution"))
-		{
-			// Match the rendering resolution to the current client window size.
-			m_resolution.x = std::max(2, m_width);
-			m_resolution.y = std::max(2, m_height);
 
-			m_camera.setResolution(m_resolution.x, m_resolution.y);
-			m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
-			m_state.resolution = m_resolution;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-		if (ImGui::InputInt2("Resolution", &m_resolution.x, ImGuiInputTextFlags_EnterReturnsTrue)) // This requires RETURN to apply a new value.
-		{
-			m_resolution.x = std::max(2, m_resolution.x);
-			m_resolution.y = std::max(2, m_resolution.y);
-
-			m_camera.setResolution(m_resolution.x, m_resolution.y);
-			m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
-			m_state.resolution = m_resolution;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-		if (ImGui::InputInt("SamplesSqrt", &m_samplesSqrt, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue))
-		{
-			m_samplesSqrt = clamp(m_samplesSqrt, 1, 256); // Samples per pixel are squares in the range [1, 65536].
-			m_state.samplesSqrt = m_samplesSqrt;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-		if (ImGui::DragInt2("Path Lengths", &m_pathLengths.x, 1.0f, 0, 100))
-		{
-			m_state.pathLengths = m_pathLengths;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-		if (ImGui::DragInt("Random Walk Length", &m_walkLength, 1.0f, 1, 100))
-		{
-			m_state.walkLength = m_walkLength;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-		if (ImGui::DragFloat("Scene Epsilon", &m_epsilonFactor, 1.0f, 0.0f, 10000.0f))
-		{
-			m_state.epsilonFactor = m_epsilonFactor;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-#if USE_TIME_VIEW
-		if (ImGui::DragFloat("Clock Factor", &m_clockFactor, 1.0f, 0.0f, 1000000.0f, "%.0f"))
-		{
-			m_state.clockFactor = m_clockFactor;
-			m_raytracer->updateState(m_state);
-			refresh = true;
-		}
-#endif
+		ImGui::PopItemWidth();
 	}
+	ImGui::End();
 
-#if !USE_TIME_VIEW
-	if (ImGui::CollapsingHeader("Tonemapper"))
+	// Stats window
+	static auto& sysDataPf = m_raytracer->m_devicesActive[0]->m_systemData.pf;
+	static auto& trainStat = m_raytracer->m_devicesActive[0]->m_trainStat;
+
+	static std::array<float, 100> networkLosses = { 0.f };
+	static int networkLossesOffset = 0;
+
+	window_flags = 0;
+	expanded = ImGui::Begin("Stats", nullptr, window_flags);
+	if (expanded)
 	{
-		bool changed = false;
-		if (ImGui::ColorEdit3("Balance", (float*)&m_tonemapperGUI.colorBalance))
+		ImGui::PushItemWidth(-200);
+
+		if (ImGui::CollapsingHeader("Network"))
 		{
-			changed = true;
+			ImGui::Text("Tile size: (%d, %d)", sysDataPf.tileSize.x, sysDataPf.tileSize.y);
+			ImGui::Text("#Tiles: (%d, %d)", sysDataPf.numTiles, sysDataPf.numTiles);
+			ImGui::Text("#Train records: %d", trainStat.numTrainRecords);
+			ImGui::Text("Loss: %f", trainStat.loss);
+
+			if (!m_previousComplete)
+			{
+				networkLosses[networkLossesOffset++] = trainStat.loss;
+				networkLossesOffset %= networkLosses.size();
+			}
+			ImGui::PlotLines("", networkLosses.data(), networkLosses.size(), networkLossesOffset, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 200));
 		}
-		if (ImGui::DragFloat("Gamma", &m_tonemapperGUI.gamma, 0.01f, 0.01f, 10.0f)) // Must not get 0.0f
+
+		if (ImGui::CollapsingHeader("Render"))
 		{
-			changed = true;
+			ImGui::Text("Sample: #%d/%d", sysDataPf.iterationIndex + 1, m_state.samplesSqrt * m_state.samplesSqrt);
 		}
-		if (ImGui::DragFloat("White Point", &m_tonemapperGUI.whitePoint, 0.01f, 0.01f, 255.0f, "%.2f", 2.0f)) // Must not get 0.0f
-		{
-			changed = true;
-		}
-		if (ImGui::DragFloat("Burn Lights", &m_tonemapperGUI.burnHighlights, 0.01f, 0.0f, 10.0f, "%.2f"))
-		{
-			changed = true;
-		}
-		if (ImGui::DragFloat("Crush Blacks", &m_tonemapperGUI.crushBlacks, 0.01f, 0.0f, 1.0f, "%.2f"))
-		{
-			changed = true;
-		}
-		if (ImGui::DragFloat("Saturation", &m_tonemapperGUI.saturation, 0.01f, 0.0f, 10.0f, "%.2f"))
-		{
-			changed = true;
-		}
-		if (ImGui::DragFloat("Brightness", &m_tonemapperGUI.brightness, 0.01f, 0.0f, 100.0f, "%.2f", 2.0f))
-		{
-			changed = true;
-		}
-		if (changed)
-		{
-			m_rasterizer->setTonemapper(m_tonemapperGUI); // This doesn't need a refresh.
-		}
+
+		ImGui::PopItemWidth();
 	}
-#endif // !USE_TIME_VIEW
-
-	if (ImGui::CollapsingHeader("Materials"))
-	{
-		// My material reference names are unique identifiers.
-		std::string labelCombo = m_materialsMDL[m_indexMaterialGUI]->getReference();
-
-		if (ImGui::BeginCombo("Reference", labelCombo.c_str()))
-		{
-			// add selectable materials to the combo box
-			for (size_t i = 0; i < m_materialsMDL.size(); ++i)
-			{
-				bool isSelected = (i == m_indexMaterialGUI);
-
-				std::string label = m_materialsMDL[i]->getReference();
-
-				if (ImGui::Selectable(label.c_str(), isSelected))
-				{
-					m_indexMaterialGUI = i;
-				}
-				if (isSelected)
-				{
-					ImGui::SetItemDefaultFocus();
-				}
-			};
-
-			ImGui::EndCombo();
-		}
-
-		const auto &material = m_materialsMDL[m_indexMaterialGUI];
-
-		const char* group_name = nullptr;
-
-		bool changed = false;
-
-		int id = 0;
-		for (auto it = material->m_params.begin(), end = material->params().end(); it != end; ++it, ++id)
-		{
-			Param_info& param = *it;
-
-			// Ensure unique ID even for parameters with same display names.
-			ImGui::PushID(id);
-
-			// Group name changed? Start new group with new header.
-			if ((!param.group_name() != !group_name) ||
-				(param.group_name() && (!group_name || strcmp(group_name, param.group_name()) != 0)))
-			{
-				ImGui::Separator();
-
-				if (param.group_name() != nullptr)
-				{
-					ImGui::Text("%s", param.group_name());
-				}
-
-				group_name = param.group_name();
-			}
-
-			// Choose proper edit control depending on the parameter kind
-			switch (param.kind())
-			{
-			case Param_info::PK_FLOAT:
-				changed |= ImGui::SliderFloat(param.display_name(), &param.data<float>(), param.range_min(), param.range_max());
-				break;
-			case Param_info::PK_FLOAT2:
-				changed |= ImGui::SliderFloat2(param.display_name(), &param.data<float>(), param.range_min(), param.range_max());
-				break;
-			case Param_info::PK_FLOAT3:
-				changed |= ImGui::SliderFloat3(param.display_name(), &param.data<float>(), param.range_min(), param.range_max());
-				break;
-			case Param_info::PK_COLOR:
-				changed |= ImGui::ColorEdit3(param.display_name(), &param.data<float>());
-				break;
-			case Param_info::PK_BOOL:
-				changed |= ImGui::Checkbox(param.display_name(), &param.data<bool>());
-				break;
-			case Param_info::PK_INT:
-				changed |= ImGui::SliderInt(param.display_name(), &param.data<int>(), int(param.range_min()), int(param.range_max()));
-				break;
-			case Param_info::PK_ARRAY:
-			{
-				ImGui::Text("%s", param.display_name());
-				ImGui::Indent(16.0f);
-
-				char* ptr = &param.data<char>();
-
-				for (mi::Size i = 0, n = param.array_size(); i < n; ++i)
-				{
-					std::string idx_str = std::to_string(i);
-
-					switch (param.array_elem_kind())
-					{
-					case Param_info::PK_FLOAT:
-						changed |= ImGui::SliderFloat(idx_str.c_str(), reinterpret_cast<float*>(ptr), param.range_min(), param.range_max());
-						break;
-					case Param_info::PK_FLOAT2:
-						changed |= ImGui::SliderFloat2(idx_str.c_str(), reinterpret_cast<float*>(ptr), param.range_min(), param.range_max());
-						break;
-					case Param_info::PK_FLOAT3:
-						changed |= ImGui::SliderFloat3(idx_str.c_str(), reinterpret_cast<float*>(ptr), param.range_min(), param.range_max());
-						break;
-					case Param_info::PK_COLOR:
-						changed |= ImGui::ColorEdit3(idx_str.c_str(), reinterpret_cast<float*>(ptr));
-						break;
-					case Param_info::PK_BOOL:
-						changed |= ImGui::Checkbox(param.display_name(), reinterpret_cast<bool*>(ptr));
-						break;
-					case Param_info::PK_INT:
-						changed |= ImGui::SliderInt(param.display_name(), reinterpret_cast<int*>(ptr), int(param.range_min()), int(param.range_max()));
-						break;
-					default:
-						std::cerr << "ERROR: guiWindow() Material parameter " << param.display_name() << " array element " << idx_str << " type invalid or unhandled.\n";
-					}
-					ptr += param.array_pitch();
-				}
-				ImGui::Unindent(16.0f);
-			}
-			break;
-			case Param_info::PK_ENUM:
-			{
-				int value = param.data<int>();
-				std::string curr_value;
-
-				const Enum_type_info* info = param.enum_info();
-				for (size_t i = 0, n = info->values.size(); i < n; ++i)
-				{
-					if (info->values[i].value == value)
-					{
-						curr_value = info->values[i].name;
-						break;
-					}
-				}
-
-				if (ImGui::BeginCombo(param.display_name(), curr_value.c_str()))
-				{
-					for (size_t i = 0, n = info->values.size(); i < n; ++i)
-					{
-						const std::string& name = info->values[i].name;
-
-						bool is_selected = (curr_value == name);
-
-						if (ImGui::Selectable(info->values[i].name.c_str(), is_selected))
-						{
-							param.data<int>() = info->values[i].value;
-							changed = true;
-						}
-						if (is_selected)
-						{
-							ImGui::SetItemDefaultFocus();
-						}
-					}
-					ImGui::EndCombo();
-				}
-			}
-			break;
-
-			case Param_info::PK_STRING:
-			case Param_info::PK_TEXTURE:
-			case Param_info::PK_LIGHT_PROFILE:
-			case Param_info::PK_BSDF_MEASUREMENT:
-				// Editing these parameter types is currently not supported by this example
-				break;
-
-			default:
-				break;
-			}
-
-			ImGui::PopID();
-		}
-
-		if (changed)
-		{
-			m_raytracer->updateMaterial(m_indexMaterialGUI, material.get());
-			refresh = true;
-		}
-	}
-
-	ImGui::PopItemWidth();
-
 	ImGui::End();
 
 	if (refresh)
