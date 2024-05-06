@@ -257,6 +257,7 @@ Device::Device(const int ordinal,
 	, m_isDirtySystemData(true) // Trigger SystemData update before the next launch.
 	, m_isDirtyOutputBuffer(true) // First render call initializes it. This is done in the derived render() functions.
 	, m_moduleFilenames(MODULE_ID_LAST_CUSTOM - MODULE_ID_FIRST_CUSTOM + 1)
+	, m_nrcNeedsReset(false)
 {
 	// Get the CUdevice handle from the CUDA device ordinal.
 	CU_CHECK(cuDeviceGet(&m_cudaDevice, m_ordinal));
@@ -1543,6 +1544,8 @@ void Device::setState(const DeviceState& state)
 	}
 #endif
 
+	// NRC related
+
 	if (m_systemData.pf.nrcTrainUnbiasedRatio != state.nrcTrainUnbiasedRatio)
 	{
 		m_systemData.pf.nrcTrainUnbiasedRatio = state.nrcTrainUnbiasedRatio;
@@ -1553,6 +1556,11 @@ void Device::setState(const DeviceState& state)
 	{
 		m_nrcHyperParams.learningRate = state.nrcTrainLearningRate;
 		m_isDirtyHyperParams = true;
+	}
+
+	if (m_nrcRenderMode != state.nrcRenderMode)
+	{
+		m_nrcRenderMode = state.nrcRenderMode;
 	}
 }
 
@@ -2109,10 +2117,18 @@ void Device::render(const unsigned int iterationIndex,
 		m_isDirtySystemData   = true;  // Now the entire sysData on the device needs to be updated.
 	}
 
-	if (m_isDirtyHyperParams)
+	if (m_isDirtyHyperParams) [[unlikely]]
 	{
 		m_nrcNetwork.setHyperParams(m_nrcHyperParams);
 		m_isDirtyHyperParams = false;
+	}
+
+	if (m_nrcNeedsReset) [[unlikely]]
+	{
+		// Reset model weights
+		std::cout << "[HOST] Radiance Cache Reset!\n";
+		m_nrcNetwork.resetModelWeights();
+		m_nrcNeedsReset = false;
 	}
 
 	// PER-FRAME: Update the training index, shared across all tiles
@@ -2150,14 +2166,12 @@ void Device::render(const unsigned int iterationIndex,
 	}
 
 	// Reset the per-frame data of the NRC block (currently just numTrainingRecords)
-	//if (totalSubframeIndex < 2) // DEBUG
 	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
 
 	// Path Tracing: 
 	// - Generate training data for NRC
 	// - Populate queries, training records           
 	// Note the launch width per device to render in tiles.
-	//if (totalSubframeIndex < 2) // DEBUG
 	OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), 
 								  &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 
@@ -2235,7 +2249,8 @@ void Device::render(const unsigned int iterationIndex,
 	// OUTPUT: m_systemData.outputBuffer[#pixels] (+=)
 	{
 		void* args[] = { /*float3 *endRenderRadiance   */ &m_nrcControlBlock.bufDynamic.radianceResultsInference,
-						 /*float3 *endRenderThroughput */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput };
+						 /*float3 *endRenderThroughput */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput,
+						 /*int    mode                 */ &m_nrcRenderMode};
 
 		cfg.blockDimY = m_fnAccumulateRenderRadianceBlockSize / cfg.blockDimX;
 		cfg.gridDimX  = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
@@ -3867,5 +3882,10 @@ void Device::initTextureHandler(std::vector<std::unique_ptr<MaterialMDL>>& mater
 
 	// Only when all MDL materials have been created, all information about the direct callable programs are available and the pipeline can be built.
 	initPipeline();
+}
+
+void Device::resetNRC()
+{
+	m_nrcNeedsReset = true;
 }
 

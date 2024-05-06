@@ -44,7 +44,7 @@ void Network::train(float* batchInputs_d, float* batchTargets_d, float* loss_h)
 	if (m_destroyed) [[unlikely]] return;
 
 	using namespace tcnn;
-	static auto& trainer = pImpl->model.trainer;
+	auto& trainer = pImpl->model.trainer;
 
 	const GPUMatrix_t inputs { batchInputs_d,  NN_INPUT_DIMS,  BATCH_SIZE };
 	const GPUMatrix_t targets{ batchTargets_d, NN_OUTPUT_DIMS, BATCH_SIZE };
@@ -64,7 +64,7 @@ void Network::infer(float* inputs_d, float* outputs_d, uint32_t numInputs)
 	if (m_destroyed) [[unlikely]] return;
 
 	using namespace tcnn;
-	static auto& network = pImpl->model.network;
+	auto& network = pImpl->model.network;
 	
 	// Round up to nearest multiple of BATCH_SIZE_GRANULARITY.
 	numInputs = ((numInputs + BATCH_SIZE_GRANULARITY - 1) / BATCH_SIZE_GRANULARITY) * BATCH_SIZE_GRANULARITY;
@@ -88,6 +88,29 @@ void Network::setStream(CUstream stream)
 void Network::setHyperParams(const HyperParams& hp)
 {
 	pImpl->model.optimizer->set_learning_rate(hp.learningRate);
+}
+
+void Network::resetModelWeights()
+{
+	auto& model = pImpl->model;
+	const auto lossHp = model.loss->hyperparams();
+	const auto optimizerHp = model.optimizer->hyperparams();
+
+	using namespace tcnn;
+
+	// Assume the model uses network_precision_t
+	model.loss.reset(create_loss<network_precision_t>(lossHp));
+	model.optimizer.reset(create_optimizer<network_precision_t>(optimizerHp));
+
+	model.network = std::make_shared<NetworkWithInputEncoding<network_precision_t>>(
+		NN_INPUT_DIMS, NN_OUTPUT_DIMS,
+		pImpl->config.value("encoding", json::object()),
+		pImpl->config.value("network",  json::object())
+	);
+
+	model.trainer = std::make_shared<Trainer<float, network_precision_t, network_precision_t>>(
+		model.network, model.optimizer, model.loss
+	);
 }
 
 void Network::init_(CUstream stream)

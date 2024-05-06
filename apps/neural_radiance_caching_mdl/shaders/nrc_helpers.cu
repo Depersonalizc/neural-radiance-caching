@@ -46,7 +46,7 @@ __forceinline__ __device__ uint2 getLaunchIndex2D()
 
 // Radiance accumulator kernel to add the radiance * throughput 
 // at the end of the rendering paths to the output buffer.
-extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance, float3 *endRenderThroughput)
+extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance, float3 *endRenderThroughput, nrc::RenderMode mode)
 {
 	const auto launchIndex = getLaunchIndex2D();
 	if (launchIndex.x >= sysData.resolution.x || launchIndex.y >= sysData.resolution.y) return;
@@ -54,27 +54,34 @@ extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance,
 	const unsigned int index = launchIndex.y * sysData.resolution.x + launchIndex.x; // Pixel index
 	const auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
 	
-#if 1
-	const float3 radiance = endRenderThroughput[index] * endRenderRadiance[index];
-	const float accWeight = 1.0f / float(sysData.pf.iterationIndex + 1);
-	float3 dst = make_float3(buffer[index]);
-	dst += (radiance * accWeight);
-	buffer[index] = make_float4(dst, 1.0f);
-#elif 0 // DEBUG: Throughput
-	buffer[index] = make_float4(endRenderThroughput[index], 1.0f);
-#elif 0 // DEBUG: directly visualize radiance at terminal vertex of rendering path
-	//if (allZero(endRenderThroughput[index]))
-	//	buffer[index] = { 0.f, 0.f, 0.f, 1.f };
-	//else
+	using namespace nrc;
+
+	switch (mode) {
+	case RenderMode::Full:
+	default: {
+		const float3 radiance = endRenderThroughput[index] * endRenderRadiance[index];
+		const float accWeight = 1.0f / float(sysData.pf.iterationIndex + 1);
+		float3 dst = make_float3(buffer[index]);
+		dst += (radiance * accWeight);
+		buffer[index] = make_float4(dst, 1.0f);
+		break;
+	}
+	case RenderMode::NoCache: {
+		return;
+	}
+	case RenderMode::CacheOnly: {
+		float3 dst = endRenderRadiance[index] * endRenderThroughput[index];
+		buffer[index] = make_float4(dst, 1.0f);
+		break;
+	}
+	case RenderMode::DebugCacheNoThroughputModulation: {
 		buffer[index] = make_float4(endRenderRadiance[index], 1.0f);
-#elif 0 // DEBUG: visualize radiance * throughput
-	float3 dst = endRenderRadiance[index] * endRenderThroughput[index];
-	buffer[index] = make_float4(dst, 1.0f);
-#elif 0
-	buffer[index] = { 0.f, 0.f, 0.f, 1.f };
-#else
-	return;
-#endif
+		break;
+	}
+	case RenderMode::DebugThroughputOnly: {
+		buffer[index] = make_float4(endRenderThroughput[index], 1.0f);
+		break;
+	}}
 }
 
 extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex *trainSuffixEndVertices, // [:#tiles]
