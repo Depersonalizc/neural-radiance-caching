@@ -342,6 +342,7 @@ Application::Application(GLFWwindow* window, const Options& options)
 		m_state.nrcTrainUnbiasedRatio = nrc::TRAIN_UNBIASED_RATIO;
 
 		m_state.nrcTrainLearningRate = nrc::TRAIN_LEARNING_RATE;
+		m_state.nrcRenderMode = nrc::RenderMode::Full;
 
 		// Sync the state with the default GUI data.
 		m_raytracer->initState(m_state);
@@ -676,20 +677,30 @@ void Application::guiWindow()
 
 		if (ImGui::CollapsingHeader("System"))
 		{
-			if (ImGui::DragFloat("Mouse Ratio", &m_mouseSpeedRatio, 0.1f, 0.1f, 1000.0f, "%.1f"))
 			{
-				m_camera.setSpeedRatio(m_mouseSpeedRatio);
+				using nrc::RenderMode;
+				static auto mode_p = reinterpret_cast<int*>(&m_state.nrcRenderMode);
+				const auto oldMode = m_state.nrcRenderMode;
+				ImGui::RadioButton("Full", mode_p, static_cast<int>(RenderMode::Full)); ImGui::SameLine();
+				ImGui::RadioButton("No Cache", mode_p, static_cast<int>(RenderMode::NoCache)); ImGui::SameLine();
+				ImGui::RadioButton("Only Cache", mode_p, static_cast<int>(RenderMode::CacheOnly)); ImGui::SameLine();
+				ImGui::RadioButton("First Vertex Cache", mode_p, static_cast<int>(RenderMode::CacheFirstVertex));
+				if (m_state.nrcRenderMode != oldMode)
+				{
+					m_raytracer->updateState(m_state);
+					refresh = true;
+				}
 			}
 			if (ImGui::Checkbox("Present", &m_present))
 			{
 				// No action needed, happens automatically on next render invocation.
 			}
-			if (ImGui::Checkbox("Direct Lighting", &m_useDirectLighting))
-			{
-				m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
-				m_raytracer->updateState(m_state);
-				refresh = true;
-			}
+			//if (ImGui::Checkbox("Direct Lighting", &m_useDirectLighting))
+			//{
+			//	m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
+			//	m_raytracer->updateState(m_state);
+			//	refresh = true;
+			//}
 			if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
 			{
 				if (ImGui::DragFloat3("Environment Rotation", m_rotationEnvironment, 1.0f, 0.0f, 360.0f))
@@ -727,6 +738,12 @@ void Application::guiWindow()
 				m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
 				m_state.resolution = m_resolution;
 				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Reset Radiance Cache"))
+			{
+				m_raytracer->resetRadianceCache();
 				refresh = true;
 			}
 			if (ImGui::InputInt2("Resolution", &m_resolution.x, ImGuiInputTextFlags_EnterReturnsTrue)) // This requires RETURN to apply a new value.
@@ -773,6 +790,10 @@ void Application::guiWindow()
 				refresh = true;
 			}
 	#endif
+			if (ImGui::DragFloat("Mouse Ratio", &m_mouseSpeedRatio, 0.1f, 0.1f, 1000.0f, "%.1f"))
+			{
+				m_camera.setSpeedRatio(m_mouseSpeedRatio);
+			}
 		}
 
 	#if !USE_TIME_VIEW
@@ -999,7 +1020,11 @@ void Application::guiWindow()
 
 	static std::array<float, 256> networkLosses = { 0.f };
 	static int networkLossesOffset = 0;
-
+	if (!m_previousComplete)
+	{
+		networkLosses[networkLossesOffset++] = trainStat.loss;
+		networkLossesOffset %= networkLosses.size();
+	}
 	window_flags = 0;
 	expanded = ImGui::Begin("Stats", nullptr, window_flags);
 	if (expanded)
@@ -1008,7 +1033,7 @@ void Application::guiWindow()
 
 		if (ImGui::CollapsingHeader("Network"))
 		{
-			if (ImGui::DragFloat("Learning rate", &m_state.nrcTrainLearningRate, 1e-4f, 0.0f, 5e-2f, "%.4f"))
+			if (ImGui::DragFloat("Learning rate", &m_state.nrcTrainLearningRate, 1e-4f, 0.0f, 1e-2f, "%.4f"))
 			{
 				m_raytracer->updateStateNoRestart(m_state);
 			}
@@ -1021,12 +1046,6 @@ void Application::guiWindow()
 			ImGui::Text("#Tiles: (%d, %d)", sysDataPf.numTiles, sysDataPf.numTiles);
 			ImGui::Text("#Train records: %d", trainStat.numTrainRecords);
 			ImGui::Text("Loss: %f", trainStat.loss);
-
-			if (!m_previousComplete)
-			{
-				networkLosses[networkLossesOffset++] = trainStat.loss;
-				networkLossesOffset %= networkLosses.size();
-			}
 			ImGui::PlotLines("", networkLosses.data(), networkLosses.size(), networkLossesOffset, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 200));
 		}
 

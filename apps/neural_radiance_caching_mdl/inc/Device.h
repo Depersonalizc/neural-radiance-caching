@@ -337,11 +337,10 @@ struct DeviceState
 	float    clockFactor;
 	int      directLighting;
 
-	// NRC training hyperparams
-	//struct {
+	// NRC related
 	float nrcTrainUnbiasedRatio;
 	float nrcTrainLearningRate;
-	//} nrcHyperParams;
+	nrc::RenderMode nrcRenderMode;
 };
 
 class Device;
@@ -494,6 +493,8 @@ public:
 
 	void initTextureHandler(std::vector<std::unique_ptr<MaterialMDL>>& materialsMDL);
 
+	void resetNRC();
+
 private:
 	OptixResult initFunctionTable();
 	void initDeviceAttributes();
@@ -576,9 +577,12 @@ public:
 	// Host-side copy of NRC Control block.
 	// Device-side is pointed by m_systemData.nrcCB
 	nrc::ControlBlock m_nrcControlBlock;
+
 	nrc::Network      m_nrcNetwork;
 	nrc::HyperParams  m_nrcHyperParams;
 	nrc::TrainingStat m_nrcTrainStat;
+	nrc::RenderMode   m_nrcRenderMode;
+	bool              m_nrcNeedsReset;
 
 	// We only use this for shuffling the NRC training records.
 	curandGenerator_t m_curandGenerator{};

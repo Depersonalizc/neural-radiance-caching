@@ -22,12 +22,7 @@ namespace nrc
 	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
 	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
 	constexpr float TRAIN_UNBIASED_RATIO = 1.f / 16.f;
-	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 8.f;
-	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 4.f;
-	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 2.f;
-	//constexpr float TRAIN_UNBIASED_RATIO = 1.f / 1.f;
-
-	constexpr float TRAIN_LEARNING_RATE = 5e-3f;
+	constexpr float TRAIN_LEARNING_RATE = 1e-3f;
 
 	// Keep track of the ray path for radiance prop
 	struct TrainingRecord
@@ -162,6 +157,17 @@ namespace nrc
 
 		// 4 byte alignment
 		int numTrainingRecords = 0;   // Number of training records generated. Updated per-frame		
+	};
+
+	enum class RenderMode : int
+	{
+		Full,
+		NoCache,
+		CacheOnly,
+		CacheFirstVertex, // TODO: Need new shaders
+		// Debug modes
+		DebugCacheNoThroughputModulation,
+		DebugThroughputOnly
 	};
 
 	//__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)

@@ -895,7 +895,6 @@ extern "C" __global__ void __closesthit__radiance()
 
     //printf("NOT an ABSORB event\n\n\n\n\n");
 
-
     // Handle terminating vertex due to area spread.
     // Can be sure it's not an unbiased train suffix.
     if (terminateAreaSpread) [[unlikely]]

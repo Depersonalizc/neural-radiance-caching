@@ -754,6 +754,13 @@ void Raytracer::updateStateNoRestart(const DeviceState& state)
     }
 }
 
+void Raytracer::resetRadianceCache()
+{
+    auto& mainDeice = m_devicesActive[0];
+    mainDeice->resetNRC();
+    m_iterationIndex = 0; // Restart accumulation.
+}
+
 // The public function which does the multi-GPU wrapping.
 // Returns the count of renderered iterations (m_iterationIndex after it has been incremented).
 unsigned int Raytracer::render(const int mode)
@@ -2708,4 +2715,3 @@ bool Raytracer::isEmissiveShader(const int indexShader) const
 
   return result;
 }
-

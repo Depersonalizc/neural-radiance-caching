@@ -50,7 +50,8 @@ public:
 	
 	void setStream(CUstream stream);
 	void setHyperParams(const HyperParams& hyperParams);
-	
+	void resetModelWeights();
+
 private:
 	// PIMPL idiom to enable #include of this header into pure cpp files
 	struct Impl;

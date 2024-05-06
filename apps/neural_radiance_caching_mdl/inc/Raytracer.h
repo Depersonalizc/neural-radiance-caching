@@ -107,6 +107,8 @@ public:
 
 	bool isEmissiveShader(const int indexShader) const;
 
+	void resetRadianceCache();
+
 private:
 	void selectDevices();
 	int  getDeviceHome(const std::vector<int>& island) const;
