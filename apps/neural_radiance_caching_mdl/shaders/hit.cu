@@ -565,13 +565,18 @@ namespace nrc {
 __forceinline__ __device__ void addQuery(const Mdl_state& mdlState, 
 									     const PerRayData& thePrd, 
 										 const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+                                         bool flipNormal,
 										 /*out:*/ RadianceQuery& radianceQuery)
 {
+    // TODO: Scene normalizing tsfm in sysdata
+    // TODO: Flip normal if back-facing?
+
     radianceQuery.position = mdlState.position;
     radianceQuery.position *= 0.1f;
+    //radianceQuery.position *= 0.01f;
     
-    const auto direction = cartesianToSphericalUnitVector(thePrd.wo);
-    const auto normal = cartesianToSphericalUnitVector(mdlState.normal);
+    const float2 direction = cartesianToSphericalUnitVector(thePrd.wo);
+    const float2 normal    = cartesianToSphericalUnitVector(flipNormal ? -mdlState.normal : mdlState.normal);
 #if USE_COMPACT_RADIANCE_QUERY
     radianceQuery.direction1 = direction.x;
     radianceQuery.direction2 = direction.y;
@@ -593,34 +598,47 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
 
 __forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState, 
 											   const PerRayData& thePrd, 
-											   const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData)
+											   const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+                                               bool flipNormal)
 {
     //printf("added render query\n");
 	auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
-	addQuery(mdlState, thePrd, auxData, renderQuery);
+	addQuery(mdlState, thePrd, auxData, flipNormal, renderQuery);
 }
 
 __forceinline__ __device__ void addTrainQuery(const Mdl_state& mdlState, 
 											  const PerRayData& thePrd, 
 											  const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
-											  int trainRecordIndex)
+                                              bool flipNormal, int trainRecordIndex)
 
 {
     //printf("added train query (for self-train)\n");
 	auto& trainQuery = sysData.nrcCB->bufStatic.radianceQueriesTraining[trainRecordIndex];
-	addQuery(mdlState, thePrd, auxData, trainQuery);
+	addQuery(mdlState, thePrd, auxData, flipNormal, trainQuery);
 }
+
+__forceinline__ __device__ void addCacheVisQuery(const Mdl_state& mdlState, 
+											     const PerRayData& thePrd, 
+											     const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+                                                 bool flipNormal)
+{
+    //printf("added cache vis query\n");
+	auto& cacheVisQuery = sysData.nrcCB->bufDynamic.radianceQueriesCacheVis[thePrd.pixelIndex];
+	addQuery(mdlState, thePrd, auxData, flipNormal, cacheVisQuery);
+}
+
 
 __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlState, 
 														const PerRayData& thePrd, 
-														const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData)
+														const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+                                                        bool flipNormal)
 {
     auto& dynBufs = sysData.nrcCB->bufDynamic;
 
 	// Add an inference query at the end vertex of the train suffix.
     const auto offset = sysData.resolution.x * sysData.resolution.y;
 	auto& query = dynBufs.radianceQueriesInference[offset + thePrd.tileIndex];
-	addQuery(mdlState, thePrd, auxData, query);
+	addQuery(mdlState, thePrd, auxData, flipNormal, query);
 
 	// Add the TrainingSuffixEndVertex
 	auto& endVertex = dynBufs.trainSuffixEndVertices[thePrd.tileIndex];
@@ -868,6 +886,17 @@ extern "C" __global__ void __closesthit__radiance()
     return;
 #endif
 
+    // Record first non-specular vertex if we haven't
+    const bool eventIsSpecular = (thePrd->eventType & mi::neuraylib::BSDF_EVENT_SPECULAR);
+    const bool recordedFirstVertex = (thePrd->flags & FLAG_RECORDED_FIRST_VERTEX);
+    if (!recordedFirstVertex && !eventIsSpecular) [[unlikely]]
+    {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+        nrc::addCacheVisQuery(state, *thePrd, aux_data, !isFrontFace);
+        thePrd->flags |= FLAG_RECORDED_FIRST_VERTEX;
+    }
+
     // Early unbiased termination.
     if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
     {
@@ -876,7 +905,7 @@ extern "C" __global__ void __closesthit__radiance()
         {
             // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
-            nrc::addRenderQuery(state, *thePrd, aux_data);
+            //nrc::addRenderQuery(state, *thePrd, aux_data);
 
             // No radiance will be added because the ray has been absorbed.
             thePrd->lastRenderThroughput = make_float3(0.f);
@@ -908,7 +937,7 @@ extern "C" __global__ void __closesthit__radiance()
             {
                 // Terminate the train suffix by self-training.
                 // Add a query for this *tile* to (the training part of) radianceQueriesInference
-                nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
+                nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
 
                 thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                 return;
@@ -916,7 +945,7 @@ extern "C" __global__ void __closesthit__radiance()
             else // Case 2: End of rendering path
             {
                 // Add a (rendering) query for this *pixel*.
-                nrc::addRenderQuery(state, *thePrd, aux_data);
+                nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
                 // Store the last rendering throughput to accumulate the query by. 
                 thePrd->lastRenderThroughput = throughput;
@@ -937,7 +966,7 @@ extern "C" __global__ void __closesthit__radiance()
         else // Pure rendering ray ends
         {
             // Add a (rendering) query for this *pixel*.
-            nrc::addRenderQuery(state, *thePrd, aux_data);
+            nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
             // Store the last rendering throughput to accumulate the query by. Then terminate.
             thePrd->lastRenderThroughput = throughput;
@@ -978,7 +1007,7 @@ extern "C" __global__ void __closesthit__radiance()
             *trainTargetRadiance = make_float3(0.f);
 
             // Add a training query with (unencoded) inputs to NRC network
-            nrc::addTrainQuery(state, *thePrd, aux_data, trainRecordIndex);
+            nrc::addTrainQuery(state, *thePrd, aux_data, !isFrontFace, trainRecordIndex);
 
             // Used for radiance prop and for next (potential) 
             // emissive hit/env miss to accumulate BSDF-sampling MIS radiance.
@@ -991,7 +1020,7 @@ extern "C" __global__ void __closesthit__radiance()
 
             // Terminate the train suffix by self-training.
             // Add a query for this *tile* to (the training part of) radianceQueriesInference
-            nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
+            nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
 
             // If the rendering path has been completed already, we can terminate.
             if (isTrainSuffix)
@@ -1185,6 +1214,16 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     return;
 #endif
 
+    const bool eventIsSpecular = (thePrd->eventType & mi::neuraylib::BSDF_EVENT_SPECULAR);
+    const bool recordedFirstVertex = (thePrd->flags & FLAG_RECORDED_FIRST_VERTEX);
+    if (!recordedFirstVertex && !eventIsSpecular) [[unlikely]]
+    {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+        nrc::addCacheVisQuery(state, *thePrd, aux_data, !isFrontFace);
+        thePrd->flags |= FLAG_RECORDED_FIRST_VERTEX;
+    }
+
     // Early unbiased termination.
     if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
     {
@@ -1193,7 +1232,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         {
             // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
-            nrc::addRenderQuery(state, *thePrd, aux_data);
+            //nrc::addRenderQuery(state, *thePrd, aux_data);
 
             // No radiance will be added because the ray has been absorbed.
             thePrd->lastRenderThroughput = make_float3(0.f);
@@ -1209,16 +1248,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
         return;
     }
-
-    // DEBUG: Remove later!!!
-#if 0
-    {
-        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
-                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
-        nrc::addRenderQuery(state, *thePrd, aux_data);
-        thePrd->lastRenderThroughput = make_float3(1.f);
-    }
-#endif
     
     // Handle terminating vertex due to area spread.
     // Can be sure it's not an unbiased train suffix.
@@ -1233,7 +1262,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             {
                 // Terminate the train suffix by self-training.
                 // Add a query for this *tile* to (the training part of) radianceQueriesInference
-                nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
+                nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
 
                 thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                 return;
@@ -1241,7 +1270,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             else // Case 2: End of rendering path
             {
                 // Add a (rendering) query for this *pixel*.
-                nrc::addRenderQuery(state, *thePrd, aux_data);
+                nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
                 // Store the last rendering throughput to accumulate the query by. 
                 thePrd->lastRenderThroughput = throughput;
@@ -1262,7 +1291,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         else // Pure rendering ray ends
         {
             // Add a (rendering) query for this *pixel*.
-            nrc::addRenderQuery(state, *thePrd, aux_data);
+            nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
             // Store the last rendering throughput to accumulate the query by. Then terminate.
             thePrd->lastRenderThroughput = throughput;
@@ -1303,7 +1332,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             *trainTargetRadiance = make_float3(0.f);
 
             // Add a training query with (unencoded) inputs to NRC network
-            nrc::addTrainQuery(state, *thePrd, aux_data, trainRecordIndex);
+            nrc::addTrainQuery(state, *thePrd, aux_data, !isFrontFace, trainRecordIndex);
 
             // Used for radiance prop and for next (potential) 
             // emissive hit/env miss to accumulate BSDF-sampling MIS radiance.
@@ -1316,7 +1345,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
             // Terminate the train suffix by self-training.
             // Add a query for this *tile* to (the training part of) radianceQueriesInference
-            nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data);
+            nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
 
             // If the rendering path has been completed already, we can terminate.
             if (isTrainSuffix)
@@ -1370,6 +1399,12 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     }
 }
 
+// Shader for visualizing the radiance cache at the first non-specular vertex.
+// Record the query at the first non-specular vertex. Then terminate.
+extern "C" __global__ void __closesthit__cachevis()
+{
+    // TODO
+}
 
 // The anyhit program for the radiance ray for all materials with cutout opacity.
 // Stocastically continue the ray (passes through), or otherwise go to CH.
