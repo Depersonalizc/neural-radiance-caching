@@ -111,4 +111,6 @@
 // 1 == Split float2's to compactify radiance queries.
 #define USE_COMPACT_RADIANCE_QUERY 1
 
+#define USE_HASH_ENCODING 1
+
 #endif // CONFIG_H

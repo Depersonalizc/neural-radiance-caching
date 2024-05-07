@@ -22,7 +22,12 @@ namespace nrc
 	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
 	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
 	constexpr float TRAIN_UNBIASED_RATIO = 1.f / 16.f;
+
+#if USE_HASH_ENCODING
+	constexpr float TRAIN_LEARNING_RATE = 1e-2f;
+#else
 	constexpr float TRAIN_LEARNING_RATE = 1e-3f;
+#endif
 
 	// Keep track of the ray path for radiance prop
 	struct TrainingRecord

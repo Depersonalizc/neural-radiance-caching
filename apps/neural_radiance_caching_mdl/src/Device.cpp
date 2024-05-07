@@ -808,7 +808,7 @@ void Device::initPipeline()
 
 void Device::adjustTileSize(int numTrainRecords)
 {
-	const auto ratio = static_cast<float>(numTrainRecords * 1.5f) 
+	const auto ratio = static_cast<float>(numTrainRecords * 1.25f) 
 					 / static_cast<float>(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 	const auto r = std::sqrtf(ratio);
 	
@@ -2290,11 +2290,7 @@ void Device::render(const unsigned int iterationIndex,
 		// Infer
 		m_nrcNetwork.infer(flatten(m_nrcControlBlock.bufDynamic.radianceQueriesCacheVis), 
 						   flatten(m_nrcControlBlock.bufDynamic.radianceResultsCacheVis), screenSize);
-		//// Copy the data over to the output buffer
-		//CUDA_CHECK(cudaMemcpy2DAsync(reinterpret_cast<void*>(m_systemData.outputBuffer), sizeof(float4),
-		//							m_nrcControlBlock.bufDynamic.radianceResultsCacheVis, sizeof(float3),
-		//							sizeof(float), screenSize, cudaMemcpyDeviceToDevice, m_cudaStream));
-		
+		// Copy the data over to the output buffer
 		void* args[] = { /*float3 *radiance */ &m_nrcControlBlock.bufDynamic.radianceResultsCacheVis };
 
 		cfg.blockDimY = m_fnCopyRadianceToOutputBufferBlockSize / cfg.blockDimX;
@@ -2305,7 +2301,6 @@ void Device::render(const unsigned int iterationIndex,
 			   && cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnCopyRadianceToOutputBuffer, args, nullptr));
-
 	}
 
 	// Training

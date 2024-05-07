@@ -565,7 +565,9 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
     // TODO: Scene normalizing tsfm in sysdata
 
     radianceQuery.position = mdlState.position;
-    radianceQuery.position *= 0.05f;
+    //radianceQuery.position *= 0.05f; // Cornell
+    radianceQuery.position *= 0.005f; // Cornell
+    //radianceQuery.position *= 0.005f;
     //radianceQuery.position *= 0.01f;
     
     const float2 direction = cartesianToSphericalUnitVector(thePrd.wo);

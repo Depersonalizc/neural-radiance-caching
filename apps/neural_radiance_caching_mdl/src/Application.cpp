@@ -697,12 +697,15 @@ void Application::guiWindow()
 			{
 				// No action needed, happens automatically on next render invocation.
 			}
-			//if (ImGui::Checkbox("Direct Lighting", &m_useDirectLighting))
-			//{
-			//	m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
-			//	m_raytracer->updateState(m_state);
-			//	refresh = true;
-			//}
+			// Don't allow disabling direct lighting, since NRC relies on it.
+#if 0
+			if (ImGui::Checkbox("Direct Lighting", &m_useDirectLighting))
+			{
+				m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+#endif
 			if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
 			{
 				if (ImGui::DragFloat3("Environment Rotation", m_rotationEnvironment, 1.0f, 0.0f, 360.0f))
