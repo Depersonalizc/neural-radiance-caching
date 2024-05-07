@@ -110,6 +110,36 @@
   } \
 }
 
+#define CUDA_CHECK(call) \
+{ \
+  const cudaError_t error = call; \
+  if (error != cudaSuccess) \
+  { \
+    const char* error_name; \
+    error_name = cudaGetErrorName(error); \
+    const char *error_str; \
+    error_str = cudaGetErrorString(error); \
+    std::ostringstream message; \
+    message << "ERROR: " << __FILE__ << "(" << __LINE__ << "): " << #call << " (" << error << ") " << error_name << ": " << error_str; \
+    MY_ASSERT(!"CUDA_CHECK"); \
+    throw std::runtime_error(message.str()); \
+  } \
+}
+
+#define CUDA_CHECK_NOTHROW(call) \
+{ \
+  const cudaError_t error = call; \
+  if (error != cudaSuccess) \
+  { \
+    const char* error_name; \
+    error_name = cudaGetErrorName(error); \
+    const char *error_str; \
+    error_str = cudaGetErrorString(error); \
+    std::ostringstream message; \
+    message << "ERROR: " << __FILE__ << "(" << __LINE__ << "): " << #call << " (" << error << ") " << error_name << ": " << error_str; \
+    MY_ASSERT(!"CUDA_CHECK"); \
+  } \
+}
 
 
 #endif // CHECK_MACROS_H

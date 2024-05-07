@@ -46,6 +46,9 @@ void Network::train(float* batchInputs_d, float* batchTargets_d, float* loss_h)
 	using namespace tcnn;
 	auto& trainer = pImpl->model.trainer;
 
+	static_assert(BATCH_SIZE % BATCH_SIZE_GRANULARITY == 0 && 
+		"Training batch size is not a multiple of tcnn::BATCH_SIZE_GRANULARITY");
+
 	const GPUMatrix_t inputs { batchInputs_d,  NN_INPUT_DIMS,  BATCH_SIZE };
 	const GPUMatrix_t targets{ batchTargets_d, NN_OUTPUT_DIMS, BATCH_SIZE };
 	auto ctx = trainer->training_step(m_stream, inputs, targets);

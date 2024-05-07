@@ -150,6 +150,11 @@ namespace nrc
 
 		float3 *lastRenderThroughput = nullptr; // #pixels
 
+		// Queries at the first non-specular vertices. Used to visualize the radiance cache as is.
+		// #pixels
+		RadianceQuery *radianceQueriesCacheVis = nullptr;
+		float3        *radianceResultsCacheVis = nullptr;
+
 		// End of all training suffixes
 		TrainingSuffixEndVertex *trainSuffixEndVertices = nullptr; // #tiles. Capacity is ~.25*#pixels
 		

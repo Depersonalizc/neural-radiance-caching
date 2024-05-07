@@ -690,6 +690,7 @@ void Device::loadNativeModules()
 	}
 
 	// Get handles to the helper functions
+	CU_CHECK(cuModuleGetFunction(&m_fnCopyRadianceToOutputBuffer, m_moduleNRCHelpers, "copy_radiance_to_output_buffer"));
 	CU_CHECK(cuModuleGetFunction(&m_fnAccumulateRenderRadiance, m_moduleNRCHelpers, "accumulate_render_radiance"));
 	CU_CHECK(cuModuleGetFunction(&m_fnPropagateTrainRadiance, m_moduleNRCHelpers, "propagate_train_radiance"));
 	CU_CHECK(cuModuleGetFunction(&m_fnPermuteTrainData, m_moduleNRCHelpers, "permute_train_data"));
@@ -697,6 +698,7 @@ void Device::loadNativeModules()
 	// Compute a good block size for each helper
 	int minGridSize;
 	auto b2dZeroFn = [](int blockSize) { return size_t{ 0 }; };
+	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnCopyRadianceToOutputBufferBlockSize, m_fnCopyRadianceToOutputBuffer, b2dZeroFn, 0, 0));
 	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnAccumulateRenderRadianceBlockSize, m_fnAccumulateRenderRadiance, b2dZeroFn, 0, 0));
 	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnPropagateTrainRadianceBlockSize, m_fnPropagateTrainRadiance, b2dZeroFn, 0, 0));
 	CU_CHECK(cuOccupancyMaxPotentialBlockSize(&minGridSize, &m_fnPermuteTrainDataBlockSize, m_fnPermuteTrainData, b2dZeroFn, 0, 0));
@@ -1211,6 +1213,17 @@ void Device::resizeNRC()
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.lastRenderThroughput));
 	dynBufs.lastRenderThroughput = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * numPixels, alignof(float3)/*64*/));
+
+	// dynBufs
+	// .radianceQueriesCacheVis
+	// .radianceResultsCacheVis (#pixels)
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceQueriesCacheVis));
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceResultsCacheVis));
+	
+	dynBufs.radianceQueriesCacheVis = reinterpret_cast<RadianceQuery*>(
+		memAlloc(sizeof(RadianceQuery) * numPixels, /*alignof(RadianceQuery)*/64));
+	dynBufs.radianceResultsCacheVis = reinterpret_cast<float3*>(
+		memAlloc(sizeof(float3) * numPixels, /*alignof(float3)*/64));
 
 	// dynBufs
 	// .radianceQueriesInference
@@ -2198,7 +2211,11 @@ void Device::render(const unsigned int iterationIndex,
 #define KERN_PROP  1
 #define KERN_SHUFFLE 1
 
+	using nrc::RenderMode;
+
 	auto flatten = [](auto pdata) { return reinterpret_cast<float*>(pdata); };
+	const bool skipRenderCache = (m_nrcRenderMode == RenderMode::NoCache) ||
+						         (m_nrcRenderMode == RenderMode::CacheFirstVertex);
 
 #if TCNN_INFER
 	// [TCNN Inference]
@@ -2210,24 +2227,27 @@ void Device::render(const unsigned int iterationIndex,
 	// INPUT : radianceQueriesInference[#pixels + #tiles]
 	// OUTPUT: radianceResultsInference[#pixels + #tiles]
 	{
-		const auto numQueries = screenSize + numTiles;
+		auto numQueries = screenSize + numTiles;
+		auto queries = m_nrcControlBlock.bufDynamic.radianceQueriesInference;
+		auto results = m_nrcControlBlock.bufDynamic.radianceResultsInference;
+		
+		// Skip rendering queries if we don't need them
+		if (skipRenderCache)
+		{
+			queries += screenSize;
+			results += screenSize;
+			numQueries = numTiles;
+		}
 
-		m_nrcNetwork.infer(flatten(m_nrcControlBlock.bufDynamic.radianceQueriesInference), // INPUT
-						   flatten(m_nrcControlBlock.bufDynamic.radianceResultsInference), // OUTPUT
-						   numQueries);
+		m_nrcNetwork.infer(flatten(queries), flatten(results), numQueries);
 
 		// DEBUG: Inspect inferred radiance
 #if 0
 		std::vector<nrc::RadianceQuery> queries(numQueries);
 		std::vector<float3> results(numQueries);
 
-		CU_CHECK(cuMemcpyDtoHAsync(queries.data(), 
-			reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufDynamic.radianceQueriesInference), 
-			sizeof(nrc::RadianceQuery) * numQueries, m_cudaStream));
-
-		CU_CHECK(cuMemcpyDtoHAsync(results.data(),
-			reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufDynamic.radianceResultsInference),
-			sizeof(float3) * numQueries, m_cudaStream));
+		CU_CHECK(cuMemcpyDtoHAsync(queries.data(), reinterpret_cast<CUdeviceptr>(queries), sizeof(nrc::RadianceQuery) * numQueries, m_cudaStream));
+		CU_CHECK(cuMemcpyDtoHAsync(results.data(), reinterpret_cast<CUdeviceptr>(results), sizeof(float3) * numQueries, m_cudaStream));
 
 		synchronizeStream();
 
@@ -2247,6 +2267,7 @@ void Device::render(const unsigned int iterationIndex,
 	// INPUT : radianceResultsInference[:#pixels]
 	//         lastRenderThroughput[:#pixels]
 	// OUTPUT: m_systemData.outputBuffer[#pixels] (+=)
+	if (!skipRenderCache)
 	{
 		void* args[] = { /*float3 *endRenderRadiance   */ &m_nrcControlBlock.bufDynamic.radianceResultsInference,
 						 /*float3 *endRenderThroughput */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput,
@@ -2262,6 +2283,30 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnAccumulateRenderRadiance, args, nullptr));
 	}
 #endif
+
+	// Radiance vis @ first non-specual vertex
+	if (m_nrcRenderMode == RenderMode::CacheFirstVertex)
+	{
+		// Infer
+		m_nrcNetwork.infer(flatten(m_nrcControlBlock.bufDynamic.radianceQueriesCacheVis), 
+						   flatten(m_nrcControlBlock.bufDynamic.radianceResultsCacheVis), screenSize);
+		//// Copy the data over to the output buffer
+		//CUDA_CHECK(cudaMemcpy2DAsync(reinterpret_cast<void*>(m_systemData.outputBuffer), sizeof(float4),
+		//							m_nrcControlBlock.bufDynamic.radianceResultsCacheVis, sizeof(float3),
+		//							sizeof(float), screenSize, cudaMemcpyDeviceToDevice, m_cudaStream));
+		
+		void* args[] = { /*float3 *radiance */ &m_nrcControlBlock.bufDynamic.radianceResultsCacheVis };
+
+		cfg.blockDimY = m_fnCopyRadianceToOutputBufferBlockSize / cfg.blockDimX;
+		cfg.gridDimX  = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
+		cfg.gridDimY  = (m_systemData.resolution.y + cfg.blockDimY - 1) / cfg.blockDimY;
+		
+		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
+			   && cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+
+		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnCopyRadianceToOutputBuffer, args, nullptr));
+
+	}
 
 	// Training
 	m_nrcTrainStat.loss = 0.f;
@@ -2315,7 +2360,7 @@ void Device::render(const unsigned int iterationIndex,
 		// DEBUG: Inspect the shuffled indices
 		std::array<int, nrc::NUM_TRAINING_RECORDS_PER_FRAME> keys;
 		CU_CHECK(cuMemcpyDtoH(keys.data(), reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(1)), sizeof(keys)));
-		keys = {};
+		keys;
 #endif
 
 		// At this point trainingRecordIndices.buffer(1) contains the shuffled indices.
@@ -2340,7 +2385,7 @@ void Device::render(const unsigned int iterationIndex,
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPermuteTrainData, args, nullptr));
 		}
 
-		// At this point, all training data is ready
+		// At this point, all training data is ready:
 		const auto queriesShuffled = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1);
 		const auto targetsShuffled = m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(1);
 
@@ -2361,6 +2406,7 @@ void Device::render(const unsigned int iterationIndex,
 		queries; targets;
 		}
 #endif
+
 #if TCNN_TRAIN
 		// [TCNN Training]
 		// INPUT: radianceQueriesTraining[65536], trainingRadianceTargets[65536]

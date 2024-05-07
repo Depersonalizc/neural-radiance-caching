@@ -50,12 +50,14 @@
 #define FLAG_VOLUME_SCATTERING_MISS 0x00000040
 
 /* Persistent flags */
-#define FLAG_TRAIN          0x01000000
+#define FLAG_TRAIN                 0x01000000
 // Set for training ray once past the short rendering path
-#define FLAG_TRAIN_SUFFIX   0x02000000
+#define FLAG_TRAIN_SUFFIX          0x02000000
 // Set if the training ray should be terminated with RR
-#define FLAG_TRAIN_UNBIASED 0x04000000
-#define FLAG_DEBUG          0x80000000
+#define FLAG_TRAIN_UNBIASED        0x04000000
+// Set once we've recorded the first non-specular vertex
+#define FLAG_RECORDED_FIRST_VERTEX 0x08000000
+#define FLAG_DEBUG                 0x80000000
 
 // Changed every hit
 #define FLAG_MASK_TRANSIENT  0x00ffffff

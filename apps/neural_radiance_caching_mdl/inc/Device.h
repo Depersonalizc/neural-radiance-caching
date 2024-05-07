@@ -577,7 +577,6 @@ public:
 	// Host-side copy of NRC Control block.
 	// Device-side is pointed by m_systemData.nrcCB
 	nrc::ControlBlock m_nrcControlBlock;
-
 	nrc::Network      m_nrcNetwork;
 	nrc::HyperParams  m_nrcHyperParams;
 	nrc::TrainingStat m_nrcTrainStat;
@@ -630,10 +629,12 @@ public:
 
 	// A single module contains all the helper functions below.
 	CUmodule    m_moduleNRCHelpers{};
-	CUfunction  m_fnAccumulateRenderRadiance{},
+	CUfunction  m_fnCopyRadianceToOutputBuffer{},
+				m_fnAccumulateRenderRadiance{},
 				m_fnPropagateTrainRadiance{},
 				m_fnPermuteTrainData{};
-	int         m_fnAccumulateRenderRadianceBlockSize,
+	int         m_fnCopyRadianceToOutputBufferBlockSize,
+				m_fnAccumulateRenderRadianceBlockSize,
 			    m_fnPropagateTrainRadianceBlockSize,
 				m_fnPermuteTrainDataBlockSize;
 
