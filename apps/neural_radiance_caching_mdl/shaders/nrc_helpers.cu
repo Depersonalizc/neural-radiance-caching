@@ -52,11 +52,7 @@ extern "C" __global__ void copy_radiance_to_output_buffer(float3 *radiance)
 
 	const unsigned int index = launchIndex.y * sysData.resolution.x + launchIndex.x; // Pixel index
 	const auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
-	
-	//buffer[index] = float4{ 0.f, 0.f, 0.f, 1.0f };
-	//buffer[index].x = radiance[index].x;
-	//buffer[index].y = radiance[index].y;
-	//buffer[index].z = radiance[index].z;
+
 	buffer[index] = make_float4(radiance[index], 1.0f);
 }
 

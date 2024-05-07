@@ -58,17 +58,12 @@
 // It only needs this Shading_state_materialy structure without derivatives support.
 using Mdl_state = mi::neuraylib::Shading_state_material;
 
+using BSDFSampleData    = mi::neuraylib::Bsdf_sample_data;
+using BSDFEvaluateData  = mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE>;
+using BSDFAuxiliaryData = mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE>;
 
-// DEBUG Helper code.
-//uint3 theLaunchIndex = optixGetLaunchIndex();
-//if (theLaunchIndex.x == 256 && theLaunchIndex.y == 256)
-//{
-//  printf("value = %f\n", value);
-//}
-
-//thePrd->radiance += make_float3(value);
-//thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-//return;
+static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
+                                           | mi::neuraylib::BSDF_EVENT_GLOSSY;
 
 extern "C" __constant__ SystemData sysData;
 
@@ -298,13 +293,13 @@ float getGeometryCutoutOpacity(const DeviceShaderConfiguration& shaderConfig,
 }
 
 __forceinline__ __device__
-mi::neuraylib::Bsdf_sample_data importanceSampleBSDF(const Mdl_state& mdlState,
+BSDFSampleData importanceSampleBSDF(const Mdl_state& mdlState,
                                                      const mi::neuraylib::Resource_data& resourceData,
                                                      CUdeviceptr materialArgBlock,
                                                      int idxCallScatteringSample, 
                                                      PerRayData& thePrd, bool isFrontFace, bool isThinWalled, const float3 &ior)
 {
-    mi::neuraylib::Bsdf_sample_data sampleData;
+    BSDFSampleData sampleData;
 
     int idx = thePrd.idxStack;
 
@@ -360,7 +355,7 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
         return make_float3(0.0f);
     }
 
-    mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
+    BSDFEvaluateData eval_data;
 
     // Evaluate the BSDF in the direction of the light sample
     {
@@ -433,7 +428,7 @@ __forceinline__ __device__ void getBSDFAuxiliaryData(const Mdl_state& mdlState,
                                                      int idxCallAuxiliarySample, 
                                                      PerRayData& thePrd, bool isFrontFace, bool isThinWalled, const float3& ior,
                                                      /*inout: */ bool &queried,
-                                                     /*out:   */ mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE>& auxData)
+                                                     /*out:   */ BSDFAuxiliaryData& auxData)
 {
     if (queried)
     {
@@ -507,7 +502,7 @@ __forceinline__ __device__ void updatePrdMaterialStackAtTransmitBoundary(const D
     thePrd.walk = 0; // Reset the number of random walk steps taken when crossing any volume boundary.
 }
 
-// Update area spread and decide whether to terminate the rendering ray.
+// Update the area spread and decide whether to terminate the rendering ray.
 __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, PerRayData& thePrd)
 {
     bool terminate = false;
@@ -559,20 +554,18 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
 
 }
 
-#if 1
 namespace nrc {
 
 __forceinline__ __device__ void addQuery(const Mdl_state& mdlState, 
 									     const PerRayData& thePrd, 
-										 const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+										 const BSDFAuxiliaryData &auxData,
                                          bool flipNormal,
 										 /*out:*/ RadianceQuery& radianceQuery)
 {
     // TODO: Scene normalizing tsfm in sysdata
-    // TODO: Flip normal if back-facing?
 
     radianceQuery.position = mdlState.position;
-    radianceQuery.position *= 0.1f;
+    radianceQuery.position *= 0.05f;
     //radianceQuery.position *= 0.01f;
     
     const float2 direction = cartesianToSphericalUnitVector(thePrd.wo);
@@ -598,31 +591,28 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
 
 __forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState, 
 											   const PerRayData& thePrd, 
-											   const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+											   const BSDFAuxiliaryData &auxData,
                                                bool flipNormal)
 {
-    //printf("added render query\n");
 	auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
 	addQuery(mdlState, thePrd, auxData, flipNormal, renderQuery);
 }
 
 __forceinline__ __device__ void addTrainQuery(const Mdl_state& mdlState, 
 											  const PerRayData& thePrd, 
-											  const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+											  const BSDFAuxiliaryData &auxData,
                                               bool flipNormal, int trainRecordIndex)
 
 {
-    //printf("added train query (for self-train)\n");
 	auto& trainQuery = sysData.nrcCB->bufStatic.radianceQueriesTraining[trainRecordIndex];
 	addQuery(mdlState, thePrd, auxData, flipNormal, trainQuery);
 }
 
 __forceinline__ __device__ void addCacheVisQuery(const Mdl_state& mdlState, 
 											     const PerRayData& thePrd, 
-											     const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+											     const BSDFAuxiliaryData &auxData,
                                                  bool flipNormal)
 {
-    //printf("added cache vis query\n");
 	auto& cacheVisQuery = sysData.nrcCB->bufDynamic.radianceQueriesCacheVis[thePrd.pixelIndex];
 	addQuery(mdlState, thePrd, auxData, flipNormal, cacheVisQuery);
 }
@@ -630,7 +620,7 @@ __forceinline__ __device__ void addCacheVisQuery(const Mdl_state& mdlState,
 
 __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlState, 
 														const PerRayData& thePrd, 
-														const mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> &auxData,
+														const BSDFAuxiliaryData &auxData,
                                                         bool flipNormal)
 {
     auto& dynBufs = sysData.nrcCB->bufDynamic;
@@ -668,7 +658,6 @@ __forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
 }
 
 }
-#endif
 
 // This shader handles every supported feature of the renderer.
 extern "C" __global__ void __closesthit__radiance()
@@ -797,8 +786,6 @@ extern "C" __global__ void __closesthit__radiance()
                 // If the last event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
                 // Note that we don't need to multiply by numLights here because this light 
                 // doesn't have to match the previous one sampled for direct lighting estimation
-                static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE
-                                                           | mi::neuraylib::BSDF_EVENT_GLOSSY;
                 const auto eventWasNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
                 if (sysData.directLighting && eventWasNonDirac)
                 {
@@ -848,7 +835,7 @@ extern "C" __global__ void __closesthit__radiance()
 
     // Auxiliary material properties (albedos, roughness) if we need it.
     // If scattering fn doesn't exist, just use the default Bsdf_auxiliary_data.
-    mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> aux_data{};
+    BSDFAuxiliaryData aux_data{};
     bool queriedAuxData = !scatteringFnExists;
 
     // Importance sample the BSDF.
@@ -976,13 +963,10 @@ extern "C" __global__ void __closesthit__radiance()
         }
     }
 
-    static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
-                                               | mi::neuraylib::BSDF_EVENT_GLOSSY;
     const auto eventIsNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
 
     // Try to atomically allocate a training record if we're training
     // ... and previous hits haven't reported a full buffer.
-    //nrc::TrainingRecord* trainRecord = nullptr;
     float3* trainTargetRadiance = nullptr;
     const auto doAllocateTrainRecord = isTrain 
                                     && eventIsNonDirac 
@@ -1176,7 +1160,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
     // Auxiliary material properties (albedos, roughness) if we need it.
     // If scattering fn doesn't exist, just use the default Bsdf_auxiliary_data.
-    mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE> aux_data;
+    BSDFAuxiliaryData aux_data{};
     bool queriedAuxData = !scatteringFnExists;
 
     // Importance sample the BSDF.
@@ -1301,9 +1285,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         }
     }
 
-
-    static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
-                                               | mi::neuraylib::BSDF_EVENT_GLOSSY;
     const auto eventIsNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
 
     // Try to atomically allocate a training record if we're training
@@ -1835,7 +1816,7 @@ extern "C" __global__ void __closesthit__curves()
     // Importance sample the hair BSDF. 
     if (0 <= shaderConfiguration.idxCallHairSample)
     {
-        mi::neuraylib::Bsdf_sample_data sample_data;
+        BSDFSampleData sample_data;
 
         int idx = thePrd->idxStack;
 
@@ -1876,7 +1857,7 @@ extern "C" __global__ void __closesthit__curves()
 
         if (0.0f < lightSample.pdf && 0 <= shaderConfiguration.idxCallHairEval) // Useful light sample and valid shader?
         {
-            mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
+            BSDFEvaluateData eval_data;
 
             int idx = thePrd->idxStack;
 
