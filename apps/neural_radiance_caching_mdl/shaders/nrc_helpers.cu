@@ -173,7 +173,7 @@ extern "C" __global__ void permute_train_data(nrc::DoubleBuffer<nrc::RadianceQue
 
 	// Modulo this to duplicate training data in case RT undersampled.
 	const auto numRecords = min(sysData.nrcCB->numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
-	if (numRecords <= 0) return;
+	if (numRecords <= 0) [[unlikely]] return;
 
 	const auto queriesSrc = trainRadianceQueries.getBuffer(0);
 	const auto queriesDst = trainRadianceQueries.getBuffer(1);

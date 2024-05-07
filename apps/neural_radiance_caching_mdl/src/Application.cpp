@@ -685,6 +685,8 @@ void Application::guiWindow()
 				ImGui::RadioButton("No Cache", mode_p, static_cast<int>(RenderMode::NoCache)); ImGui::SameLine();
 				ImGui::RadioButton("Only Cache", mode_p, static_cast<int>(RenderMode::CacheOnly)); ImGui::SameLine();
 				ImGui::RadioButton("First Vertex Cache", mode_p, static_cast<int>(RenderMode::CacheFirstVertex));
+				ImGui::RadioButton("(D) cache no thruput modulation", mode_p, static_cast<int>(RenderMode::DebugCacheNoThroughputModulation)); ImGui::SameLine();
+				ImGui::RadioButton("(D) throughput", mode_p, static_cast<int>(RenderMode::DebugThroughputOnly)); ImGui::SameLine();
 				if (m_state.nrcRenderMode != oldMode)
 				{
 					m_raytracer->updateState(m_state);

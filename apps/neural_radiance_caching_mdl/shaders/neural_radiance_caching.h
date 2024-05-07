@@ -129,6 +129,7 @@ namespace nrc
 		
 		void *tempStorage = nullptr; // Temporary storage for cub::DeviceRadixSort
 		size_t tempStorageBytes = 0;
+		
 		} bufStatic;
 
 		struct DynamicBuffers {
