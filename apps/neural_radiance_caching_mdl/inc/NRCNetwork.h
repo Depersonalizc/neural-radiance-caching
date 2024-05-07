@@ -1,7 +1,7 @@
 #include "shaders/config.h"
-#include <cuda.h>
-//#include "shaders/neural_radiance_caching.h"
+#include "shaders/neural_radiance_caching.h"
 
+#include <cuda.h>
 #include <memory>
 
 namespace nrc {
@@ -23,20 +23,20 @@ public:
 	~Network(); // = default. Defined in source where Impl is complete.
 
 	template <bool Verbose = false>
-	void init(CUstream stream)
+	void init(CUstream stream, nrc::InputEncoding encoding)
 	{
 		if constexpr (Verbose)
 			printConfig_();
-		init_(stream);
+		init_(stream, encoding);
 	}
 
-	template <bool Verbose = false>
-	void init(CUstream stream, float lr, float emaDecay = 0.99f)
-	{
-		if constexpr (Verbose)
-			printConfig_();
-		init_(stream, lr, emaDecay);
-	}
+	//template <bool Verbose = false>
+	//void init(CUstream stream, float lr, float emaDecay = 0.99f)
+	//{
+	//	if constexpr (Verbose)
+	//		printConfig_();
+	//	init_(stream, lr, emaDecay);
+	//}
 
 	void destroy();
 
@@ -50,7 +50,10 @@ public:
 	
 	void setStream(CUstream stream);
 	void setHyperParams(const HyperParams& hyperParams);
-	void resetModelWeights();
+	void setConfig(InputEncoding encoding);
+	//void resetModel();
+
+	float getLearningRate() const;
 
 private:
 	// PIMPL idiom to enable #include of this header into pure cpp files
@@ -60,8 +63,8 @@ private:
 	CUstream m_stream{};
 	bool m_destroyed{ false };
 
-	void init_(CUstream stream);
-	void init_(CUstream stream, float lr, float emaDecay = 0.99f);
+	void init_(CUstream stream, nrc::InputEncoding encoding);
+	//void init_(CUstream stream, float lr, float emaDecay = 0.99f);
 	void printConfig_() const;
 };
 

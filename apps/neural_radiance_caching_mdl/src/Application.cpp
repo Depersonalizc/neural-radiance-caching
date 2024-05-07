@@ -341,8 +341,9 @@ Application::Application(GLFWwindow* window, const Options& options)
 		m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
 		m_state.nrcTrainUnbiasedRatio = nrc::TRAIN_UNBIASED_RATIO;
 
-		m_state.nrcTrainLearningRate = nrc::TRAIN_LEARNING_RATE;
-		m_state.nrcRenderMode = nrc::RenderMode::Full;
+		m_state.nrcRenderMode         = nrc::RenderMode::Full;
+		m_state.nrcInputEncoding      = nrc::InputEncoding::Frequency;
+		m_state.nrcTrainLearningRate  = nrc::TRAIN_LR(m_state.nrcInputEncoding);
 
 		// Sync the state with the default GUI data.
 		m_raytracer->initState(m_state);
@@ -706,6 +707,34 @@ void Application::guiWindow()
 				refresh = true;
 			}
 #endif
+			// NRC input encoding
+			if (ImGui::Combo("Input Encoding", reinterpret_cast<int*>(&m_state.nrcInputEncoding), "Frequency (NeRF)\0Hash (Instant-NGP)\0\0"))
+			{
+				// Also Update the hyperparam (lr) to the deafult for the new encoding
+				// Triggers a hyper param update in Device.
+				m_state.nrcTrainLearningRate = nrc::TRAIN_LR(m_state.nrcInputEncoding);
+
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			if (ImGui::Button("Match Resolution"))
+			{
+				// Match the rendering resolution to the current client window size.
+				m_resolution.x = std::max(2, m_width);
+				m_resolution.y = std::max(2, m_height);
+
+				m_camera.setResolution(m_resolution.x, m_resolution.y);
+				m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
+				m_state.resolution = m_resolution;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Reset Radiance Cache"))
+			{
+				m_raytracer->resetRadianceCache();
+				refresh = true;
+			}
 			if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
 			{
 				if (ImGui::DragFloat3("Environment Rotation", m_rotationEnvironment, 1.0f, 0.0f, 360.0f))
@@ -731,24 +760,6 @@ void Application::guiWindow()
 			{
 				m_state.typeLens = m_typeLens;
 				m_raytracer->updateState(m_state);
-				refresh = true;
-			}
-			if (ImGui::Button("Match Resolution"))
-			{
-				// Match the rendering resolution to the current client window size.
-				m_resolution.x = std::max(2, m_width);
-				m_resolution.y = std::max(2, m_height);
-
-				m_camera.setResolution(m_resolution.x, m_resolution.y);
-				m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
-				m_state.resolution = m_resolution;
-				m_raytracer->updateState(m_state);
-				refresh = true;
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Reset Radiance Cache"))
-			{
-				m_raytracer->resetRadianceCache();
 				refresh = true;
 			}
 			if (ImGui::InputInt2("Resolution", &m_resolution.x, ImGuiInputTextFlags_EnterReturnsTrue)) // This requires RETURN to apply a new value.

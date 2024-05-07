@@ -257,6 +257,9 @@ Device::Device(const int ordinal,
 	, m_isDirtySystemData(true) // Trigger SystemData update before the next launch.
 	, m_isDirtyOutputBuffer(true) // First render call initializes it. This is done in the derived render() functions.
 	, m_moduleFilenames(MODULE_ID_LAST_CUSTOM - MODULE_ID_FIRST_CUSTOM + 1)
+	// Default NRC fields which should match the GUI defaults in Application
+	, m_nrcRenderMode(nrc::RenderMode::Full)
+	, m_nrcInputEncoding(nrc::InputEncoding::Frequency)
 	, m_nrcNeedsReset(false)
 {
 	// Get the CUdevice handle from the CUDA device ordinal.
@@ -401,7 +404,8 @@ Device::Device(const int ordinal,
 	CURAND_CHECK(curandCreateGenerator(&m_curandGenerator, CURAND_RNG_PSEUDO_DEFAULT));
 	CURAND_CHECK(curandSetStream(m_curandGenerator, m_cudaStream));
 
-	m_nrcNetwork.init<true>(m_cudaStream);
+	m_nrcHyperParams.learningRate = nrc::TRAIN_LR(m_nrcInputEncoding);
+	m_nrcNetwork.init<true>(m_cudaStream, m_nrcInputEncoding);
 }
 
 
@@ -1561,19 +1565,27 @@ void Device::setState(const DeviceState& state)
 
 	if (m_systemData.pf.nrcTrainUnbiasedRatio != state.nrcTrainUnbiasedRatio)
 	{
+		// Per-frame sys data, will always be copied.
 		m_systemData.pf.nrcTrainUnbiasedRatio = state.nrcTrainUnbiasedRatio;
-		// Per-frame data, will always be copied.
 	}
 
-	if (m_nrcHyperParams.learningRate != state.nrcTrainLearningRate)
-	{
-		m_nrcHyperParams.learningRate = state.nrcTrainLearningRate;
-		m_isDirtyHyperParams = true;
-	}
-
+	// Passed as argument to the radiance accumulation kernel
 	if (m_nrcRenderMode != state.nrcRenderMode)
 	{
 		m_nrcRenderMode = state.nrcRenderMode;
+	}
+
+	// Triggered when the user slides the lr, OR when the input encoding is changed.
+	if (m_nrcHyperParams.learningRate != state.nrcTrainLearningRate)
+	{
+		m_nrcHyperParams.learningRate = state.nrcTrainLearningRate;
+		m_isDirtyHyperParams = true; // Triggers a tcnn hyperparam update
+	}
+
+	if (m_nrcInputEncoding != state.nrcInputEncoding)
+	{
+		m_nrcInputEncoding = state.nrcInputEncoding;
+		m_nrcNeedsReset = true; // Triggers a full network reset.
 	}
 }
 
@@ -2138,9 +2150,9 @@ void Device::render(const unsigned int iterationIndex,
 
 	if (m_nrcNeedsReset) [[unlikely]]
 	{
-		// Reset model weights
+		// Reset model (weights & encoding)
 		std::cout << "[HOST] Radiance Cache Reset!\n";
-		m_nrcNetwork.resetModelWeights();
+		m_nrcNetwork.init<true>(m_cudaStream, m_nrcInputEncoding);
 		m_nrcNeedsReset = false;
 	}
 

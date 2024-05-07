@@ -5,6 +5,24 @@
 
 namespace nrc
 {
+	enum class RenderMode : int
+	{
+		Full = 0,
+		NoCache,
+		CacheOnly,
+		CacheFirstVertex, // TODO, PERF: dedicated shaders
+		// Debug modes
+		DebugCacheNoThroughputModulation,
+		DebugThroughputOnly,
+	};
+
+	enum class InputEncoding : int
+	{
+		Frequency = 0,
+		Hash,
+	};
+
+
 	constexpr int NUM_BATCHES = 4;
 	constexpr int NUM_TRAINING_RECORDS_PER_FRAME = 65536;
 	constexpr int BATCH_SIZE = NUM_TRAINING_RECORDS_PER_FRAME / NUM_BATCHES;
@@ -23,11 +41,14 @@ namespace nrc
 	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
 	constexpr float TRAIN_UNBIASED_RATIO = 1.f / 16.f;
 
-#if USE_HASH_ENCODING
-	constexpr float TRAIN_LEARNING_RATE = 1e-2f;
-#else
-	constexpr float TRAIN_LEARNING_RATE = 1e-3f;
-#endif
+	constexpr float TRAIN_LR(InputEncoding encoding) 
+	{
+		switch (encoding) {
+		case InputEncoding::Frequency: return 1e-3f;
+		case InputEncoding::Hash     : return 1e-2f;
+		default                      : return 1e-4f;
+		}
+	}
 
 	// Keep track of the ray path for radiance prop
 	struct TrainingRecord
@@ -168,17 +189,6 @@ namespace nrc
 
 		// 4 byte alignment
 		int numTrainingRecords = 0;   // Number of training records generated. Updated per-frame		
-	};
-
-	enum class RenderMode : int
-	{
-		Full,
-		NoCache,
-		CacheOnly,
-		CacheFirstVertex, // TODO: Need new shaders
-		// Debug modes
-		DebugCacheNoThroughputModulation,
-		DebugThroughputOnly
 	};
 
 	//__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
