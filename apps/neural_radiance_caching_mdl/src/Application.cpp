@@ -697,7 +697,7 @@ void Application::guiWindow()
 			}
 			if (ImGui::Checkbox("Present", &m_present))
 			{
-				// No action needed, happens automatically on next render invocation.
+				m_presentNext = m_present;
 			}
 			// Don't allow disabling direct lighting, since NRC relies on it.
 #if 0
@@ -739,6 +739,11 @@ void Application::guiWindow()
 				refresh = true;
 				refreshLosses = true;
 			}
+
+			ImGui::Dummy(ImVec2(0.0f, 2.0f));
+			ImGui::Separator();
+			ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
 			if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
 			{
 				if (ImGui::DragFloat3("Environment Rotation", m_rotationEnvironment, 1.0f, 0.0f, 360.0f))

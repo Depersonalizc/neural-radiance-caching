@@ -96,36 +96,6 @@ void Network::setConfig(InputEncoding encoding)
 	pImpl->config = cfg::modelConfig(encoding);
 }
 
-//void Network::resetModel()
-//{
-	//using namespace tcnn;
-
-	//auto& model = pImpl->model;
-
-	// Assume the model uses network_precision_t
-	//const auto lossHp = model.loss->hyperparams();
-	//const auto optimizerHp = model.optimizer->hyperparams();
-	//model.loss.reset(create_loss<network_precision_t>(lossHp));
-	//model.optimizer.reset(create_optimizer<network_precision_t>(optimizerHp));
-
-	/*model.loss.reset(create_loss<network_precision_t>(
-		pImpl->config.value("loss", json::object())));
-	model.optimizer.reset(create_optimizer<network_precision_t>(
-		pImpl->config.value("optimizer", json::object())));
-
-	model.network = std::make_shared<NetworkWithInputEncoding<network_precision_t>>(
-		NN_INPUT_DIMS, NN_OUTPUT_DIMS,
-		pImpl->config.value("encoding", json::object()),
-		pImpl->config.value("network",  json::object())
-	);
-
-	model.trainer = std::make_shared<Trainer<float, network_precision_t, network_precision_t>>(
-		model.network, model.optimizer, model.loss
-	);*/
-
-	//pImpl->model = tcnn::create_from_config(NN_INPUT_DIMS, NN_OUTPUT_DIMS, pImpl->config);
-//}
-
 float Network::getLearningRate() const
 {
 	return pImpl->model.optimizer->learning_rate();
@@ -153,7 +123,5 @@ void Network::printConfig_() const
 		      << pImpl->config
 			  << "\n--------------------------------------------------------------\n\n";
 }
-
-
 
 }
