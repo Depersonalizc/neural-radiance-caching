@@ -666,6 +666,7 @@ void Application::guiWindow()
 	}
 
 	bool refresh = false;
+	bool refreshLosses = false;
 	bool expanded = false;
 
 	ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiSetCond_FirstUseEver);
@@ -713,9 +714,11 @@ void Application::guiWindow()
 				// Also Update the hyperparam (lr) to the deafult for the new encoding
 				// Triggers a hyper param update in Device.
 				m_state.nrcTrainLearningRate = nrc::TRAIN_LR(m_state.nrcInputEncoding);
-
+				// Triggers a full network reset.
+				m_raytracer->resetRadianceCache();
 				m_raytracer->updateState(m_state);
 				refresh = true;
+				refreshLosses = true;
 			}
 			if (ImGui::Button("Match Resolution"))
 			{
@@ -734,6 +737,7 @@ void Application::guiWindow()
 			{
 				m_raytracer->resetRadianceCache();
 				refresh = true;
+				refreshLosses = true;
 			}
 			if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
 			{
@@ -1074,9 +1078,14 @@ void Application::guiWindow()
 	}
 	ImGui::End();
 
-	if (refresh)
+	if (refresh) [[unlikely]]
 	{
 		restartRendering();
+	}
+
+	if (refreshLosses) [[unlikely]]
+	{
+		networkLosses.fill(0.0f);
 	}
 }
 
