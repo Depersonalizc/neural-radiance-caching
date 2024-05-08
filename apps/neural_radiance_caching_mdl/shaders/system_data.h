@@ -67,7 +67,9 @@ struct SystemDataPerFrame
 	int totalSubframeIndex;  // Added: total number of subframes, counting all iterations
 	int tileTrainingIndex;   // The local index of training ray within each tile. Randomly sampled from [0..tileSize) every subframe
 
+	// TODO: Both should not be per-frame (at least for scaling factor)
 	float nrcTrainUnbiasedRatio;
+	float nrcAreaSpreadFactorSqrt;
 };
 
 namespace nrc { struct ControlBlock; }

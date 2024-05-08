@@ -339,6 +339,8 @@ struct DeviceState
 
 	// NRC related
 	float nrcTrainUnbiasedRatio;
+	float nrcAreaSpreadFactorSqrt;
+
 	float nrcTrainLearningRate;
 	nrc::RenderMode    nrcRenderMode;
 	nrc::InputEncoding nrcInputEncoding;

@@ -265,6 +265,7 @@ private:
 	bool       m_useDirectLighting;
 	// GUI Data for NRC training hyperparams
 	//float      m_trainUnbiasedRatio;
+	float      m_areaSpreadFactor;    // factor {c} in the paper.
 
 	TypeLight m_typeEnv;                // The type of the light in m_lightsGUI[0]. Used to determine the miss shader.
 	float     m_rotationEnvironment[3]; // The Euler rotation angles for the spherical environment light.

@@ -14,7 +14,7 @@ namespace nrc {
 struct Network::Impl {
 	tcnn::TrainableModel model{};
 
-	// The network (hyper)parameters 
+	// The network (hyper)parameters
 	nlohmann::json config{};
 };
 
@@ -46,7 +46,7 @@ void Network::train(float* batchInputs_d, float* batchTargets_d, float* loss_h)
 	static_assert(BATCH_SIZE % BATCH_SIZE_GRANULARITY == 0 && 
 		"Training batch size is not a multiple of tcnn::BATCH_SIZE_GRANULARITY");
 
-	const GPUMatrix_t inputs { batchInputs_d,  NN_INPUT_DIMS,  BATCH_SIZE };
+	const GPUMatrix_t inputs {  batchInputs_d,  NN_INPUT_DIMS, BATCH_SIZE };
 	const GPUMatrix_t targets{ batchTargets_d, NN_OUTPUT_DIMS, BATCH_SIZE };
 	auto ctx = trainer->training_step(m_stream, inputs, targets);
 	if (loss_h)
@@ -68,7 +68,7 @@ void Network::infer(float* inputs_d, float* outputs_d, uint32_t numInputs)
 	
 	// Round up to nearest multiple of BATCH_SIZE_GRANULARITY.
 	numInputs = ((numInputs + BATCH_SIZE_GRANULARITY - 1) / BATCH_SIZE_GRANULARITY) * BATCH_SIZE_GRANULARITY;
-	const GPUMatrix_t inputs { inputs_d,  NN_INPUT_DIMS,  numInputs };
+	const GPUMatrix_t inputs {  inputs_d,  NN_INPUT_DIMS, numInputs };
 	GPUMatrix_t       outputs{ outputs_d, NN_OUTPUT_DIMS, numInputs };
 
 	network->inference(m_stream, inputs, outputs);
