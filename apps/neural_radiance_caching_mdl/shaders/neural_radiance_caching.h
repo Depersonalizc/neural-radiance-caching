@@ -22,7 +22,6 @@ namespace nrc
 		Hash,
 	};
 
-
 	constexpr int NUM_BATCHES = 4;
 	constexpr int NUM_TRAINING_RECORDS_PER_FRAME = 65536;
 	constexpr int BATCH_SIZE = NUM_TRAINING_RECORDS_PER_FRAME / NUM_BATCHES;

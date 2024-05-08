@@ -55,6 +55,7 @@
 #include <cudaGL.h>
 
 #include <algorithm>
+#include <bit>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -2191,7 +2192,14 @@ void Device::render(const unsigned int iterationIndex,
 	}
 
 	// Reset the per-frame data of the NRC block (currently just numTrainingRecords)
-	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
+	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 
+							  std::bit_cast<unsigned int>(0), 1ull, m_cudaStream));
+
+	// Zero out all the target radiance
+	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(0)),
+					          std::bit_cast<unsigned int>(0.f), // Should just be 0u
+					          3ull * nrc::NUM_TRAINING_RECORDS_PER_FRAME, // Number of floats
+					          m_cudaStream));
 
 	// Path Tracing: 
 	// - Generate training data for NRC
@@ -2253,17 +2261,17 @@ void Device::render(const unsigned int iterationIndex,
 
 		m_nrcNetwork.infer(flatten(queries), flatten(results), numQueries);
 
-		// DEBUG: Inspect inferred radiance
+// DEBUG: Inspect inferred radiance
 #if 0
-		std::vector<nrc::RadianceQuery> queries(numQueries);
-		std::vector<float3> results(numQueries);
+		std::vector<nrc::RadianceQuery> queries_h(numQueries);
+		std::vector<float3> results_h(numQueries);
 
-		CU_CHECK(cuMemcpyDtoHAsync(queries.data(), reinterpret_cast<CUdeviceptr>(queries), sizeof(nrc::RadianceQuery) * numQueries, m_cudaStream));
-		CU_CHECK(cuMemcpyDtoHAsync(results.data(), reinterpret_cast<CUdeviceptr>(results), sizeof(float3) * numQueries, m_cudaStream));
+		CU_CHECK(cuMemcpyDtoHAsync(queries_h.data(), reinterpret_cast<CUdeviceptr>(queries), sizeof(nrc::RadianceQuery) * numQueries, m_cudaStream));
+		CU_CHECK(cuMemcpyDtoHAsync(results_h.data(), reinterpret_cast<CUdeviceptr>(results), sizeof(float3) * numQueries, m_cudaStream));
 
 		synchronizeStream();
 
-		queries; results;
+		queries_h; results_h;
 #endif
 	}
 #endif
@@ -2363,8 +2371,8 @@ void Device::render(const unsigned int iterationIndex,
 		// Generate a random permuatation by sorting random key values.
 		nrc::generateRandomPermutationForTrain(m_nrcControlBlock, m_cudaStream, m_curandGenerator);
 
+// DEBUG: Inspect the shuffled indices
 #if 0
-		// DEBUG: Inspect the shuffled indices
 		std::array<int, nrc::NUM_TRAINING_RECORDS_PER_FRAME> keys;
 		CU_CHECK(cuMemcpyDtoH(keys.data(), reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRecordIndices.getBuffer(1)), sizeof(keys)));
 		keys;
@@ -2396,22 +2404,22 @@ void Device::render(const unsigned int iterationIndex,
 		const auto queriesShuffled = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(1);
 		const auto targetsShuffled = m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(1);
 
+// DEBUG: Inspect the shuffled training samples
 #if 0
-		// DEBUG: Inspect the shuffled training samples
-		{
-		std::vector<nrc::RadianceQuery> queries(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
-		std::vector<float3>             targets(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
-		CU_CHECK(cuMemcpyDtoHAsync(queries.data(), 
+		//{
+		std::vector<nrc::RadianceQuery> queries_h(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		std::vector<float3>             targets_h(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		CU_CHECK(cuMemcpyDtoHAsync(queries_h.data(),
 			reinterpret_cast<CUdeviceptr>(queriesShuffled),
 			sizeof(nrc::RadianceQuery) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
 
-		CU_CHECK(cuMemcpyDtoHAsync(targets.data(),
+		CU_CHECK(cuMemcpyDtoHAsync(targets_h.data(),
 			reinterpret_cast<CUdeviceptr>(targetsShuffled),
 			sizeof(float3) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
 		synchronizeStream();
 
-		queries; targets;
-		}
+		queries_h; targets_h;
+		//}
 #endif
 
 #if TCNN_TRAIN
@@ -2436,6 +2444,12 @@ void Device::render(const unsigned int iterationIndex,
 		static constexpr float normalizer = 1.0f / nrc::NUM_BATCHES;
 		m_nrcTrainStat.loss = totalLoss * normalizer;
 		//std::cout << "[HOST] Avg. Training Batch Loss: " << totalLoss * normalizer << std::endl;
+
+		//// DEBUG
+		//if (std::isnan(m_nrcTrainStat.loss)) {
+		//	std::cout << "[HOST] Encountered nan loss: " << m_nrcTrainStat.loss << std::endl;
+		//	queries; targets;
+		//}
 #endif
 	}
 
