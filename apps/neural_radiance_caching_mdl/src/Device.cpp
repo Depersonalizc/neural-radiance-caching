@@ -1570,6 +1570,12 @@ void Device::setState(const DeviceState& state)
 		m_systemData.pf.nrcTrainUnbiasedRatio = state.nrcTrainUnbiasedRatio;
 	}
 
+	if (m_systemData.pf.nrcAreaSpreadFactorSqrt != state.nrcAreaSpreadFactorSqrt)
+	{
+		// Per-frame sys data, will always be copied.
+		m_systemData.pf.nrcAreaSpreadFactorSqrt = state.nrcAreaSpreadFactorSqrt;
+	}
+
 	// Passed as argument to the radiance accumulation kernel
 	if (m_nrcRenderMode != state.nrcRenderMode)
 	{

@@ -68,6 +68,7 @@ Application::Application(GLFWwindow* window, const Options& options)
 	, m_epsilonFactor(500.0f)
 	, m_clockFactor(1000.0f)
 	, m_useDirectLighting(true)
+	, m_areaSpreadFactor(0.01f)
 	, m_typeEnv(NUM_LIGHT_TYPES)
 	, m_mouseSpeedRatio(10.0f)
 	, m_idGroup(0)
@@ -340,6 +341,7 @@ Application::Application(GLFWwindow* window, const Options& options)
 		m_state.clockFactor = m_clockFactor;
 		m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
 		m_state.nrcTrainUnbiasedRatio = nrc::TRAIN_UNBIASED_RATIO;
+		m_state.nrcAreaSpreadFactorSqrt = std::sqrt(m_areaSpreadFactor); // sqrt{c} in (Eq. 4) of paper. Init at 0.1
 
 		m_state.nrcRenderMode         = nrc::RenderMode::Full;
 		m_state.nrcInputEncoding      = nrc::InputEncoding::Frequency;
@@ -697,7 +699,7 @@ void Application::guiWindow()
 			}
 			if (ImGui::Checkbox("Present", &m_present))
 			{
-				// No action needed, happens automatically on next render invocation.
+				m_presentNext = m_present;
 			}
 			// Don't allow disabling direct lighting, since NRC relies on it.
 #if 0
@@ -739,6 +741,11 @@ void Application::guiWindow()
 				refresh = true;
 				refreshLosses = true;
 			}
+
+			ImGui::Dummy(ImVec2(0.0f, 2.0f));
+			ImGui::Separator();
+			ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
 			if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
 			{
 				if (ImGui::DragFloat3("Environment Rotation", m_rotationEnvironment, 1.0f, 0.0f, 360.0f))
@@ -1059,6 +1066,11 @@ void Application::guiWindow()
 			}
 			if (ImGui::DragFloat("Unbiased samples ratio", &m_state.nrcTrainUnbiasedRatio, 0.02f, 0.0f, 1.0f, "%.2f"))
 			{
+				m_raytracer->updateStateNoRestart(m_state);
+			}
+			if (ImGui::DragFloat("Area spread factor", &m_areaSpreadFactor, 0.0005f, 0.001f, 0.1f, "%.3f"))
+			{
+				m_state.nrcAreaSpreadFactorSqrt = std::sqrt(m_areaSpreadFactor);
 				m_raytracer->updateStateNoRestart(m_state);
 			}
 

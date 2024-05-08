@@ -538,15 +538,12 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
     // TODO, PERF: Make this a separate initial launch in the raygen shader
     if (thePrd.depth == 0) // First bounce: Compute area threshold (Eq. 4)
     {
-        static constexpr auto SQRT_C = 0.1f;
+        const auto SQRT_C = sysData.pf.nrcAreaSpreadFactorSqrt;
         const float denom = sqrtf(4.f * M_PIf * absCosine);   
         thePrd.areaThreshold = SQRT_C * ::safeDiv(thePrd.distance, denom);
 // DEBUG INFO
-#if 1
-        if (thePrd.flags & FLAG_DEBUG)
-        {
-            printf("\nArea threashold: %f\n", thePrd.areaThreshold);
-        }
+#if 0
+        if (thePrd.flags & FLAG_DEBUG) printf("\nArea threashold: %f\n", thePrd.areaThreshold);
 #endif
     }
     else if (isNotUnbiasedTrainSuffix)
@@ -557,7 +554,7 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
 
         terminate = (thePrd.areaSpread > thePrd.areaThreshold);
 // DEBUG INFO
-#if 1
+#if 0
         if (thePrd.flags & FLAG_DEBUG)
         {
             printf("Area spread (@hit %d, train=%d, suffix=%d): %f\n", 
@@ -565,10 +562,7 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
                     bool(thePrd.flags & FLAG_TRAIN),
                     bool(thePrd.flags & FLAG_TRAIN_SUFFIX),
                     thePrd.areaSpread);
-            if (terminate)
-            {
-                printf("[Terminate!] Area spread reaches threshold after hit %d\n", thePrd.depth);
-            }
+            if (terminate) printf("[Terminate!] Area spread reaches threshold after hit %d\n", thePrd.depth);
         }
 #endif
     }
