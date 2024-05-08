@@ -25,9 +25,8 @@ public:
 	template <bool Verbose = false>
 	void init(CUstream stream, nrc::InputEncoding encoding)
 	{
-		if constexpr (Verbose)
-			printConfig_();
 		init_(stream, encoding);
+		if constexpr (Verbose) printConfig_();
 	}
 
 	//template <bool Verbose = false>
