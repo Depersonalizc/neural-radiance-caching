@@ -62,6 +62,8 @@ using BSDFSampleData    = mi::neuraylib::Bsdf_sample_data;
 using BSDFEvaluateData  = mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE>;
 using BSDFAuxiliaryData = mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE>;
 
+using EDFEvaluateData = mi::neuraylib::Edf_evaluate_data<mi::neuraylib::DF_HSM_NONE>;
+
 static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
                                            | mi::neuraylib::BSDF_EVENT_GLOSSY;
 
@@ -69,6 +71,13 @@ extern "C" __constant__ SystemData sysData;
 
 // Helpers
 namespace {
+
+#define SANITY_CHK 0
+
+#if SANITY_CHK
+[[maybe_unused]] __forceinline__ __device__ bool is_nan_f3(const float3& v) { return isnan(v.x) || isnan(v.y) || isnan(v.z); }
+[[maybe_unused]] __forceinline__ __device__ bool allZero(const float3& v) { return v.x == 0.f && v.y == 0.f && v.z == 0.f; }
+#endif
 
 template<typename T>
 __forceinline__ __device__ T safeDiv(T a, T b) { return a / (b + static_cast<T>(DENOMINATOR_EPSILON)); }
@@ -347,9 +356,7 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
 
     LightSample lightSample = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, &thePrd);
     
-    // Happens when the lightSample is on the other side,
-    // i.e., dot(-lightSample.direction, lightSample.normal) <= 0.0f
-    // Will be shadowed later anyway. So return early.
+    // Invalid light sample
     if (lightSample.pdf <= 0.0f)
     {
         return make_float3(0.0f);
@@ -385,7 +392,7 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
     const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
 
     // Should not happen, since we checked for BSDF_EVENT_SUPPORT_NEE before calling this function
-    if (eval_data.pdf <= 0.0f || isNull(bxdf))
+    if (eval_data.pdf <= 0.0f || isNull(bxdf)) [[unlikely]]
     {
         return make_float3(0.0f);
     }
@@ -417,7 +424,23 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
 
     // The sampled emission needs to be scaled by the inverse probability to have selected this light,
     // Selecting one of many lights means the inverse of 1.0f / numLights.
-    return bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
+    const auto directMISLightSampling = bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
+
+#if SANITY_CHK
+    if (is_nan_f3(directMISLightSampling))
+    {
+        printf("!!NAN directMISLightSampling.\n");
+        printf("bxdf: %f, %f, %f\n", bxdf.x, bxdf.y, bxdf.z);
+        printf("lightSample.radiance_over_pdf: %f, %f, %f\n", lightSample.radiance_over_pdf.x, lightSample.radiance_over_pdf.y, lightSample.radiance_over_pdf.z);
+        printf("float(numLights): %f\n", float(numLights));
+        printf("weightMIS: %f\n", weightMIS);
+        printf("lightType: %d\n", light.typeLight);
+        printf("lightSample.pdf: %f\n", lightSample.pdf);
+        printf("eval_data.pdf: %f\n\n", eval_data.pdf);
+    }
+#endif
+
+    return directMISLightSampling;
 }
 
 // NOTE: We assume thePrd.eventType contains the surface interaction.
@@ -566,7 +589,8 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
 
     radianceQuery.position = mdlState.position;
     //radianceQuery.position *= 0.05f; // Cornell
-    radianceQuery.position *= 0.005f; // Cornell
+    //radianceQuery.position *= 0.005f; // Cornell
+    radianceQuery.position *= 0.0005f; // Cornell
     //radianceQuery.position *= 0.005f;
     //radianceQuery.position *= 0.01f;
     
@@ -771,7 +795,7 @@ extern "C" __global__ void __closesthit__radiance()
             }
             if (isNotNull(emission_intensity))
             {
-                mi::neuraylib::Edf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
+                EDFEvaluateData eval_data;
 
                 eval_data.k1 = thePrd->wo; // input: outgoing direction (-ray.direction)
                 //eval_data.cos : output: dot(normal, k1)
@@ -803,6 +827,11 @@ extern "C" __global__ void __closesthit__radiance()
                 // !! Add the BSDF-sampling part of the MIS to last vertex's target radiance.
                 if (thePrd->lastTrainRecordIndex >= 0) [[unlikely]]
                 {
+#if SANITY_CHK
+                    if (is_nan_f3(emission)) printf("CH_radiance: emission is NAN!!!\n");
+                    if (is_nan_f3(sysData.nrcCB->bufStatic.trainingRadianceTargets[thePrd->lastTrainRecordIndex]))
+                        printf("CH_radiance: Target at last train record %d is NAN\n", thePrd->lastTrainRecordIndex);
+#endif
                     sysData.nrcCB->bufStatic.trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
                 }
             }
@@ -860,7 +889,6 @@ extern "C" __global__ void __closesthit__radiance()
     {
         // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
         // This is usually happening with arbitrary mesh lights when only specifying emission.
-        // NOTE: Should not happen here?
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     }
 
@@ -875,6 +903,7 @@ extern "C" __global__ void __closesthit__radiance()
     return;
 #endif
 
+    // Radiance visualization:
     // Record first non-specular vertex if we haven't
     const bool eventIsSpecular = (thePrd->eventType & mi::neuraylib::BSDF_EVENT_SPECULAR);
     const bool recordedFirstVertex = (thePrd->flags & FLAG_RECORDED_FIRST_VERTEX);
@@ -911,7 +940,7 @@ extern "C" __global__ void __closesthit__radiance()
         return;
     }
 
-    //printf("NOT an ABSORB event\n\n\n\n\n");
+    //printf("NOT an ABSORB event\n");
 
     // Handle terminating vertex due to area spread.
     // Can be sure it's not an unbiased train suffix.
@@ -990,7 +1019,11 @@ extern "C" __global__ void __closesthit__radiance()
 
             // Training target radiance - initialized to zero.
             trainTargetRadiance = &staticBufs.trainingRadianceTargets[trainRecordIndex];
-            *trainTargetRadiance = make_float3(0.f);
+            //*trainTargetRadiance = make_float3(0.f);
+
+#if SANITY_CHK
+            if (!allZero(*trainTargetRadiance)) printf("ERROR: trainTargetRadiance not zero initialized\n");
+#endif
 
             // Add a training query with (unencoded) inputs to NRC network
             nrc::addTrainQuery(state, *thePrd, aux_data, !isFrontFace, trainRecordIndex);
@@ -1041,6 +1074,9 @@ extern "C" __global__ void __closesthit__radiance()
         if (trainTargetRadiance)
         {
             *trainTargetRadiance += directLighting;
+#if SANITY_CHK
+            if (is_nan_f3(directLighting)) printf("CH_radiance: directLighting is NAN\n");
+#endif
         }
 
         // Accumulate *rendering* radiance if not currently on a training suffix.
@@ -1200,6 +1236,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     return;
 #endif
 
+    // Radiance visualization:
+    // Record first non-specular vertex if we haven't
     const bool eventIsSpecular = (thePrd->eventType & mi::neuraylib::BSDF_EVENT_SPECULAR);
     const bool recordedFirstVertex = (thePrd->flags & FLAG_RECORDED_FIRST_VERTEX);
     if (!recordedFirstVertex && !eventIsSpecular) [[unlikely]]
@@ -1312,7 +1350,11 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
             // Training target radiance - initialized to zero.
             trainTargetRadiance = &staticBufs.trainingRadianceTargets[trainRecordIndex];
-            *trainTargetRadiance = make_float3(0.f);
+            //*trainTargetRadiance = make_float3(0.f);
+
+#if SANITY_CHK
+            if (!allZero(*trainTargetRadiance)) printf("ERROR: trainTargetRadiance not zero initialized\n");
+#endif
 
             // Add a training query with (unencoded) inputs to NRC network
             nrc::addTrainQuery(state, *thePrd, aux_data, !isFrontFace, trainRecordIndex);
@@ -1363,6 +1405,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         if (trainTargetRadiance)
         {
             *trainTargetRadiance += directLighting;
+#if SANITY_CHK
+            if (is_nan_f3(directLighting)) printf("CH_radiance_no_emission: directLighting is NAN\n");
+#endif
         }
 
         // Accumulate *rendering* radiance if not currently on a training suffix.
@@ -1631,7 +1676,7 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
 
         if (isNotNull(emission_intensity))
         {
-            mi::neuraylib::Edf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
+            EDFEvaluateData eval_data;
 
             eval_data.k1 = -lightSample.direction; // input: outgoing direction (from light sample position to surface point).
             //eval_data.cos : output: dot(normal, k1)
@@ -1647,9 +1692,15 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
             // Power (flux) [W] divided by light area gives radiant exitance [W/m^2].
             const float factor = (emission_intensity_mode == 0) ? opacity : opacity / light.area;
 
-            lightSample.pdf = lightSample.distance * lightSample.distance / (light.area * eval_data.cos); // Solid angle measure.
+            // Stop lightSample.pdf becoming INFINITY.
+            const float denom = max(light.area * eval_data.cos, DENOMINATOR_EPSILON);
 
-            lightSample.radiance_over_pdf = emission_intensity * eval_data.edf * (factor / lightSample.pdf);
+            lightSample.pdf = lightSample.distance * lightSample.distance / denom; // Solid angle measure.
+
+            if (DENOMINATOR_EPSILON < lightSample.pdf)
+            {
+                lightSample.radiance_over_pdf = emission_intensity * eval_data.edf * (factor / lightSample.pdf);
+            }
         }
     }
 
