@@ -340,7 +340,8 @@ struct DeviceState
 	// NRC related
 	float nrcTrainUnbiasedRatio;
 	float nrcTrainLearningRate;
-	nrc::RenderMode nrcRenderMode;
+	nrc::RenderMode    nrcRenderMode;
+	nrc::InputEncoding nrcInputEncoding;
 };
 
 class Device;
@@ -576,13 +577,13 @@ public:
 
 	// Host-side copy of NRC Control block.
 	// Device-side is pointed by m_systemData.nrcCB
-	nrc::ControlBlock m_nrcControlBlock;
-
-	nrc::Network      m_nrcNetwork;
-	nrc::HyperParams  m_nrcHyperParams;
-	nrc::TrainingStat m_nrcTrainStat;
-	nrc::RenderMode   m_nrcRenderMode;
-	bool              m_nrcNeedsReset;
+	nrc::ControlBlock  m_nrcControlBlock;
+	nrc::Network       m_nrcNetwork;
+	nrc::HyperParams   m_nrcHyperParams;
+	nrc::TrainingStat  m_nrcTrainStat;
+	nrc::RenderMode    m_nrcRenderMode;
+	nrc::InputEncoding m_nrcInputEncoding;
+	bool               m_nrcNeedsReset;
 
 	// We only use this for shuffling the NRC training records.
 	curandGenerator_t m_curandGenerator{};
@@ -630,10 +631,12 @@ public:
 
 	// A single module contains all the helper functions below.
 	CUmodule    m_moduleNRCHelpers{};
-	CUfunction  m_fnAccumulateRenderRadiance{},
+	CUfunction  m_fnCopyRadianceToOutputBuffer{},
+				m_fnAccumulateRenderRadiance{},
 				m_fnPropagateTrainRadiance{},
 				m_fnPermuteTrainData{};
-	int         m_fnAccumulateRenderRadianceBlockSize,
+	int         m_fnCopyRadianceToOutputBufferBlockSize,
+				m_fnAccumulateRenderRadianceBlockSize,
 			    m_fnPropagateTrainRadianceBlockSize,
 				m_fnPermuteTrainDataBlockSize;
 

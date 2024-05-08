@@ -37,6 +37,9 @@
 #include "system_data.h"
 #include "transform.h"
 
+static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
+                                           | mi::neuraylib::BSDF_EVENT_GLOSSY;
+
 extern "C" __constant__ SystemData sysData;
 
 namespace nrc {
@@ -139,8 +142,6 @@ extern "C" __global__ void __miss__env_constant()
 
 	// If the last surface intersection was diffuse or glossy which was directly lit with multiple importance sampling,
 	// then calculate implicit light emission with multiple importance sampling as well.
-    static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
-                                               | mi::neuraylib::BSDF_EVENT_GLOSSY;
     const auto eventWasNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
 	if (sysData.directLighting && eventWasNonDirac)
 	{
@@ -210,8 +211,6 @@ extern "C" __global__ void __miss__env_sphere()
 
 	// If the last surface intersection was a diffuse event which was directly lit with multiple importance sampling,
 	// then calculate implicit light emission with multiple importance sampling as well.
-    static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
-                                               | mi::neuraylib::BSDF_EVENT_GLOSSY;
     const auto eventWasNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
 	if (sysData.directLighting && eventWasNonDirac)
 	{

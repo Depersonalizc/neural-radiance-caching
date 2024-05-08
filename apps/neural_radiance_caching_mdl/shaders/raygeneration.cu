@@ -767,7 +767,11 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	prd.wi  = ray.dir;
 
 	prd.pixelIndex = index;
+	
+	// Zero out the cache vis query
+	sysData.nrcCB->bufDynamic.radianceQueriesCacheVis[index] = {};
 
+	// Perform the ray tracing
 	float3 radiance = ::nrcIntegrator(prd);
 
 	// Record the last throughput.

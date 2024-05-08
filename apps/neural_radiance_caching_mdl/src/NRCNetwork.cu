@@ -12,13 +12,10 @@
 namespace nrc {
 
 struct Network::Impl {
-
 	tcnn::TrainableModel model{};
 
 	// The network (hyper)parameters 
-	// Default as specified in the paper
-	nlohmann::json config = cfg::MODEL_CONFIG_PAPER;
-
+	nlohmann::json config{};
 };
 
 using GPUMatrix_t = tcnn::GPUMatrix<float, tcnn::MatrixLayout::ColumnMajor>;
@@ -46,6 +43,9 @@ void Network::train(float* batchInputs_d, float* batchTargets_d, float* loss_h)
 	using namespace tcnn;
 	auto& trainer = pImpl->model.trainer;
 
+	static_assert(BATCH_SIZE % BATCH_SIZE_GRANULARITY == 0 && 
+		"Training batch size is not a multiple of tcnn::BATCH_SIZE_GRANULARITY");
+
 	const GPUMatrix_t inputs { batchInputs_d,  NN_INPUT_DIMS,  BATCH_SIZE };
 	const GPUMatrix_t targets{ batchTargets_d, NN_OUTPUT_DIMS, BATCH_SIZE };
 	auto ctx = trainer->training_step(m_stream, inputs, targets);
@@ -53,7 +53,7 @@ void Network::train(float* batchInputs_d, float* batchTargets_d, float* loss_h)
 		*loss_h = trainer->loss(m_stream, *ctx);
 }
 
-void nrc::Network::train(float* batchInputs_d, float* batchTargets_d, CUstream stream, float* loss_h)
+void Network::train(float* batchInputs_d, float* batchTargets_d, CUstream stream, float* loss_h)
 {
 	setStream(stream);
 	train(batchInputs_d, batchTargets_d, loss_h);
@@ -87,20 +87,31 @@ void Network::setStream(CUstream stream)
 
 void Network::setHyperParams(const HyperParams& hp)
 {
+	pImpl->config["optimizer"]["nested"]["learning_rate"] = hp.learningRate;
 	pImpl->model.optimizer->set_learning_rate(hp.learningRate);
 }
 
-void Network::resetModelWeights()
+void Network::setConfig(InputEncoding encoding)
 {
-	auto& model = pImpl->model;
-	const auto lossHp = model.loss->hyperparams();
-	const auto optimizerHp = model.optimizer->hyperparams();
+	pImpl->config = cfg::modelConfig(encoding);
+}
 
-	using namespace tcnn;
+//void Network::resetModel()
+//{
+	//using namespace tcnn;
+
+	//auto& model = pImpl->model;
 
 	// Assume the model uses network_precision_t
-	model.loss.reset(create_loss<network_precision_t>(lossHp));
-	model.optimizer.reset(create_optimizer<network_precision_t>(optimizerHp));
+	//const auto lossHp = model.loss->hyperparams();
+	//const auto optimizerHp = model.optimizer->hyperparams();
+	//model.loss.reset(create_loss<network_precision_t>(lossHp));
+	//model.optimizer.reset(create_optimizer<network_precision_t>(optimizerHp));
+
+	/*model.loss.reset(create_loss<network_precision_t>(
+		pImpl->config.value("loss", json::object())));
+	model.optimizer.reset(create_optimizer<network_precision_t>(
+		pImpl->config.value("optimizer", json::object())));
 
 	model.network = std::make_shared<NetworkWithInputEncoding<network_precision_t>>(
 		NN_INPUT_DIMS, NN_OUTPUT_DIMS,
@@ -110,23 +121,31 @@ void Network::resetModelWeights()
 
 	model.trainer = std::make_shared<Trainer<float, network_precision_t, network_precision_t>>(
 		model.network, model.optimizer, model.loss
-	);
+	);*/
+
+	//pImpl->model = tcnn::create_from_config(NN_INPUT_DIMS, NN_OUTPUT_DIMS, pImpl->config);
+//}
+
+float Network::getLearningRate() const
+{
+	return pImpl->model.optimizer->learning_rate();
 }
 
-void Network::init_(CUstream stream)
+void Network::init_(CUstream stream, InputEncoding encoding)
 {
 	setStream(stream);
+	setConfig(encoding);
+	// Use the default config for `encoding` to create the model.
 	pImpl->model = tcnn::create_from_config(NN_INPUT_DIMS, NN_OUTPUT_DIMS, pImpl->config);
 }
 
-void Network::init_(CUstream stream, float lr, float emaDecay/* = 0.99f*/)
-{
-	auto& opt = pImpl->config["optimizer"];
-	opt["nested"]["learning_rate"] = lr;
-	opt["decay"] = emaDecay;
-	
-	init_(stream);
-}
+//void Network::init_(CUstream stream, InputEncoding, float lr, float emaDecay/* = 0.99f*/)
+//{
+//	auto& opt = pImpl->config["optimizer"];
+//	opt["nested"]["learning_rate"] = lr;
+//	opt["decay"] = emaDecay;
+//	init_(stream);
+//}
 
 void Network::printConfig_() const
 {

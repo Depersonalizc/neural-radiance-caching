@@ -341,8 +341,9 @@ Application::Application(GLFWwindow* window, const Options& options)
 		m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
 		m_state.nrcTrainUnbiasedRatio = nrc::TRAIN_UNBIASED_RATIO;
 
-		m_state.nrcTrainLearningRate = nrc::TRAIN_LEARNING_RATE;
-		m_state.nrcRenderMode = nrc::RenderMode::Full;
+		m_state.nrcRenderMode         = nrc::RenderMode::Full;
+		m_state.nrcInputEncoding      = nrc::InputEncoding::Frequency;
+		m_state.nrcTrainLearningRate  = nrc::TRAIN_LR(m_state.nrcInputEncoding);
 
 		// Sync the state with the default GUI data.
 		m_raytracer->initState(m_state);
@@ -665,6 +666,7 @@ void Application::guiWindow()
 	}
 
 	bool refresh = false;
+	bool refreshLosses = false;
 	bool expanded = false;
 
 	ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiSetCond_FirstUseEver);
@@ -685,6 +687,8 @@ void Application::guiWindow()
 				ImGui::RadioButton("No Cache", mode_p, static_cast<int>(RenderMode::NoCache)); ImGui::SameLine();
 				ImGui::RadioButton("Only Cache", mode_p, static_cast<int>(RenderMode::CacheOnly)); ImGui::SameLine();
 				ImGui::RadioButton("First Vertex Cache", mode_p, static_cast<int>(RenderMode::CacheFirstVertex));
+				ImGui::RadioButton("(D) cache no thruput modulation", mode_p, static_cast<int>(RenderMode::DebugCacheNoThroughputModulation)); ImGui::SameLine();
+				ImGui::RadioButton("(D) throughput", mode_p, static_cast<int>(RenderMode::DebugThroughputOnly)); ImGui::SameLine();
 				if (m_state.nrcRenderMode != oldMode)
 				{
 					m_raytracer->updateState(m_state);
@@ -695,12 +699,46 @@ void Application::guiWindow()
 			{
 				// No action needed, happens automatically on next render invocation.
 			}
-			//if (ImGui::Checkbox("Direct Lighting", &m_useDirectLighting))
-			//{
-			//	m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
-			//	m_raytracer->updateState(m_state);
-			//	refresh = true;
-			//}
+			// Don't allow disabling direct lighting, since NRC relies on it.
+#if 0
+			if (ImGui::Checkbox("Direct Lighting", &m_useDirectLighting))
+			{
+				m_state.directLighting = (m_useDirectLighting) ? 1 : 0;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+#endif
+			// NRC input encoding
+			if (ImGui::Combo("Input Encoding", reinterpret_cast<int*>(&m_state.nrcInputEncoding), "Frequency (NeRF)\0Hash (Instant-NGP)\0\0"))
+			{
+				// Also Update the hyperparam (lr) to the deafult for the new encoding
+				// Triggers a hyper param update in Device.
+				m_state.nrcTrainLearningRate = nrc::TRAIN_LR(m_state.nrcInputEncoding);
+				// Triggers a full network reset.
+				m_raytracer->resetRadianceCache();
+				m_raytracer->updateState(m_state);
+				refresh = true;
+				refreshLosses = true;
+			}
+			if (ImGui::Button("Match Resolution"))
+			{
+				// Match the rendering resolution to the current client window size.
+				m_resolution.x = std::max(2, m_width);
+				m_resolution.y = std::max(2, m_height);
+
+				m_camera.setResolution(m_resolution.x, m_resolution.y);
+				m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
+				m_state.resolution = m_resolution;
+				m_raytracer->updateState(m_state);
+				refresh = true;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Reset Radiance Cache"))
+			{
+				m_raytracer->resetRadianceCache();
+				refresh = true;
+				refreshLosses = true;
+			}
 			if (m_typeEnv == TYPE_LIGHT_ENV_SPHERE)
 			{
 				if (ImGui::DragFloat3("Environment Rotation", m_rotationEnvironment, 1.0f, 0.0f, 360.0f))
@@ -726,24 +764,6 @@ void Application::guiWindow()
 			{
 				m_state.typeLens = m_typeLens;
 				m_raytracer->updateState(m_state);
-				refresh = true;
-			}
-			if (ImGui::Button("Match Resolution"))
-			{
-				// Match the rendering resolution to the current client window size.
-				m_resolution.x = std::max(2, m_width);
-				m_resolution.y = std::max(2, m_height);
-
-				m_camera.setResolution(m_resolution.x, m_resolution.y);
-				m_rasterizer->setResolution(m_resolution.x, m_resolution.y);
-				m_state.resolution = m_resolution;
-				m_raytracer->updateState(m_state);
-				refresh = true;
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Reset Radiance Cache"))
-			{
-				m_raytracer->resetRadianceCache();
 				refresh = true;
 			}
 			if (ImGui::InputInt2("Resolution", &m_resolution.x, ImGuiInputTextFlags_EnterReturnsTrue)) // This requires RETURN to apply a new value.
@@ -1058,9 +1078,14 @@ void Application::guiWindow()
 	}
 	ImGui::End();
 
-	if (refresh)
+	if (refresh) [[unlikely]]
 	{
 		restartRendering();
+	}
+
+	if (refreshLosses) [[unlikely]]
+	{
+		networkLosses.fill(0.0f);
 	}
 }
 

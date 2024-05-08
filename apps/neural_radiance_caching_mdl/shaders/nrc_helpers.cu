@@ -44,6 +44,18 @@ __forceinline__ __device__ uint2 getLaunchIndex2D()
 
 }
 
+// (r, g, b) -> (r, g, b, 1)
+extern "C" __global__ void copy_radiance_to_output_buffer(float3 *radiance)
+{
+	const auto launchIndex = getLaunchIndex2D();
+	if (launchIndex.x >= sysData.resolution.x || launchIndex.y >= sysData.resolution.y) return;
+
+	const unsigned int index = launchIndex.y * sysData.resolution.x + launchIndex.x; // Pixel index
+	const auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
+
+	buffer[index] = make_float4(radiance[index], 1.0f);
+}
+
 // Radiance accumulator kernel to add the radiance * throughput 
 // at the end of the rendering paths to the output buffer.
 extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance, float3 *endRenderThroughput, nrc::RenderMode mode)
@@ -57,8 +69,7 @@ extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance,
 	using namespace nrc;
 
 	switch (mode) {
-	case RenderMode::Full:
-	default: {
+	case RenderMode::Full: {
 		const float3 radiance = endRenderThroughput[index] * endRenderRadiance[index];
 		const float accWeight = 1.0f / float(sysData.pf.iterationIndex + 1);
 		float3 dst = make_float3(buffer[index]);
@@ -66,7 +77,8 @@ extern "C" __global__ void accumulate_render_radiance(float3 *endRenderRadiance,
 		buffer[index] = make_float4(dst, 1.0f);
 		break;
 	}
-	case RenderMode::NoCache: {
+	case RenderMode::NoCache: // Ideally this kernel shouldn't be called at all.
+	default: {
 		return;
 	}
 	case RenderMode::CacheOnly: {
@@ -161,7 +173,7 @@ extern "C" __global__ void permute_train_data(nrc::DoubleBuffer<nrc::RadianceQue
 
 	// Modulo this to duplicate training data in case RT undersampled.
 	const auto numRecords = min(sysData.nrcCB->numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
-	if (numRecords <= 0) return;
+	if (numRecords <= 0) [[unlikely]] return;
 
 	const auto queriesSrc = trainRadianceQueries.getBuffer(0);
 	const auto queriesDst = trainRadianceQueries.getBuffer(1);
