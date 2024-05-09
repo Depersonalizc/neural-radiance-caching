@@ -111,6 +111,9 @@
 // 1 == Split float2's to compactify radiance queries.
 #define USE_COMPACT_RADIANCE_QUERY 1
 
-#define USE_HASH_ENCODING 1
+// Multiply NRC prediction by material (diffuse + specular)
+// 0 == Do not use reflectance factoring
+// 1 == Use reflectance factoring
+#define USE_REFLECTANCE_FACTORING 1
 
 #endif // CONFIG_H

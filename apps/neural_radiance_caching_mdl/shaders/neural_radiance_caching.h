@@ -3,6 +3,8 @@
 #ifndef NEURAL_RADIANCE_CACHING_H
 #define NEURAL_RADIANCE_CACHING_H
 
+#include "vector_math.h"
+
 namespace nrc
 {
 	enum class RenderMode : int
@@ -40,7 +42,7 @@ namespace nrc
 	constexpr int   TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
 	constexpr float TRAIN_UNBIASED_RATIO           = 1.f / 16.f;
 
-	constexpr float TRAIN_LR(InputEncoding encoding) 
+	constexpr float TRAIN_LR(InputEncoding encoding)
 	{
 		switch (encoding) {
 		case InputEncoding::Frequency: return 1e-3f;
@@ -112,6 +114,8 @@ namespace nrc
 #endif
 		float3 diffuse;
 		float3 specular;
+
+		__device__ __host__ float3 reflectance() { return diffuse + specular; }
 	};
 
 	template<typename T>

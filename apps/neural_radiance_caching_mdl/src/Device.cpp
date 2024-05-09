@@ -1236,9 +1236,9 @@ void Device::resizeNRC()
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceResultsCacheVis));
 	
 	dynBufs.radianceQueriesCacheVis = reinterpret_cast<RadianceQuery*>(
-		memAlloc(sizeof(RadianceQuery) * numPixels, /*alignof(RadianceQuery)*/64));
+		memAlloc(sizeof(RadianceQuery) * numPixels, alignof(RadianceQuery)/*64*/));
 	dynBufs.radianceResultsCacheVis = reinterpret_cast<float3*>(
-		memAlloc(sizeof(float3) * numPixels, /*alignof(float3)*/64));
+		memAlloc(sizeof(float3) * numPixels, alignof(float3)/*64*/));
 
 	// dynBufs
 	// .radianceQueriesInference
@@ -1318,16 +1318,19 @@ void Device::nrcAccumulateRadiance(bool skipRenderCache)
 	
 	if (!skipRenderCache)
 	{
-		void* args[] = { /*float3 *endRenderRadiance   */ &m_nrcControlBlock.bufDynamic.radianceResultsInference,
-			/*float3 *endRenderThroughput */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput,
-			/*int    mode                 */ &m_nrcRenderMode };
+		void* args[] = { /*float3        *endRenderRadiance*/ &m_nrcControlBlock.bufDynamic.radianceResultsInference,
+#if USE_REFLECTANCE_FACTORING
+						 /*RadianceQuery *endRenderQueries */ &m_nrcControlBlock.bufDynamic.radianceQueriesInference,
+#endif
+						 /*float3 *endRenderThroughput     */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput,
+						 /*int    mode                     */ &m_nrcRenderMode };
 
 		cfg.blockDimY = m_fnAccumulateRenderRadianceBlockSize / cfg.blockDimX;
 		cfg.gridDimX = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
 		cfg.gridDimY = (m_systemData.resolution.y + cfg.blockDimY - 1) / cfg.blockDimY;
 
 		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX
-			&& cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+			   && cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnAccumulateRenderRadiance, args, nullptr));
 	}
@@ -1345,17 +1348,22 @@ void Device::nrcVisualizeFirstRadiance(int screenSize)
 	if (m_nrcRenderMode == nrc::RenderMode::CacheFirstVertex)
 	{
 		m_nrcNetwork.infer(flatten(m_nrcControlBlock.bufDynamic.radianceQueriesCacheVis),
-			flatten(m_nrcControlBlock.bufDynamic.radianceResultsCacheVis), screenSize);
+						   flatten(m_nrcControlBlock.bufDynamic.radianceResultsCacheVis), screenSize);
 		
 		// Copy the data over to the output buffer
-		void* args[] = { /*float3 *radiance */ &m_nrcControlBlock.bufDynamic.radianceResultsCacheVis };
+		void* args[] = {
+			/*float3        *radiance*/ &m_nrcControlBlock.bufDynamic.radianceResultsCacheVis,
+#if USE_REFLECTANCE_FACTORING
+			/*RadianceQuery *queries */ &m_nrcControlBlock.bufDynamic.radianceQueriesCacheVis,
+#endif
+		};
 
 		cfg.blockDimY = m_fnCopyRadianceToOutputBufferBlockSize / cfg.blockDimX;
 		cfg.gridDimX = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
 		cfg.gridDimY = (m_systemData.resolution.y + cfg.blockDimY - 1) / cfg.blockDimY;
 
 		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX
-			&& cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+			   && cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
 
 		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnCopyRadianceToOutputBuffer, args, nullptr));
 	}
@@ -1380,19 +1388,30 @@ void Device::nrcPropagateRadiance(int screenSize)
 					   .hStream = m_cudaStream };
 
 	// Offset by #pixels to get to the radiance at end of train suffixes.
-	float3* endTrainingRadiance = m_nrcControlBlock.bufDynamic.radianceResultsInference + screenSize;
 	float3* trainRadianceTargets = m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(0);
-	void* args[] = { /*TrainingSuffixEndVertex *trainSuffixEndVertices */ &m_nrcControlBlock.bufDynamic.trainSuffixEndVertices,
-					 /*float3                  *endTrainRadiance       */ &endTrainingRadiance,
-					 /*TrainingRecord          *trainRecords           */ &m_nrcControlBlock.bufStatic.trainingRecords,
-					 /*float3                  *trainRadianceTargets   */ &trainRadianceTargets };
+	[[maybe_unused]] nrc::RadianceQuery* trainRadianceQueries = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(0);
+	float3* endTrainingRadiance  = m_nrcControlBlock.bufDynamic.radianceResultsInference + screenSize;
+	[[maybe_unused]] nrc::RadianceQuery* endTrainingQueries = m_nrcControlBlock.bufDynamic.radianceQueriesInference + screenSize;
+	
+	void* args[] = {
+		/*TrainingSuffixEndVertex *trainSuffixEndVertices */ &m_nrcControlBlock.bufDynamic.trainSuffixEndVertices,
+		/*float3                  *endTrainRadiance       */ &endTrainingRadiance,
+#if USE_REFLECTANCE_FACTORING
+		/*RadianceQuery           *endTrainQueries        */ &endTrainingQueries,
+#endif
+		/*TrainingRecord          *trainRecords           */ &m_nrcControlBlock.bufStatic.trainingRecords,
+		/*float3                  *trainRadianceTargets   */ &trainRadianceTargets,
+#if USE_REFLECTANCE_FACTORING
+		/*RadianceQuery           *trainRadianceQueries   */ &trainRadianceQueries
+#endif
+	};
 
 	cfg.blockDimY = m_fnPropagateTrainRadianceBlockSize / cfg.blockDimX;
 	cfg.gridDimX = (m_systemData.pf.numTiles.x + cfg.blockDimX - 1) / cfg.blockDimX;
 	cfg.gridDimY = (m_systemData.pf.numTiles.y + cfg.blockDimY - 1) / cfg.blockDimY;
 
 	MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX
-		&& cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+		   && cfg.gridDimY > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
 
 	CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPropagateTrainRadiance, args, nullptr));
 #endif
