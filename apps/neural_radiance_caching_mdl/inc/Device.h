@@ -503,10 +503,17 @@ private:
 	void initDeviceAttributes();
 	void initDeviceProperties();
 	void loadNativeModules();
-	void initPipeline();
+	void initNRCPipeline();
 	void initSBT(const std::vector<OptixProgramGroup>& programGroups);
 	void initNRC();
 	void resizeNRC();
+
+	void nrcInferRadiance(int screenSize, int numTiles, bool skipRenderCache);
+	void nrcAccumulateRadiance(bool skipRenderCache);
+	void nrcVisualizeFirstRadiance(int screenSize);
+	void nrcPropagateRadiance(int screenSize);
+	void nrcShuffleTrainingData();
+	void nrcTrainRadiance();
 
 	// Adjust the tile size according to #train records generated last frame.
 	void adjustTileSize(int numTrainRecords);
