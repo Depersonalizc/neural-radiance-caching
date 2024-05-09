@@ -17,3 +17,4 @@
 /.vs
 
 /cmake-build*
+/data
