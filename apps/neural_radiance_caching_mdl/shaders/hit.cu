@@ -548,24 +548,46 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
     }
     else if (isNotUnbiasedTrainSuffix)
     {
-        const float pdf = thePrd.pdf == 0.f ? INFINITY : thePrd.pdf;
-        const float denom = sqrtf(pdf * absCosine);
-        thePrd.areaSpread += ::safeDiv(thePrd.distance, denom);
-
-        terminate = (thePrd.areaSpread > thePrd.areaThreshold);
-// DEBUG INFO
-#if 0
-        if (thePrd.flags & FLAG_DEBUG)
+        if (thePrd.eventType & mi::neuraylib::BSDF_EVENT_SPECULAR)
         {
-            printf("Area spread (@hit %d, train=%d, suffix=%d): %f\n", 
-                    thePrd.depth,
-                    bool(thePrd.flags & FLAG_TRAIN),
-                    bool(thePrd.flags & FLAG_TRAIN_SUFFIX),
-                    thePrd.areaSpread);
-            if (terminate) printf("[Terminate!] Area spread reaches threshold after hit %d\n", thePrd.depth);
-        }
+#if 0
+            if (thePrd.flags & FLAG_DEBUG) printf("Specular hit, continuing the ray\n");
 #endif
+        }
+        else
+        {
+            const float pdf = thePrd.pdf == 0.f ? INFINITY : thePrd.pdf;
+            const float denom = sqrtf(pdf * absCosine);
+
+            const float deltaAreaSpread = ::safeDiv(thePrd.distance, denom);
+
+#if 0
+            if (thePrd.flags & FLAG_DEBUG)
+            {
+                printf("pdf: %f, absCosine: %f, denom: %f, thePrd.distance: %f, deltaAreaSpread: %f\n",
+                    pdf, absCosine, denom, thePrd.distance, deltaAreaSpread);
+            }
+#endif
+
+            thePrd.areaSpread += deltaAreaSpread;
+
+            terminate = (thePrd.areaSpread > thePrd.areaThreshold);
+        }
     }
+
+    // DEBUG INFO
+#if 0
+    if (thePrd.flags & FLAG_DEBUG)
+    {
+        printf("Area spread (@hit %d, train=%d, suffix=%d): %f\n",
+            thePrd.depth,
+            bool(thePrd.flags & FLAG_TRAIN),
+            bool(thePrd.flags & FLAG_TRAIN_SUFFIX),
+            thePrd.areaSpread);
+        if (terminate) printf("[Terminate!] Area spread reaches threshold after hit %d\n", thePrd.depth);
+    }
+#endif
+
     return terminate;
 }
 
@@ -1203,6 +1225,12 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         const auto sample_data = ::importanceSampleBSDF(state, res_data, material.arg_block,
                                                         idxCallScatteringSample, *thePrd,
                                                         isFrontFace, thin_walled, ior);
+
+        //if (sample_data.event_type & mi::neuraylib::BSDF_EVENT_SPECULAR)
+        //{
+        //    float3 lt = sample_data.bsdf_over_pdf;
+        //    printf("localThroughput at specular vertex: %f, %f, %f\n", lt.x, lt.y, lt.z);
+        //}
 
         thePrd->wi          = sample_data.k2;            // Continuation direction.
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
