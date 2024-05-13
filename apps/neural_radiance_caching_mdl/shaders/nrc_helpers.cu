@@ -189,7 +189,7 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 
 #if USE_REFLECTANCE_FACTORING
 		auto refl = trainRadianceQueries[iTo].reflectance();
-		refl += make_float3(DENOMINATOR_EPSILON);
+		//refl += make_float3(DENOMINATOR_EPSILON);
 		float3 radianceTo = targetTo * refl;
 #else
 		float3 radianceTo = targetTo;
@@ -198,8 +198,8 @@ extern "C" __global__ void propagate_train_radiance(nrc::TrainingSuffixEndVertex
 		radianceTo += recordTo.localThroughput * lastRadiance;
 
 #if USE_REFLECTANCE_FACTORING
-		targetTo = radianceTo / refl;
-		//targetTo = ::safeDiv(radianceTo, refl);
+		//targetTo = radianceTo / refl;
+		targetTo = ::safeDiv(radianceTo, refl);
 #else
 		targetTo = radianceTo;
 #endif

@@ -114,6 +114,6 @@
 // Multiply NRC prediction by material (diffuse + specular)
 // 0 == Do not use reflectance factoring
 // 1 == Use reflectance factoring
-#define USE_REFLECTANCE_FACTORING 1
+#define USE_REFLECTANCE_FACTORING 0
 
 #endif // CONFIG_H

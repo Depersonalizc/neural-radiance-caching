@@ -82,6 +82,7 @@ struct DeviceShaderConfiguration
 
   int idxCallHairSample{-1};
   int idxCallHairEval{-1};
+  int idxCallHairAux{-1};
 
   // The constant expression values:
   //bool thin_walled; // Stored inside flags.

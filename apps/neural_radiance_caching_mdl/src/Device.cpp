@@ -2874,7 +2874,6 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 
 			dsc.idxCallSurfaceScatteringSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
 			dsc.idxCallSurfaceScatteringEval = appendProgramGroupMDL(indexShader, name + std::string("_evaluate"));
-			// TODO: Add direct callables to query the surface albedo/roughness?
 			dsc.idxCallSurfaceScatteringAux = appendProgramGroupMDL(indexShader, name + std::string("_auxiliary"));
 		}
 
@@ -2884,7 +2883,6 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 
 			dsc.idxCallBackfaceScatteringSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
 			dsc.idxCallBackfaceScatteringEval = appendProgramGroupMDL(indexShader, name + std::string("_evaluate"));
-			// TODO: Add direct callables to query the backface albedo/roughness?
 			dsc.idxCallBackfaceScatteringAux = appendProgramGroupMDL(indexShader, name + std::string("_auxiliary"));
 		}
 
@@ -2993,6 +2991,7 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 
 			dsc.idxCallHairSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
 			dsc.idxCallHairEval = appendProgramGroupMDL(indexShader, name + std::string("_evaluate"));
+			dsc.idxCallHairAux = appendProgramGroupMDL(indexShader, name + std::string("_auxiliary"));
 		}
 
 		MY_ASSERT(m_modulesMDL.size() == m_deviceShaderConfigurations.size());

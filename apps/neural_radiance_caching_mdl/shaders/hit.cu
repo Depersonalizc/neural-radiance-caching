@@ -1735,16 +1735,132 @@ extern "C" __global__ void __closesthit__curves()
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
     PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
+    // Get the data for the hit geometry instance
+    const GeometryInstanceData& theData = sysData.geometryInstanceData[optixGetInstanceId()];
+
     thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
-
     thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
-
     // Note that no adjustment to the hit position is done here!
     // The OptiX curve primitives are not intersecting with backfaces, which means the sceneEpsilon 
     // offset on the continuation ray t_min is enough to prevent self-intersections independently
     // of the continuation ray direction being a reflection or transmisssion.
     //thePrd->pos = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
     thePrd->pos += thePrd->wi * thePrd->distance;
+
+    // Build MDL state for the curve hit
+    Mdl_state state;
+    {
+        float4 objectToWorld[3];
+        float4 worldToObject[3];
+
+        getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject); // Single instance level transformation list only.
+
+        const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
+
+        const unsigned int* indices = reinterpret_cast<unsigned int*>(theData.indices);
+        const unsigned int  index = indices[thePrimitiveIndex];
+
+        const CurveAttributes* attributes = reinterpret_cast<const CurveAttributes*>(theData.attributes);
+
+        float4 spline[4];
+
+        spline[0] = attributes[index].vertex;
+        spline[1] = attributes[index + 1].vertex;
+        spline[2] = attributes[index + 2].vertex;
+        spline[3] = attributes[index + 3].vertex;
+
+        // Fixed bitangent-like reference vector for the vFiber calculation.
+        float3 rf = make_float3(attributes[index].reference);
+
+        const float4 t = make_float4(attributes[index].texcoord.w,
+            attributes[index + 1].texcoord.w,
+            attributes[index + 2].texcoord.w,
+            attributes[index + 3].texcoord.w);
+
+        CubicInterpolator interpolator;
+
+        interpolator.initializeFromBSpline(spline);
+
+        // Convenience function for __uint_as_float( optixGetAttribute_0() );
+        const float u = optixGetCurveParameter();
+
+        // Optimized (see curve.h):
+        const float o_s = 1.0f / 6.0f;
+        const float ts0 = (t.w - t.x) * o_s + (t.y - t.z) * 0.5f;
+        const float ts1 = (t.x + t.z) * 0.5f - t.y;
+        const float ts2 = (t.z - t.x) * 0.5f;
+        const float ts3 = (t.x + t.y * 4.0f + t.z) * o_s;
+
+        // Coordinate in range [0.0f, 1.0f] from root to tip along the whole fiber.
+        const float uFiber = (((ts0 * u) + ts1) * u + ts2) * u + ts3;
+
+        const float4 fiberPosition = interpolator.position4(u); // .xyz = object space position, .w = radius of the curve's center line at the interpolant u.
+
+        float3 tg = interpolator.velocity3(u); // Unnormalized object space tangent along the fiber from root to tip at the interpolant u.
+
+        float3 position = transformPoint(worldToObject, thePrd->pos); // Transform to object space.
+        float3 ns = surfaceNormal(interpolator, u, position);         // This moves position onto the surface of the curve in object space.
+
+        // Transform into renderer internal space == world space.
+        rf = normalize(transformVector(objectToWorld, rf));
+        tg = normalize(transformVector(objectToWorld, tg));
+        ns = normalize(transformNormal(worldToObject, ns));
+
+        // Calculate an ortho-normal system for the fiber surface hit point. The shading normal is the fixed vector here!
+        // Expanding the TBN tbn(tg, ns) constructor because TBN members can't be used as pointers for the Mdl_state with NUM_TEXTURE_SPACES > 1.
+        float3 bt = normalize(cross(ns, tg));
+        tg = cross(bt, ns); // Now the tangent is orthogonal to the shading normal.
+
+        // Transform the constant reference fiber bitangent vector into the local fiber coordinate system.
+        // This makes the coordinate [0.0f, 1.0f] around the cross section of the hair relative to the hit point.
+        // Expanded proj = fbn.transformToLocal(rf);
+        // Only need the projected y- and z-components.(This works without normalization.
+        const float2 proj = make_float2(dot(rf, bt), dot(rf, ns));
+
+        // The (bitangent, normal) plane contains the cross section of the intersection. 
+        // I want vFiber go from 0.0f to 1.0f counter-clockwise around the fiber when looking from the fiber root along the fiber.
+        // As texture coordinate this means lower-left origin texture coordinates like in OpenGL.
+        const float vFiber = (atan2f(-proj.x, proj.y) + M_PIf) * 0.5f * M_1_PIf;
+
+        // The Mdl_state holds the texture attributes per texture space in separate arrays.
+        // NUM_TEXTURE_SPACES is always at least 1.
+        float3 texture_coordinates[NUM_TEXTURE_SPACES];
+        float3 texture_tangents[NUM_TEXTURE_SPACES];
+        float3 texture_bitangents[NUM_TEXTURE_SPACES];
+
+        // In hair shading, texture spaces contain the following values:
+        // texture_coordinate(0).x: The normalized position of the intersection point along the hair fiber in the range from zero for the root of the fiber to one for the tip of the fiber.
+        // texture_coordinate(0).y: The normalized position of the intersection point around the hair fiber in the range from zero to one.
+        // texture_coordinate(0).z: The thickness of the hair fiber at the intersection point in internal space.
+        texture_coordinates[0] = make_float3(uFiber, vFiber, fiberPosition.w * 2.0f); // .z = thickness = radius * 2.0f
+        texture_bitangents[0] = bt;
+        texture_tangents[0] = tg;
+
+#if NUM_TEXTURE_SPACES == 2
+        // PERF Only ever set NUM_TEXTURE_SPACES to 2 if you need the hair BSDF to fully work, 
+        // texture_coordinate(1): A position of the root of the hair fiber, for example, from a texture space of a surface supporting the hair fibers. This position is constant for a fiber.
+        // Fixed texture coordinate for the fiber. Only loaded when NUM_TEXTURE_SPACES == 2.
+        texture_coordinates[1] = make_float3(attributes[index].texcoord);
+        texture_bitangents[1] = bt; // HACK Just copy the values from the first entry.
+        texture_tangents[1] = tg;
+#endif 
+
+        float4 texture_results[NUM_TEXTURE_RESULTS];
+
+        state.normal = ns;
+        state.geom_normal = ns;
+        state.position = thePrd->pos;
+        state.animation_time = 0.0f;
+        state.text_coords = texture_coordinates;
+        state.tangent_u = texture_tangents;
+        state.tangent_v = texture_bitangents;
+        state.text_results = texture_results;
+        state.ro_data_segment = nullptr;
+        state.world_to_object = worldToObject;
+        state.object_to_world = objectToWorld;
+        state.object_id = theData.ids.z;
+        state.meters_per_scene_unit = 1.0f;
+    }
 
     // If we're inside a volume and hit something, the path throughput needs to be modulated
     // with the transmittance along this segment before adding surface or light radiance!
@@ -1757,225 +1873,253 @@ extern "C" __global__ void __closesthit__curves()
         ++thePrd->walk;
     }
 
-    float4 objectToWorld[3];
-    float4 worldToObject[3];
-
-    getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject); // Single instance level transformation list only.
-
-    const GeometryInstanceData theData = sysData.geometryInstanceData[optixGetInstanceId()];
-
-    const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
-
-    const unsigned int* indices = reinterpret_cast<unsigned int*>(theData.indices);
-    const unsigned int  index = indices[thePrimitiveIndex];
-
-    const CurveAttributes* attributes = reinterpret_cast<const CurveAttributes*>(theData.attributes);
-
-    float4 spline[4];
-
-    spline[0] = attributes[index].vertex;
-    spline[1] = attributes[index + 1].vertex;
-    spline[2] = attributes[index + 2].vertex;
-    spline[3] = attributes[index + 3].vertex;
-
-    // Fixed bitangent-like reference vector for the vFiber calculation.
-    float3 rf = make_float3(attributes[index].reference);
-
-    const float4 t = make_float4(attributes[index].texcoord.w,
-        attributes[index + 1].texcoord.w,
-        attributes[index + 2].texcoord.w,
-        attributes[index + 3].texcoord.w);
-
-    CubicInterpolator interpolator;
-
-    interpolator.initializeFromBSpline(spline);
-
-    // Convenience function for __uint_as_float( optixGetAttribute_0() );
-    const float u = optixGetCurveParameter();
-
-    // Optimized (see curve.h):
-    const float o_s = 1.0f / 6.0f;
-    const float ts0 = (t.w - t.x) * o_s + (t.y - t.z) * 0.5f;
-    const float ts1 = (t.x + t.z) * 0.5f - t.y;
-    const float ts2 = (t.z - t.x) * 0.5f;
-    const float ts3 = (t.x + t.y * 4.0f + t.z) * o_s;
-
-    // Coordinate in range [0.0f, 1.0f] from root to tip along the whole fiber.
-    const float uFiber = (((ts0 * u) + ts1) * u + ts2) * u + ts3;
-
-    const float4 fiberPosition = interpolator.position4(u); // .xyz = object space position, .w = radius of the curve's center line at the interpolant u.
-
-    float3 tg = interpolator.velocity3(u); // Unnormalized object space tangent along the fiber from root to tip at the interpolant u.
-
-    float3 position = transformPoint(worldToObject, thePrd->pos); // Transform to object space.
-    float3 ns = surfaceNormal(interpolator, u, position);         // This moves position onto the surface of the curve in object space.
-
-    // Transform into renderer internal space == world space.
-    rf = normalize(transformVector(objectToWorld, rf));
-    tg = normalize(transformVector(objectToWorld, tg));
-    ns = normalize(transformNormal(worldToObject, ns));
-
-    // Calculate an ortho-normal system for the fiber surface hit point. The shading normal is the fixed vector here!
-    // Expanding the TBN tbn(tg, ns) constructor because TBN members can't be used as pointers for the Mdl_state with NUM_TEXTURE_SPACES > 1.
-    float3 bt = normalize(cross(ns, tg));
-    tg = cross(bt, ns); // Now the tangent is orthogonal to the shading normal.
-
-    // Transform the constant reference fiber bitangent vector into the local fiber coordinate system.
-    // This makes the coordinate [0.0f, 1.0f] around the cross section of the hair relative to the hit point.
-    // Expanded proj = fbn.transformToLocal(rf);
-    // Only need the projected y- and z-components.(This works without normalization.
-    const float2 proj = make_float2(dot(rf, bt), dot(rf, ns));
-
-    // The (bitangent, normal) plane contains the cross section of the intersection. 
-    // I want vFiber go from 0.0f to 1.0f counter-clockwise around the fiber when looking from the fiber root along the fiber.
-    // As texture coordinate this means lower-left origin texture coordinates like in OpenGL.
-    const float vFiber = (atan2f(-proj.x, proj.y) + M_PIf) * 0.5f * M_1_PIf;
-
-    // The Mdl_state holds the texture attributes per texture space in separate arrays.
-    // NUM_TEXTURE_SPACES is always at least 1.
-    float3 texture_coordinates[NUM_TEXTURE_SPACES];
-    float3 texture_tangents[NUM_TEXTURE_SPACES];
-    float3 texture_bitangents[NUM_TEXTURE_SPACES];
-
-    // In hair shading, texture spaces contain the following values:
-    // texture_coordinate(0).x: The normalized position of the intersection point along the hair fiber in the range from zero for the root of the fiber to one for the tip of the fiber.
-    // texture_coordinate(0).y: The normalized position of the intersection point around the hair fiber in the range from zero to one.
-    // texture_coordinate(0).z: The thickness of the hair fiber at the intersection point in internal space.
-    texture_coordinates[0] = make_float3(uFiber, vFiber, fiberPosition.w * 2.0f); // .z = thickness = radius * 2.0f
-    texture_bitangents[0] = bt;
-    texture_tangents[0] = tg;
-
-#if NUM_TEXTURE_SPACES == 2
-    // PERF Only ever set NUM_TEXTURE_SPACES to 2 if you need the hair BSDF to fully work, 
-    // texture_coordinate(1): A position of the root of the hair fiber, for example, from a texture space of a surface supporting the hair fibers. This position is constant for a fiber.
-    // Fixed texture coordinate for the fiber. Only loaded when NUM_TEXTURE_SPACES == 2.
-    texture_coordinates[1] = make_float3(attributes[index].texcoord);
-    texture_bitangents[1] = bt; // HACK Just copy the values from the first entry.
-    texture_tangents[1] = tg;
-#endif 
-
-    Mdl_state state;
-
-    float4 texture_results[NUM_TEXTURE_RESULTS];
-
-    state.normal = ns;
-    state.geom_normal = ns;
-    state.position = thePrd->pos;
-    state.animation_time = 0.0f;
-    state.text_coords = texture_coordinates;
-    state.tangent_u = texture_tangents;
-    state.tangent_v = texture_bitangents;
-    state.text_results = texture_results;
-    state.ro_data_segment = nullptr;
-    state.world_to_object = worldToObject;
-    state.object_to_world = objectToWorld;
-    state.object_id = theData.ids.z;
-    state.meters_per_scene_unit = 1.0f;
+    // Decide ray termination. Also update the accumulated area spread.
+    const bool terminateAreaSpread = rayShouldTerminate(state, *thePrd);
+    const bool isTrain = thePrd->flags & FLAG_TRAIN;
+    bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
 
     const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
-
     mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
-
     const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
 
     // This is always present, even if it just returns.
     optixDirectCall<void>(shaderConfiguration.idxCallInit, &state, &res_data, material.arg_block);
 
+    const bool isFrontFace = true;
+    const bool thin_walled = false;
+    const float3       ior = make_float3(MI_NEURAYLIB_BSDF_USE_MATERIAL_IOR);
+
     // Start fresh with the next BSDF sample.
     // Save the current path throughput for the direct lighting contribution.
     // The path throughput will be modulated with the BSDF sampling results before that.
     const float3 throughput = thePrd->throughput;
-    // The pdf of the previous event was needed for the emission calculation above.
     thePrd->pdf = 0.0f;
 
-    // Importance sample the hair BSDF. 
-    if (0 <= shaderConfiguration.idxCallHairSample)
+    // Determine which BSDF to use when the material is thin-walled. 
+    int idxCallScatteringSample = shaderConfiguration.idxCallHairSample;
+    int idxCallScatteringEval = shaderConfiguration.idxCallHairEval;
+    int idxCallScatteringAux = shaderConfiguration.idxCallHairAux; // For material albedo/roughness.
+
+    const bool scatteringFnExists = shaderConfiguration.idxCallHairSample >= 0;
+
+    // Auxiliary material properties (albedos, roughness) if we need it.
+    // If scattering fn doesn't exist, just use the default Bsdf_auxiliary_data.
+    BSDFAuxiliaryData aux_data{};
+    bool queriedAuxData = !scatteringFnExists;
+
+    // Importance sample the hair BSDF.
+    float3 localThroughput = make_float3(0.f);
+    if (scatteringFnExists) [[likely]]
     {
-        BSDFSampleData sample_data;
-
-        int idx = thePrd->idxStack;
-
-        // FIXME The MDL-SDK libbsdf_hair.h ignores these ior values and only uses the ior value from the chiang_hair_bsdf structure!
-        sample_data.ior1   = thePrd->stack[idx].ior;             // From surrounding medium ior
-        sample_data.ior2.x = MI_NEURAYLIB_BSDF_USE_MATERIAL_IOR; // to material ior.
-        sample_data.k1     = thePrd->wo;                         // == -optixGetWorldRayDirection()
-        sample_data.xi     = rng4(thePrd->seed);
-
-        optixDirectCall<void>(shaderConfiguration.idxCallHairSample, &sample_data, &state, &res_data, material.arg_block);
+        // FIXME The MDL-SDK libbsdf_hair.h ignores ior values and only uses the ior value from the chiang_hair_bsdf structure!
+        const auto sample_data = ::importanceSampleBSDF(state, res_data, material.arg_block,
+                                                        idxCallScatteringSample, *thePrd,
+                                                        isFrontFace, thin_walled, ior);
 
         thePrd->wi          = sample_data.k2;            // Continuation direction.
         thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
         thePrd->pdf         = sample_data.pdf;           // Specular events return pdf == 0.0f!
         thePrd->eventType   = sample_data.event_type;    // This replaces the previous PRD flags.
+
+        localThroughput = sample_data.bsdf_over_pdf;
     }
     else
     {
         // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
         // This is usually happening with arbitrary mesh lights which only specify emission.
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
-        // None of the following code will have any effect in that case.
+    }
+
+// DEBUG VIS: Albedos/roughness
+#if 0
+    ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                           *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+    //thePrd->radiance = aux_data.albedo_diffuse;
+    //thePrd->radiance = aux_data.albedo_glossy;
+    thePrd->radiance = { aux_data.roughness.x, aux_data.roughness.y, 0.f };
+    thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+    return;
+#endif
+
+    // Radiance visualization:
+    // Record first non-specular vertex if we haven't
+    const bool eventIsSpecular = (thePrd->eventType & mi::neuraylib::BSDF_EVENT_SPECULAR);
+    const bool recordedFirstVertex = (thePrd->flags & FLAG_RECORDED_FIRST_VERTEX);
+    if (!recordedFirstVertex && !eventIsSpecular) [[unlikely]]
+    {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+        nrc::addCacheVisQuery(state, *thePrd, aux_data, !isFrontFace);
+        thePrd->flags |= FLAG_RECORDED_FIRST_VERTEX;
+    }
+
+    // Early unbiased termination.
+    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
+    {
+        // Terminate rendering path if it hasn't
+        if (!isTrainSuffix)
+        {
+            // Add a (rendering) query for this *pixel*.
+            // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
+            //nrc::addRenderQuery(state, *thePrd, aux_data);
+
+            // No radiance will be added because the ray has been absorbed.
+            thePrd->lastRenderThroughput = make_float3(0.f);
+        }
+
+        // Terminate training suffix (unbiased)
+        if (isTrain)
+        {
+            // End the train suffix by a zero-radiance unbiased 
+            // terminal vertex that links to thePrd->lastTrainRecordIndex.
+            nrc::endTrainSuffixUnbiased(*thePrd);
+        }
+
         return;
     }
 
-    // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
-    const int numLights = sysData.numLights;
-
-    if (sysData.directLighting && 0 < numLights && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
+    // Handle terminating vertex due to area spread.
+    // Can be sure it's not an unbiased train suffix.
+    if (terminateAreaSpread) [[unlikely]]
     {
-        // Sample one of many lights. 
-        // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-        const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
 
-        const LightDefinition& light = sysData.lightDefinitions[indexLight];
-
-        LightSample lightSample = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
-
-        if (0.0f < lightSample.pdf && 0 <= shaderConfiguration.idxCallHairEval) // Useful light sample and valid shader?
+        if (isTrain) [[unlikely]]
         {
-            BSDFEvaluateData eval_data;
-
-            int idx = thePrd->idxStack;
-
-            // DAR FIXME The MDL-SDK libbsdf_hair.h ignores these values and only uses the ior value from the chiang_hair-bsdf structure!
-            eval_data.ior1   = thePrd->stack[idx].ior;             // From surrounding medium ior
-            eval_data.ior2.x = MI_NEURAYLIB_BSDF_USE_MATERIAL_IOR; // to material ior.
-            eval_data.k1     = thePrd->wo;
-            eval_data.k2     = lightSample.direction;
-
-            optixDirectCall<void>(shaderConfiguration.idxCallHairEval, &eval_data, &state, &res_data, material.arg_block);
-
-            // DAR DEBUG This already contains the fabsf(dot(lightSample.direction, state.normal)) factor!
-            // For a white Lambert material, the bxdf components match the eval_data.pdf
-            const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
-
-            if (0.0f < eval_data.pdf && isNotNull(bxdf))
+            if (isTrainSuffix) // Case 1: End of (self-)training suffix.
             {
-                // Pass the current payload registers through to the shadow ray.
-                unsigned int p0 = optixGetPayload_0();
-                unsigned int p1 = optixGetPayload_1();
+                // Terminate the train suffix by self-training.
+                // Add a query for this *tile* to (the training part of) radianceQueriesInference
+                nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
 
-                thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
+                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                return;
+            }
+            else // Case 2: End of rendering path
+            {
+                // Add a (rendering) query for this *pixel*.
+                nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
-                // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval 
-                // to prevent self-intersections with the actual light geometry in the scene.
-                optixTrace(sysData.topObject,
-                           thePrd->pos, lightSample.direction, // origin, direction
-                           sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                           p0, p1); // Pass through thePrd to the shadow ray.
-
-                if ((thePrd->flags & FLAG_SHADOW) == 0) // Shadow flag not set?
+                // Store the last rendering throughput to accumulate the query by. 
+                thePrd->lastRenderThroughput = throughput;
+                
+                // EDGE: Train suffix ended before rendering path due to a full buffer.
+                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL)
                 {
-                    const float weightMIS = (light.typeLight >= TYPE_LIGHT_FIRST_SINGULAR)
-                                          ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
-
-                    // The sampled emission needs to be scaled by the inverse probability to have selected this light,
-                    // Selecting one of many lights means the inverse of 1.0f / numLights.
-                    // This is using the path throughput before the sampling modulated it above.
-                    thePrd->radiance += throughput * bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
+                    thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                    return;
                 }
+
+                // Setup to proceed with the training suffix.
+                thePrd->flags |= FLAG_TRAIN_SUFFIX; // Mark we're in training suffix.
+                thePrd->areaSpread = 0.f; // Restart area spread accumulation
+                isTrainSuffix = true;
             }
         }
+        else // Pure rendering ray ends
+        {
+            // Add a (rendering) query for this *pixel*.
+            nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
+
+            // Store the last rendering throughput to accumulate the query by. Then terminate.
+            thePrd->lastRenderThroughput = throughput;
+            
+            thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+            return;
+        }
     }
+
+    const auto eventIsNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
+
+    // Try to atomically allocate a training record if we're training
+    // ... and previous hits haven't reported a full buffer.
+    float3* trainTargetRadiance = nullptr;
+    const auto doAllocateTrainRecord = isTrain 
+                                    && eventIsNonDirac 
+                                    && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+    if (doAllocateTrainRecord)
+    {
+        ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
+                               *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
+
+        int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
+        if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
+        {
+            auto& staticBufs = sysData.nrcCB->bufStatic;
+
+            // Set up the record, linking it to the previous vertex.
+            auto &trainRecord = staticBufs.trainingRecords[trainRecordIndex];
+            trainRecord.propTo = thePrd->lastTrainRecordIndex;
+            trainRecord.localThroughput = localThroughput;
+
+            // Training target radiance - initialized to zero.
+            trainTargetRadiance = &staticBufs.trainingRadianceTargets[trainRecordIndex];
+            //*trainTargetRadiance = make_float3(0.f);
+
+#if SANITY_CHK
+            if (!allZero(*trainTargetRadiance)) printf("ERROR: trainTargetRadiance not zero initialized\n");
+#endif
+
+            // Add a training query with (unencoded) inputs to NRC network
+            nrc::addTrainQuery(state, *thePrd, aux_data, !isFrontFace, trainRecordIndex);
+
+            // Used for radiance prop and for next (potential) 
+            // emissive hit/env miss to accumulate BSDF-sampling MIS radiance.
+            thePrd->lastTrainRecordIndex = trainRecordIndex;
+        }
+        else
+        {
+            // If the train record buffer is full - we're forced to terminate the train suffix here.
+            // Unconditionally treat this ray as self-training to avoid bias.
+
+            // Terminate the train suffix by self-training.
+            // Add a query for this *tile* to (the training part of) radianceQueriesInference
+            nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
+
+            // If the rendering path has been completed already, we can terminate.
+            if (isTrainSuffix)
+            {
+                thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+                return;
+            }
+
+            // Otherwise the rendering path hasn't been completed. Must continue until it does. 
+            // But we can tell the next hits to not bother with allocating training records.
+            // -> doAllocateTrainRecord will always be false for next hits.
+            thePrd->lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+        }
+    }
+
+    // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
+    const bool doDirectLighting = sysData.directLighting
+                                && sysData.numLights > 0
+                                && eventIsNonDirac
+                                && idxCallScatteringEval >= 0;
+    if (doDirectLighting)
+    {
+        // directLighting == bxdf * lightsample.radiance_over_pdf * numLights * weightMIS
+        // where: bxdf == abs(dot(lightSample.direction, state.normal)) * bsdf
+        // Note that lightsample.pdf is already solid-angle projected.
+        float3 directLighting = ::estimateDirectLighting(state, res_data, material.arg_block,
+                                                         idxCallScatteringEval, *thePrd,
+                                                         isFrontFace, thin_walled, ior);
+        
+        // If we got a training record at this vertex, accumulate the direct-lit radiance to it.
+        // Note we don't need to modulate the radiance by throughput, because it is local.
+        if (trainTargetRadiance)
+        {
+            *trainTargetRadiance += directLighting;
+#if SANITY_CHK
+            if (is_nan_f3(directLighting)) printf("CH_curves: directLighting is NAN\n");
+#endif
+        }
+
+        // Accumulate *rendering* radiance if not currently on a training suffix.
+        if (!isTrainSuffix)
+        {
+            thePrd->radiance += throughput * directLighting;
+        }
+    }
+
 }
