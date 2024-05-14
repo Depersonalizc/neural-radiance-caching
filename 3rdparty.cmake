@@ -107,11 +107,13 @@ set(PATCH_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/patches")
 
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/temp/sources")
 set(BUILD_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/temp/build/${MSVC_TOOLSET}")
+# set(BUILD_DIR_TCNN "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tiny-cuda-nn/build/${MSVC_TOOLSET}")
 
 message("Install prefix: ${CMAKE_INSTALL_PREFIX} ${ARGC} ${ARGV}")
 
 file(MAKE_DIRECTORY ${SOURCE_DIR})
 file(MAKE_DIRECTORY ${BUILD_DIR})
+# file(MAKE_DIRECTORY ${BUILD_DIR_TCNN})
 
 macro(glew_sourceforge)
     message("GLEW")
@@ -216,9 +218,18 @@ endmacro()
 
 macro(tcnn_github)
     message("tiny-cuda-nn")
-    set(SUBMODULE_NAME "3rdparty/tiny-cuda-nn")
     message("  initializing submodule")
+    set(SUBMODULE_NAME "3rdparty/tiny-cuda-nn")
     execute_process(COMMAND ${GIT_COMMAND} submodule update --init --recursive ${SUBMODULE_NAME})
+    # message("  generating")
+    # execute_process(COMMAND ${CMAKE_COMMAND} "-G${GENERATOR}" "-A${BUILD_ARCH}" 
+    #                 "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}/tiny-cuda-nn" 
+    #                 "-DTCNN_BUILD_BENCHMARK=OFF" "-DTCNN_BUILD_EXAMPLES=OFF" 
+    #                 "${CMAKE_INSTALL_PREFIX}/tiny-cuda-nn" WORKING_DIRECTORY "${BUILD_DIR_TCNN}")
+    # message("  compiling release")
+    # execute_process(COMMAND devenv.exe "${BUILD_DIR_TCNN}/tiny-cuda-nn.sln" /Build "Release|${BUILD_ARCH}" WORKING_DIRECTORY "${BUILD_DIR_TCNN}")
+    # message("  installing release")
+    # execute_process(COMMAND devenv.exe "${BUILD_DIR_TCNN}/tiny-cuda-nn.sln" /Build "Release|${BUILD_ARCH}" /Project INSTALL WORKING_DIRECTORY "${BUILD_DIR_TCNN}")
 endmacro()
 
 glew_sourceforge()
