@@ -1,3 +1,4 @@
+# Copyright (c) 2024, Jamie Chen <jamiechenang@gmail>, modified upon
 # Copyright (c) 2013-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,7 +27,7 @@
 
 # FindCUDA.cmake is deprecated since CMake 3.10.
 # Use FindCUDAToolkit.cmake added in CMake 3.17 instead.
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.26)
 
 project( neural_radiance_caching_mdl LANGUAGES CUDA CXX )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
@@ -237,7 +238,7 @@ set( SHADERS_HEADERS
 NVCUDA_COMPILE_MODULE(
   SOURCES ${SHADERS}
   DEPENDENCIES ${SHADERS_HEADERS}
-  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
+  TARGET_PATH "${MODULE_TARGET_DIR}/${PROJECT_NAME}_core"
   EXTENSION "${OPTIX_MODULE_EXTENSION}"
   GENERATED_FILES PROGRAM_MODULES
   NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "--gpu-architecture=compute_${CMAKE_CUDA_ARCHITECTURES}" 
@@ -249,7 +250,7 @@ NVCUDA_COMPILE_MODULE(
 NVCUDA_COMPILE_MODULE(
   SOURCES ${KERNELS}
   DEPENDENCIES ${SHADERS_HEADERS}
-  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
+  TARGET_PATH "${MODULE_TARGET_DIR}/${PROJECT_NAME}_core"
   EXTENSION ".ptx"
   GENERATED_FILES KERNEL_MODULES
   NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_${CMAKE_CUDA_ARCHITECTURES}" 
@@ -296,7 +297,9 @@ add_definitions(
 )
 endif()
 
-add_executable( neural_radiance_caching_mdl
+set(EXE_NAME "nrc_mdl")
+
+add_executable( ${EXE_NAME}
   ${IMGUI}
   ${NVPRO_MATH}
   ${HEADERS}
@@ -308,7 +311,7 @@ add_executable( neural_radiance_caching_mdl
   ${KERNEL_MODULES}
 )
 
-target_link_libraries( neural_radiance_caching_mdl
+target_link_libraries( ${EXE_NAME}
   OpenGL::GL
   ${GLEW_LIBRARIES}
   ${GLFW_LIBRARIES}
@@ -322,8 +325,16 @@ target_link_libraries( neural_radiance_caching_mdl
 )
 
 if (UNIX)
-  target_link_libraries( neural_radiance_caching_mdl dl )
+  target_link_libraries( ${EXE_NAME} dl )
 endif()
 
-set_target_properties( neural_radiance_caching_mdl PROPERTIES FOLDER "apps")
+if (WIN32)
+  # Copy all the DLLs
+  add_custom_command(TARGET ${EXE_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:nrc_mdl> $<TARGET_RUNTIME_DLLS:nrc_mdl>
+    COMMAND_EXPAND_LISTS
+  )
+endif()
+
+set_target_properties( ${EXE_NAME} PROPERTIES FOLDER "apps")
 

@@ -38,7 +38,7 @@ else()
   )
 endif()
 
-# message("ASSIMP_LIBRARIES = " "${ASSIMP_LIBRARIES}")
+message("ASSIMP_LIBRARIES = " "${ASSIMP_LIBRARIES}")
 
 include(FindPackageHandleStandardArgs)
 

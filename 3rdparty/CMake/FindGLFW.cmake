@@ -40,7 +40,7 @@ find_library(GLFW_LIBRARIES
   NAMES glfw3 glfw
   PATHS /usr/lib64 ${GLFW_LIBRARY_DIR} )
 
-# message("GLFW_LIBRARIES = " "${GLFW_LIBRARIES}")
+message("GLFW_LIBRARIES = " "${GLFW_LIBRARIES}")
 
 include(FindPackageHandleStandardArgs)
 

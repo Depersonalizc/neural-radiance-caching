@@ -26,7 +26,7 @@
 
 # FindCUDA.cmake is deprecated since CMake 3.10.
 # Use FindCUDAToolkit.cmake added in CMake 3.17 instead.
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.26)
 
 project( MDL_renderer )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")

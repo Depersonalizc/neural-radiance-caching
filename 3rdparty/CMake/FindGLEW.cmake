@@ -33,7 +33,7 @@ find_library(GLEW_LIBRARIES
   NAMES glew32 GLEW
   PATHS ${GLEW_LIBRARY_DIR} )
 
-# message("GLEW_LIBRARIES = " "${GLEW_LIBRARIES}")
+message("GLEW_LIBRARIES = " "${GLEW_LIBRARIES}")
 
 # DAR Not using the static GLEW libraries. What's the name under Linux?
 #find_library(GLEW_STATIC_LIBRARIES
