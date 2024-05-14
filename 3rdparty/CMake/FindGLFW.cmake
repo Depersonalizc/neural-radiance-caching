@@ -46,6 +46,26 @@ include(FindPackageHandleStandardArgs)
 
 find_package_handle_standard_args(GLFW DEFAULT_MSG GLFW_INCLUDE_DIR GLFW_LIBRARIES)
 
-mark_as_advanced(GLFW_INCLUDE_DIR GLFW_LIBRARIES)
-
 # message("GLFW_FOUND = " "${GLFW_FOUND}")
+
+if (GLFW_FOUND)
+  if (WIN32)
+    # Assume glfw.dll is in the same directory as glfw.lib
+    cmake_path(REPLACE_EXTENSION GLFW_LIBRARIES "dll" 
+               OUTPUT_VARIABLE GLFW_LIBRARIES_SHARED)
+    find_file(GLFW_LIBRARIES_SHARED ${GLFW_LIBRARIES_SHARED} REQUIRED)
+  else()
+    set(GLFW_LIBRARIES_SHARED ${GLFW_LIBRARIES})
+  endif()
+
+  message("GLFW_LIBRARIES_SHARED = " ${GLFW_LIBRARIES_SHARED})
+
+  add_library(glfw SHARED IMPORTED)
+  set_target_properties(glfw PROPERTIES
+    IMPORTED_LOCATION ${GLFW_LIBRARIES_SHARED}
+    IMPORTED_IMPLIB ${GLFW_LIBRARIES}
+    INTERFACE_INCLUDE_DIRECTORIES ${GLFW_INCLUDE_DIR} 
+  )
+endif()
+
+mark_as_advanced(GLFW_INCLUDE_DIR GLFW_LIBRARIES GLFW_LIBRARIES_SHARED)

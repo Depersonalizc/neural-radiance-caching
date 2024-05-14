@@ -297,9 +297,9 @@ add_definitions(
 )
 endif()
 
-set(EXE_NAME "nrc_mdl")
+set(EXECUTABLE_NAME "nrc_mdl")
 
-add_executable( ${EXE_NAME}
+add_executable( ${EXECUTABLE_NAME}
   ${IMGUI}
   ${NVPRO_MATH}
   ${HEADERS}
@@ -311,30 +311,30 @@ add_executable( ${EXE_NAME}
   ${KERNEL_MODULES}
 )
 
-target_link_libraries( ${EXE_NAME}
+target_link_libraries( ${EXECUTABLE_NAME}
   OpenGL::GL
-  ${GLEW_LIBRARIES}
-  ${GLFW_LIBRARIES}
+  glew  # ${GLEW_LIBRARIES}
+  glfw  # ${GLFW_LIBRARIES}
   CUDA::cuda_driver
   CUDA::curand
-  ${IL_LIBRARIES}
-  ${ILU_LIBRARIES}
-  ${ILUT_LIBRARIES}
-  ${ASSIMP_LIBRARIES}
+  il  # ${IL_LIBRARIES}
+       # ${ILU_LIBRARIES}
+        # ${ILUT_LIBRARIES}
+  assimp  # ${ASSIMP_LIBRARIES}
   tiny-cuda-nn
 )
 
 if (UNIX)
-  target_link_libraries( ${EXE_NAME} dl )
+  target_link_libraries( ${EXECUTABLE_NAME} dl )
 endif()
 
 if (WIN32)
   # Copy all the DLLs
-  add_custom_command(TARGET ${EXE_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:nrc_mdl> $<TARGET_RUNTIME_DLLS:nrc_mdl>
+  add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${EXECUTABLE_NAME}> $<TARGET_RUNTIME_DLLS:${EXECUTABLE_NAME}>
     COMMAND_EXPAND_LISTS
   )
 endif()
 
-set_target_properties( ${EXE_NAME} PROPERTIES FOLDER "apps")
+set_target_properties( ${EXECUTABLE_NAME} PROPERTIES FOLDER "apps")
 
