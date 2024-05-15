@@ -601,14 +601,9 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
                                          bool flipNormal,
 										 /*out:*/ RadianceQuery& radianceQuery)
 {
-    // TODO: Scene normalizing tsfm in sysdata
-
+    // TODO: Use per-scene normalization tsfm
     radianceQuery.position = mdlState.position;
-    //radianceQuery.position *= 0.05f; // Cornell
-    //radianceQuery.position *= 0.005f; // Cornell
-    radianceQuery.position *= 0.0005f; // Cornell
-    //radianceQuery.position *= 0.005f;
-    //radianceQuery.position *= 0.01f;
+    radianceQuery.position *= 0.005f; // Cornell
     
     const float2 direction = cartesianToSphericalUnitVector(thePrd.wo);
     const float2 normal    = cartesianToSphericalUnitVector(flipNormal ? -mdlState.normal : mdlState.normal);
@@ -619,7 +614,6 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
     radianceQuery.normal2    = normal.y;
     radianceQuery.roughness1 = auxData.roughness.x;
     radianceQuery.roughness2 = auxData.roughness.y;
-    //radianceQuery.roughness = (auxData.roughness.x + auxData.roughness.y) * 0.5f;
 #else
     radianceQuery.pad_      = 0.0f; // 1-float pad after position
     radianceQuery.direction = direction;
