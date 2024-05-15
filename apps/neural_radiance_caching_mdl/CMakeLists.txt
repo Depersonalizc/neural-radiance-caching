@@ -329,9 +329,15 @@ if (UNIX)
 endif()
 
 if (WIN32)
-  # Copy all the DLLs
+  find_file(LIBMDL_SDK_DLL     NAMES libmdl_sdk.dll     PATHS ${MDL_SDK_LIBRARY_DIR} REQUIRED)
+  find_file(DDS_DLL            NAMES dds.dll            PATHS ${MDL_SDK_LIBRARY_DIR} REQUIRED)
+  find_file(NV_OPENIMAGEIO_DLL NAMES nv_openimageio.dll PATHS ${MDL_SDK_LIBRARY_DIR} REQUIRED)
+
+  # Copy all runtime DLLs to the target directory
   add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${EXECUTABLE_NAME}> $<TARGET_RUNTIME_DLLS:${EXECUTABLE_NAME}>
+    # From MDL SDK
+    COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${EXECUTABLE_NAME}> ${LIBMDL_SDK_DLL} ${DDS_DLL} ${NV_OPENIMAGEIO_DLL}
     COMMAND_EXPAND_LISTS
   )
 endif()
