@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project( neural_radiance_caching )
+project( neural-radiance-caching )
 
 set(LOCAL_3RDPARTY "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty")
 message("LOCAL_3RDPARTY = " "${LOCAL_3RDPARTY}")
@@ -78,7 +78,7 @@ endmacro()
 
 # Search for all shipping OptiX versions before adding subdirectories.
 # The resp. FindOptiX*.cmake looks for OPTIX*_PATH environment variables.
-# If multiple OptiX SDK versions are found, the newest is picked by the individual examples.
+# If multiple OptiX SDK versions are found, the newest is picked by the NRC project.
 find_package(OptiX70)
 find_package(OptiX71)
 find_package(OptiX72)
@@ -93,4 +93,4 @@ find_package(OptiX80)
 find_package(MDL_SDK REQUIRED)
 
 add_subdirectory( 3rdparty )
-add_subdirectory( apps )
+add_subdirectory( nrc )

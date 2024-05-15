@@ -336,12 +336,12 @@ Device::Device(const int ordinal,
 #else
 #define MODULE_EXT ".ptx"
 #endif
-	m_moduleFilenames[MODULE_ID_RAYGENERATION] = "./neural_radiance_caching_mdl_core/raygeneration" MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_EXCEPTION]     = "./neural_radiance_caching_mdl_core/exception"     MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_MISS]          = "./neural_radiance_caching_mdl_core/miss"          MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_HIT]           = "./neural_radiance_caching_mdl_core/hit"           MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_LENS_SHADER]   = "./neural_radiance_caching_mdl_core/lens_shader"   MODULE_EXT;
-	m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]  = "./neural_radiance_caching_mdl_core/light_sample"  MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_RAYGENERATION] = "./nrc_core/raygeneration" MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_EXCEPTION]     = "./nrc_core/exception"     MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_MISS]          = "./nrc_core/miss"          MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_HIT]           = "./nrc_core/hit"           MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_LENS_SHADER]   = "./nrc_core/lens_shader"   MODULE_EXT;
+	m_moduleFilenames[MODULE_ID_LIGHT_SAMPLE]  = "./nrc_core/light_sample"  MODULE_EXT;
 
 	// OptixModuleCompileOptions
 	m_mco.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
@@ -690,14 +690,14 @@ void Device::loadNativeModules()
 	if (m_count > 1)
 	{
 		// FIXME Only load this on the primary device.
-		CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./neural_radiance_caching_mdl_core/compositor.ptx"));
+		CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./nrc_core/compositor.ptx"));
 		CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
 	}
 
 	
 	// This single module contains all the helper kernels.
 	{
-		CU_CHECK(cuModuleLoad(&m_moduleNRCHelpers, "./neural_radiance_caching_mdl_core/nrc_helpers.ptx"));
+		CU_CHECK(cuModuleLoad(&m_moduleNRCHelpers, "./nrc_core/nrc_helpers.ptx"));
 
 		std::size_t sysDataSize{};
 		CU_CHECK(cuModuleGetGlobal(reinterpret_cast<CUdeviceptr*>(&m_d_systemData_nrcHelpers), &sysDataSize, m_moduleNRCHelpers, "sysData"));

@@ -29,7 +29,7 @@
 # Use FindCUDAToolkit.cmake added in CMake 3.17 instead.
 cmake_minimum_required(VERSION 3.26)
 
-project( neural_radiance_caching_mdl LANGUAGES CUDA CXX )
+project( nrc LANGUAGES CUDA CXX )
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 
 set(CMAKE_CXX_STANDARD 20)
@@ -297,7 +297,7 @@ add_definitions(
 )
 endif()
 
-set(EXECUTABLE_NAME "nrc_mdl")
+set(EXECUTABLE_NAME ${PROJECT_NAME})
 
 add_executable( ${EXECUTABLE_NAME}
   ${IMGUI}
