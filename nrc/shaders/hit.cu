@@ -676,23 +676,6 @@ __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlStat
     //endVertex.tileIndex = thePrd.tileIndex;
 }
 
-__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
-{
-    // Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
-    //const auto offset = sysData.resolution.x * sysData.resolution.y;
-    //auto& query = sysData.nrcCB->radianceQueriesInference[offset + thePrd.tileIndex];
-    //addQuery(mdlState, thePrd, auxData, query);
-
-    // Add the TrainingSuffixEndVertex
-    auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
-    endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
-    endVertex.startTrainRecord = thePrd.lastTrainRecordIndex; // Index into static trainRecords[65536]
-
-    // DEBUG
-    //endVertex.pixelIndex = thePrd.pixelIndex;
-    //endVertex.tileIndex = thePrd.tileIndex;
-}
-
 }
 
 // This shader handles every supported feature of the renderer.
@@ -944,7 +927,7 @@ extern "C" __global__ void __closesthit__radiance()
         {
             // End the train suffix by a zero-radiance unbiased 
             // terminal vertex that links to thePrd->lastTrainRecordIndex.
-            nrc::endTrainSuffixUnbiased(*thePrd);
+            nrc::endTrainSuffixUnbiased(sysData, *thePrd);
         }
 
         return;
@@ -1283,7 +1266,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         {
             // End the train suffix by a zero-radiance unbiased 
             // terminal vertex that links to thePrd->lastTrainRecordIndex.
-            nrc::endTrainSuffixUnbiased(*thePrd);
+            nrc::endTrainSuffixUnbiased(sysData, *thePrd);
         }
 
         return;
@@ -1966,7 +1949,7 @@ extern "C" __global__ void __closesthit__curves()
         {
             // End the train suffix by a zero-radiance unbiased 
             // terminal vertex that links to thePrd->lastTrainRecordIndex.
-            nrc::endTrainSuffixUnbiased(*thePrd);
+            nrc::endTrainSuffixUnbiased(sysData, *thePrd);
         }
 
         return;

@@ -37,6 +37,10 @@
 #include "system_data.h"
 #include "transform.h"
 
+// Add a null render query for missed ray. 
+// Not strictly needed, because lastRenderThroughput will be set to 0.
+#define ADD_NULL_RENDER_QUERY 0
+
 static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
                                            | mi::neuraylib::BSDF_EVENT_GLOSSY;
 
@@ -44,27 +48,14 @@ extern "C" __constant__ SystemData sysData;
 
 namespace nrc {
 
-__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
+__forceinline__ __device__ void addNullRenderQuey(const PerRayData& thePrd)
 {
-	// Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
-	//const auto offset = sysData.resolution.x * sysData.resolution.y;
-	//auto& query = sysData.nrcCB->radianceQueriesInference[offset + thePrd.tileIndex];
-	//addQuery(mdlState, thePrd, auxData, query);
-
-	// Add the TrainingSuffixEndVertex
-	auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
-	endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
-	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
-
-	// DEBUG
-	//endVertex.pixelIndex = thePrd.pixelIndex;
-	//endVertex.tileIndex = thePrd.tileIndex;
-}
-
-[[maybe_unused]] __forceinline__ __device__ void addNullRenderQuey(const PerRayData& thePrd)
-{
+#if ADD_NULL_RENDER_QUERY
 	auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
 	renderQuery = nrc::RadianceQuery{};
+#else
+	(void) thePrd;
+#endif
 }
 
 }
@@ -111,8 +102,6 @@ extern "C" __global__ void __miss__env_null()
 	{
 		thePrd->lastRenderThroughput = make_float3(0.f);
 
-		// Add a null query to aid debugging. 
-		// Not strictly needed, because lastRenderThroughput is 0.
 		nrc::addNullRenderQuey(*thePrd);
 	}
 
@@ -120,7 +109,7 @@ extern "C" __global__ void __miss__env_null()
 	const bool isTrain = thePrd->flags & FLAG_TRAIN;
 	if (isTrain)
 	{
-		nrc::endTrainSuffixUnbiased(*thePrd);
+		nrc::endTrainSuffixUnbiased(sysData, *thePrd);
 	}
 }
 
@@ -170,8 +159,6 @@ extern "C" __global__ void __miss__env_constant()
 		// been accounted for by Direct Lighting. Avoid double counting!
 		thePrd->lastRenderThroughput = make_float3(0.f);
 
-		// Add a null query to aid debugging. 
-		// Not strictly needed, because lastRenderThroughput is 0.
 		nrc::addNullRenderQuey(*thePrd);
 	}
 
@@ -179,7 +166,7 @@ extern "C" __global__ void __miss__env_constant()
 	const bool isTrain = thePrd->flags & FLAG_TRAIN;
 	if (isTrain)
 	{
-		nrc::endTrainSuffixUnbiased(*thePrd);
+		nrc::endTrainSuffixUnbiased(sysData, *thePrd);
 	}
 }
 
@@ -242,8 +229,6 @@ extern "C" __global__ void __miss__env_sphere()
 		// been accounted for by Direct Lighting. Avoid double counting!
 		thePrd->lastRenderThroughput = make_float3(0.f);
 
-		// Add a null query to aid debugging. 
-		// Not strictly needed, because lastRenderThroughput is 0.
 		nrc::addNullRenderQuey(*thePrd);
 	}
 
@@ -251,6 +236,6 @@ extern "C" __global__ void __miss__env_sphere()
 	const bool isTrain = thePrd->flags & FLAG_TRAIN;
 	if (isTrain)
 	{
-		nrc::endTrainSuffixUnbiased(*thePrd);
+		nrc::endTrainSuffixUnbiased(sysData, *thePrd);
 	}
 }

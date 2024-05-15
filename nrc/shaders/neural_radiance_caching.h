@@ -3,7 +3,10 @@
 #ifndef NEURAL_RADIANCE_CACHING_H
 #define NEURAL_RADIANCE_CACHING_H
 
+#include <optix.h>
 #include "vector_math.h"
+#include "system_data.h"
+#include "per_ray_data.h"
 
 namespace nrc
 {
@@ -194,16 +197,22 @@ namespace nrc
 		int numTrainingRecords = 0;   // Number of training records generated. Updated per-frame		
 	};
 
-	//__forceinline__ __device__ void endTrainSuffixUnbiased(const PerRayData& thePrd)
-	//{
-	//	// Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
-	//	//auto& query = sysData.nrcCB->radianceQueriesInference[NUM_TRAINING_RECORDS_PER_FRAME + thePrd.tileIndex];
-	//	//addQuery(mdlState, thePrd, auxData, query);
-	//	// Add the TrainingSuffixEndVertex
-	//	auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
-	//	endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
-	//	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
-	//}
+	__forceinline__ __device__ void endTrainSuffixUnbiased(const SystemData &sysData, const PerRayData& thePrd)
+	{
+		// Just leave the stale query there - we will mask off the inferenced result with endVertex.radianceMask = 0
+		//const auto offset = sysData.resolution.x * sysData.resolution.y;
+		//auto& query = sysData.nrcCB->radianceQueriesInference[offset + thePrd.tileIndex];
+		//addQuery(mdlState, thePrd, auxData, query);
+
+		// Add the TrainingSuffixEndVertex
+		auto& endVertex = sysData.nrcCB->bufDynamic.trainSuffixEndVertices[thePrd.tileIndex];
+		endVertex.radianceMask = 0.0f; // 0 for unbiased: Don't use the inferenced radiance to initiate propagation.
+		endVertex.startTrainRecord = thePrd.lastTrainRecordIndex; // Index into static trainRecords[65536]
+
+		// DEBUG
+		//endVertex.pixelIndex = thePrd.pixelIndex;
+		//endVertex.tileIndex = thePrd.tileIndex;
+	}
 }
 
 
