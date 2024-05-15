@@ -1,0 +1,17 @@
+mdl 1.7;
+import ::df::*;
+
+export material edf_diffuse_cornell(
+  uniform color parIntensityTint = color(1.0),
+  uniform float parIntensity     = 100.0
+)
+= 
+material(
+  surface: material_surface(
+    emission: material_emission(
+      emission: df::diffuse_edf(),
+      intensity: parIntensityTint * parIntensity,
+      mode:      intensity_radiant_exitance
+    )
+  )
+);

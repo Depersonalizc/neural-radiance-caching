@@ -1,0 +1,110 @@
+# camera setup
+lensShader 0
+center 0 0 15
+camera 0.750781 0.5 55 20
+
+# tonemapper setup
+gamma 2.2
+colorBalance 1 1 1
+whitePoint 1
+burnHighlights 0.8
+crushBlacks 0.2
+saturation 1.2
+brightness 1
+
+# materials
+
+push
+# mdl default edf_diffuse "mdl/edf_diffuse.mdl" 
+mdl bsdf_diffuse_reflection bsdf_diffuse_reflection "mdl/bsdf_diffuse_reflection.mdl"
+mdl bsdf_diffuse_reflection_c_red bsdf_diffuse_reflection_c_red "mdl/bsdf_diffuse_reflection_c_red.mdl"
+mdl bsdf_diffuse_reflection_c_green bsdf_diffuse_reflection_c_green "mdl/bsdf_diffuse_reflection_c_green.mdl"
+mdl bsdf_diffuse_reflection_c_white bsdf_diffuse_reflection_c_white "mdl/bsdf_diffuse_reflection_c_white.mdl"
+mdl edf_diffuse edf_diffuse "mdl/edf_diffuse.mdl" 
+mdl edf_diffuse_cornell edf_diffuse_cornell "mdl/edf_diffuse_cornell.mdl" 
+pop
+
+push
+mdl default edf_diffuse_strong "mdl/edf_diffuse_strong.mdl" 
+pop
+
+# lights
+
+push
+emission 1 1 1
+emissionMultiplier 1
+emissionTexture "NV_Default_HDR_3000x1500.hdr"
+rotate 0 1 0 180
+# light env
+pop 
+
+# #################
+# geometry
+# #################
+
+# floor
+push
+scale 10 10 10
+translate 0 -10 0
+model plane 10 10 1 bsdf_diffuse_reflection
+pop
+
+# ceiling
+push
+scale 10 10 10
+translate 0 10 0
+model plane 10 10 1 bsdf_diffuse_reflection
+pop
+
+
+# light
+push
+scale 2 2 2
+rotate 0 0 1 180
+translate 0 9.9 0
+model plane 10 10 1 edf_diffuse_cornell
+pop
+
+push
+scale 10 10 10
+rotate 0 0 1 90
+translate 10 0 0
+model plane 10 10 1 bsdf_diffuse_reflection_c_green
+pop
+
+push
+scale 10 10 10
+rotate 0 0 1 -90
+translate -10 0 0
+model plane 10 10 1 bsdf_diffuse_reflection_c_red
+pop
+
+push
+scale 10 10 10
+rotate 1 0 0 90
+translate 0 0 -10
+model plane 10 10 1 bsdf_diffuse_reflection
+pop
+
+# dummy plane to block the light
+push
+scale 100 10 100
+rotate 1 0 0 90
+translate 0 0 40
+#model plane 10 10 1 bsdf_diffuse_reflection
+pop
+
+
+push
+scale 3 3 3
+rotate 0 1 0 30
+translate 4 -7 4
+model box bsdf_diffuse_reflection
+pop
+
+push
+scale 3 6 3
+rotate 0 1 0 -30
+translate -4 -7 -2
+model box bsdf_diffuse_reflection
+pop
