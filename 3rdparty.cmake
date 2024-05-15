@@ -1,3 +1,4 @@
+# Copyright (c) 2024, Jamie Chen <jamiechenang@gmail>, modified upon
 # Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -79,9 +80,12 @@ elseif((${cl_version} VERSION_GREATER_EQUAL "19.30") AND (${cl_version} VERSION_
   # Newer MSVS versions are not supported by available CUDA toolkits at this time (2022-08-08). 
 endif()
 
+set(GIT_COMMAND "git")
+
 #message("CMAKE_COMMAND = " "${CMAKE_COMMAND}")
 #message("GENERATOR     = " "${GENERATOR}")
 #message("MSVC_TOOLSET  = " "${MSVC_TOOLSET}")
+#message("GIT_COMMAND   = " "${GIT_COMMAND}")
 
 if (NOT GENERATOR)
   message("Please check if you're running the 3rdparty.cmd inside the correct x64 Native Tools Command Prompt for VS2017, VS2019 or 2022")
@@ -103,11 +107,13 @@ set(PATCH_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/patches")
 
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/temp/sources")
 set(BUILD_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/temp/build/${MSVC_TOOLSET}")
+# set(BUILD_DIR_TCNN "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tiny-cuda-nn/build/${MSVC_TOOLSET}")
 
 message("Install prefix: ${CMAKE_INSTALL_PREFIX} ${ARGC} ${ARGV}")
 
 file(MAKE_DIRECTORY ${SOURCE_DIR})
 file(MAKE_DIRECTORY ${BUILD_DIR})
+# file(MAKE_DIRECTORY ${BUILD_DIR_TCNN})
 
 macro(glew_sourceforge)
     message("GLEW")
@@ -141,6 +147,23 @@ macro(glfw_sourceforge)
     execute_process(COMMAND ${CMAKE_COMMAND} -E tar xzf "${DOWNLOAD_DIR}/${FILENAME}" WORKING_DIRECTORY "${CMAKE_INSTALL_PREFIX}")
     message("  renaming")
     file(RENAME "${CMAKE_INSTALL_PREFIX}/glfw-3.3.8.bin.WIN64" "${CMAKE_INSTALL_PREFIX}/glfw")
+endmacro()
+
+macro(devil_sourceforge)
+    message("DevIL")
+    set(FILENAME "DevIL-Windows-SDK-1.8.0.zip")
+    if (NOT EXISTS "${DOWNLOAD_DIR}/${FILENAME}")
+        message("  downloading")
+        file(DOWNLOAD "https://sourceforge.net/projects/openil/files/DevIL%20Windows%20SDK/1.8.0/${FILENAME}" "${DOWNLOAD_DIR}/${FILENAME}" STATUS downloaded)
+    endif()
+    if (EXISTS "${CMAKE_INSTALL_PREFIX}/devil_1_8_0")
+      message("  removing ${CMAKE_INSTALL_PREFIX}/devil_1_8_0")
+      execute_process(COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_INSTALL_PREFIX}/devil_1_8_0")
+    endif()
+    message("  extracting")
+    execute_process(COMMAND ${CMAKE_COMMAND} -E tar xzf "${DOWNLOAD_DIR}/${FILENAME}" WORKING_DIRECTORY "${CMAKE_INSTALL_PREFIX}")
+    message("  renaming")
+    file(RENAME "${CMAKE_INSTALL_PREFIX}/DevIL Windows SDK" "${CMAKE_INSTALL_PREFIX}/devil_1_8_0")
 endmacro()
 
 macro(glfw_github)
@@ -193,9 +216,27 @@ macro(assimp_github)
     execute_process(COMMAND devenv.exe "${BUILD_DIR}/assimp/assimp.sln" /Build "Release|${BUILD_ARCH}" /Project INSTALL WORKING_DIRECTORY "${BUILD_DIR}/assimp")
 endmacro()
 
+macro(tcnn_github)
+    message("tiny-cuda-nn")
+    message("  initializing submodule")
+    set(SUBMODULE_NAME "3rdparty/tiny-cuda-nn")
+    execute_process(COMMAND ${GIT_COMMAND} submodule update --init --recursive ${SUBMODULE_NAME})
+    # message("  generating")
+    # execute_process(COMMAND ${CMAKE_COMMAND} "-G${GENERATOR}" "-A${BUILD_ARCH}" 
+    #                 "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}/tiny-cuda-nn" 
+    #                 "-DTCNN_BUILD_BENCHMARK=OFF" "-DTCNN_BUILD_EXAMPLES=OFF" 
+    #                 "${CMAKE_INSTALL_PREFIX}/tiny-cuda-nn" WORKING_DIRECTORY "${BUILD_DIR_TCNN}")
+    # message("  compiling release")
+    # execute_process(COMMAND devenv.exe "${BUILD_DIR_TCNN}/tiny-cuda-nn.sln" /Build "Release|${BUILD_ARCH}" WORKING_DIRECTORY "${BUILD_DIR_TCNN}")
+    # message("  installing release")
+    # execute_process(COMMAND devenv.exe "${BUILD_DIR_TCNN}/tiny-cuda-nn.sln" /Build "Release|${BUILD_ARCH}" /Project INSTALL WORKING_DIRECTORY "${BUILD_DIR_TCNN}")
+endmacro()
+
 glew_sourceforge()
 glfw_sourceforge()
+devil_sourceforge()
 assimp_github()
+tcnn_github()
 
 # If the 3rdparty tools should be updated with additional libraries, commenting out these two lines avoids expensive recompilation of existing tools again.
 # message("deleting temp folder")

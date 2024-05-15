@@ -22,13 +22,13 @@ find_path( MDL_SDK_INCLUDE_DIRS "mi/mdl_sdk.h"
 message("MDL_SDK_INCLUDE_DIRS = " "${MDL_SDK_INCLUDE_DIRS}")
 
 # There are no link libraries inside the (pre-built) MDL SDK. DLLs are loaded manually.
-#if (WIN32)
-#  set(MDL_SDK_LIBRARY_DIR ${MDL_SDK_PATH}/nt-x86-x64/lib)
-#else()
-#  set(MDL_SDK_LIBRARY_DIR ${MDL_SDK_PATH}/lib)
-#endif()
+if (WIN32)
+ set(MDL_SDK_LIBRARY_DIR ${MDL_SDK_PATH}/nt-x86-64/lib)
+else()
+ set(MDL_SDK_LIBRARY_DIR ${MDL_SDK_PATH}/lib)
+endif()
 
-# message("MDL_SDK_LIBRARY_DIR = " "${MDL_SDK_LIBRARY_DIR}")
+message("MDL_SDK_LIBRARY_DIR = " "${MDL_SDK_LIBRARY_DIR}")
 
 #find_library(MDL_SDK_LIBRARIES
 #  NAMES MDL_SDK libmdl_sdk
@@ -44,4 +44,4 @@ find_package_handle_standard_args(MDL_SDK DEFAULT_MSG MDL_SDK_INCLUDE_DIRS)
 #mark_as_advanced(MDL_SDK_INCLUDE_DIRS MDL_SDK_LIBRARIES)
 mark_as_advanced(MDL_SDK_INCLUDE_DIRS)
 
- message("MDL_SDK_FOUND = " "${MDL_SDK_FOUND}")
+message("MDL_SDK_FOUND = " "${MDL_SDK_FOUND}")

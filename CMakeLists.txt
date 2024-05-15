@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.26)
 
-project( optix_apps )
+project( neural_radiance_caching )
 
 set(LOCAL_3RDPARTY "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty")
 message("LOCAL_3RDPARTY = " "${LOCAL_3RDPARTY}")
@@ -32,9 +32,7 @@ else(UNIX)
   endif(APPLE)
 endif(UNIX)
 
-
-# C++17 is required for std::filesystem
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
@@ -78,13 +76,11 @@ macro(TARGET_INCLUDE_SYMBOL target symbol)
   endif()
 endmacro()
 
-# Search for all shipping OptiX 7 versions before adding subdirectories.
-# The resp. FindOptiX7*.cmake looks for OPTIX7*_PATH environment variables.
-# Doing this here allows excluding examples from the build which require a specific OptiX 7 minor version.
+# Search for all shipping OptiX versions before adding subdirectories.
+# The resp. FindOptiX*.cmake looks for OPTIX*_PATH environment variables.
 # If multiple OptiX SDK versions are found, the newest is picked by the individual examples.
 find_package(OptiX70)
 find_package(OptiX71)
-# The intro_motion_blur example requires OptiX 7.2.0 or newer.
 find_package(OptiX72)
 find_package(OptiX73)
 find_package(OptiX74)
@@ -92,11 +88,9 @@ find_package(OptiX75)
 find_package(OptiX76)
 find_package(OptiX77)
 find_package(OptiX80)
-# The rtigo9_omm requires the CUDA Opacity Micromap Baking tool inside the OptiX Toolkit.
-# The OptiX Toolkit is only built for OptiX SDK 7.6.0 and newer.
-find_package(OptiXToolkit)
-# The MDL_renderer requires the MDL SDK to generate shader code and load images.
-find_package(MDL_SDK)
+
+# The NRC demo requires the MDL SDK to generate shader code and load images.
+find_package(MDL_SDK REQUIRED)
 
 add_subdirectory( 3rdparty )
 add_subdirectory( apps )
