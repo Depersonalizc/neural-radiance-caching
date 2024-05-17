@@ -86,15 +86,6 @@ translate 0 0 -10
 model plane 10 10 1 bsdf_diffuse_reflection
 pop
 
-# dummy plane to block the light
-push
-scale 100 10 100
-rotate 1 0 0 90
-translate 0 0 40
-#model plane 10 10 1 bsdf_diffuse_reflection
-pop
-
-
 push
 scale 3 3 3
 rotate 0 1 0 30
@@ -103,8 +94,8 @@ model box bsdf_diffuse_reflection
 pop
 
 push
-scale 3 6 3
+scale 3 4.5 3
 rotate 0 1 0 -30
-translate -4 -7 -2
+translate -4 -5.5 -2
 model box bsdf_diffuse_reflection
 pop
