@@ -65,3 +65,5 @@ https://github.com/Depersonalizc/neural-radiance-caching/assets/29355340/d442713
 
 https://github.com/Depersonalizc/neural-radiance-caching/assets/29355340/962b69b6-2be0-4075-8d4b-8b9c934761e0
 
+## Acknowledgement
+Path tracer dervied from the OptiX [MDL renderer](https://github.com/NVIDIA/OptiX_Apps/tree/master/apps/MDL_renderer) sample code.
