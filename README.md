@@ -18,7 +18,7 @@ An implementation of [Real-time Neural Radiance Caching for Path Tracing](https:
 - **CMake 3.26 or higher**.
 - **Visual Studio 2017 or higher**.
 - **MDL SDK 1.8**: Required for PBR materials. We recommend downloading the binary [here](https://developer.nvidia.com/mdl-sdk-get-started).
-- Additional third-party dependencies set up by the `3rdparty.cmd` script.
+- Additional dependencies (including **tiny-cuda-nn**) set up by the `3rdparty.cmd` script.
 
 ### Build & Run
 
