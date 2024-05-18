@@ -14,7 +14,7 @@ An implementation of [Real-time Neural Radiance Caching for Path Tracing](https:
 ### Prerequisites
 
 - **OptiX SDK 7 or 8, and a supported NVIDIA GPU**.
-- **CUDA Toolkit**: Tested with CUDA 12.4, but any recent version compatible with your OptiX SDK should work as fine.
+- **CUDA Toolkit**: Tested with CUDA 12.4, but any recent version compatible with your OptiX SDK should work.
 - **CMake 3.26 or higher**.
 - **Visual Studio 2017 or higher**.
 - **MDL SDK 1.8**: Required for PBR materials. We recommend directly downloading the binary [here](https://developer.nvidia.com/mdl-sdk-get-started).
