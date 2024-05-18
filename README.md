@@ -7,9 +7,9 @@ An implementation of [Real-time Neural Radiance Caching for Path Tracing](https:
 
 ## How can I run this?
 
-*Tested on Windows with Visual Studio 2022.*
-
-*Building for Linux, or Windows without VS, is possible, but you may have to manually set up the third-party dependencies.*
+> *Tested on Windows with Visual Studio 2022.*
+> 
+> *Building for Linux, or Windows without VS, is possible, but you may have to manually set up the third-party dependencies.*
 
 ### Prerequisites
 
@@ -52,6 +52,7 @@ To run the renderer,
   ```cmd
   mklink /D .\data <actual_data_folder>
   ```
+  :warning: You might need admin privilege for this on Windows :\  (at least sudo is coming soon...)
 
 - Try out the Cornell Box (with friends! 🐉🐇) scene with the command line arguments:
 
