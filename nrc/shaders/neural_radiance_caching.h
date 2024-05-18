@@ -1,3 +1,5 @@
+// Copyright (c) 2024, Jamie Chen <jamiechenang@gmail>
+
 #pragma once
 
 #ifndef NEURAL_RADIANCE_CACHING_H

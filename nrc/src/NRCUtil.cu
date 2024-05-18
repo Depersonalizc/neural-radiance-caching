@@ -1,3 +1,5 @@
+// Copyright (c) 2024, Jamie Chen <jamiechenang@gmail>
+
 #include "inc/NRCUtil.h"
 
 #include <cub/cub.cuh>

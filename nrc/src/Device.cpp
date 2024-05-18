@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2024, Jamie Chen <jamiechenang@gmail>, modified upon
  * Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

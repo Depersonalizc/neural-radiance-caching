@@ -1,3 +1,5 @@
+// Copyright (c) 2024, Jamie Chen <jamiechenang@gmail>
+
 #include "shaders/config.h"
 #include "shaders/neural_radiance_caching.h"
 
