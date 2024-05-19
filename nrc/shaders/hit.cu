@@ -597,10 +597,10 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
 namespace nrc {
 
 __forceinline__ __device__ void addQuery(const Mdl_state& mdlState, 
-									     const PerRayData& thePrd, 
-										 const BSDFAuxiliaryData &auxData,
+                                         const PerRayData& thePrd, 
+                                         const BSDFAuxiliaryData &auxData,
                                          bool flipNormal,
-										 /*out:*/ RadianceQuery& radianceQuery)
+                                         /*out:*/ RadianceQuery& radianceQuery)
 {
     // TODO: Use per-scene normalization tsfm
     radianceQuery.position = mdlState.position;
@@ -622,55 +622,55 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
     radianceQuery.roughness = make_float2(auxData.roughness);
 #endif
 
-	radianceQuery.diffuse   = auxData.albedo_diffuse;
-	radianceQuery.specular  = auxData.albedo_glossy;
+        radianceQuery.diffuse   = auxData.albedo_diffuse;
+        radianceQuery.specular  = auxData.albedo_glossy;
 }
 
 __forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState, 
-											   const PerRayData& thePrd, 
-											   const BSDFAuxiliaryData &auxData,
+                                               const PerRayData& thePrd, 
+                                               const BSDFAuxiliaryData &auxData,
                                                bool flipNormal)
 {
-	auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
-	addQuery(mdlState, thePrd, auxData, flipNormal, renderQuery);
+        auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
+        addQuery(mdlState, thePrd, auxData, flipNormal, renderQuery);
 }
 
 __forceinline__ __device__ void addTrainQuery(const Mdl_state& mdlState, 
-											  const PerRayData& thePrd, 
-											  const BSDFAuxiliaryData &auxData,
+                                              const PerRayData& thePrd, 
+                                              const BSDFAuxiliaryData &auxData,
                                               bool flipNormal, int trainRecordIndex)
 
 {
-	auto& trainQuery = sysData.nrcCB->bufStatic.radianceQueriesTraining[trainRecordIndex];
-	addQuery(mdlState, thePrd, auxData, flipNormal, trainQuery);
+        auto& trainQuery = sysData.nrcCB->bufStatic.radianceQueriesTraining[trainRecordIndex];
+        addQuery(mdlState, thePrd, auxData, flipNormal, trainQuery);
 }
 
 __forceinline__ __device__ void addCacheVisQuery(const Mdl_state& mdlState, 
-											     const PerRayData& thePrd, 
-											     const BSDFAuxiliaryData &auxData,
+                                                 const PerRayData& thePrd, 
+                                                 const BSDFAuxiliaryData &auxData,
                                                  bool flipNormal)
 {
-	auto& cacheVisQuery = sysData.nrcCB->bufDynamic.radianceQueriesCacheVis[thePrd.pixelIndex];
-	addQuery(mdlState, thePrd, auxData, flipNormal, cacheVisQuery);
+        auto& cacheVisQuery = sysData.nrcCB->bufDynamic.radianceQueriesCacheVis[thePrd.pixelIndex];
+        addQuery(mdlState, thePrd, auxData, flipNormal, cacheVisQuery);
 }
 
 
 __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlState, 
-														const PerRayData& thePrd, 
-														const BSDFAuxiliaryData &auxData,
+                                                        const PerRayData& thePrd, 
+                                                        const BSDFAuxiliaryData &auxData,
                                                         bool flipNormal)
 {
     auto& dynBufs = sysData.nrcCB->bufDynamic;
 
-	// Add an inference query at the end vertex of the train suffix.
+        // Add an inference query at the end vertex of the train suffix.
     const auto offset = sysData.resolution.x * sysData.resolution.y;
-	auto& query = dynBufs.radianceQueriesInference[offset + thePrd.tileIndex];
-	addQuery(mdlState, thePrd, auxData, flipNormal, query);
+        auto& query = dynBufs.radianceQueriesInference[offset + thePrd.tileIndex];
+        addQuery(mdlState, thePrd, auxData, flipNormal, query);
 
-	// Add the TrainingSuffixEndVertex
-	auto& endVertex = dynBufs.trainSuffixEndVertices[thePrd.tileIndex];
-	endVertex.radianceMask = 1.f; // 1 for self-training: Use the inferenced radiance to initiate propagation.
-	endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
+        // Add the TrainingSuffixEndVertex
+        auto& endVertex = dynBufs.trainSuffixEndVertices[thePrd.tileIndex];
+        endVertex.radianceMask = 1.f; // 1 for self-training: Use the inferenced radiance to initiate propagation.
+        endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
 
     // DEBUG
     //endVertex.pixelIndex = thePrd.pixelIndex;
