@@ -31,81 +31,77 @@
 
 #include "shaders/vector_math.h"
 
-namespace sg
-{
-
-  // The torus is a ring with radius outerRadius rotated around the y-axis along the circle with innerRadius.
-  /*           +y
-       ___       |       ___
-     /     \           /     \
-    |       |    |    |       |
-    |       |         |       |
-     \ ___ /     |     \ ___ /
-                          <--->
-                          outerRadius
-                 <------->
-                 innerRadius
-  */
-  void Triangles::createTorus(const unsigned int tessU, const unsigned int tessV, const float innerRadius, const float outerRadius)
-  {
-    MY_ASSERT(3 <= tessU && 3 <= tessV);
-
-    m_attributes.clear();
-    m_indices.clear();
-
-    m_attributes.reserve((tessU + 1) * (tessV + 1));
-    m_indices.reserve(8 * tessU * tessV);
-
-    const float u = (float) tessU;
-    const float v = (float) tessV;
-
-    float phi_step = 2.0f * M_PIf / u;
-    float theta_step = 2.0f * M_PIf / v;
-
-    // Setup vertices and normals.
-    // Generate the torus exactly like the sphere with rings around the origin along the latitudes.
-    for (unsigned int latitude = 0; latitude <= tessV; ++latitude) // theta angle
+namespace sg {
+    // The torus is a ring with radius outerRadius rotated around the y-axis along the circle with innerRadius.
+    /*           +y
+         ___       |       ___
+       /     \           /     \
+      |       |    |    |       |
+      |       |         |       |
+       \ ___ /     |     \ ___ /
+                            <--->
+                            outerRadius
+                   <------->
+                   innerRadius
+    */
+    void Triangles::createTorus(const unsigned int tessU, const unsigned int tessV, const float innerRadius,
+                                const float outerRadius)
     {
-      const float theta = (float) latitude * theta_step;
-      const float sinTheta = sinf(theta);
-      const float cosTheta = cosf(theta);
+        MY_ASSERT(3 <= tessU && 3 <= tessV);
 
-      const float radius = innerRadius + outerRadius * cosTheta;
+        m_attributes.clear();
+        m_indices.clear();
 
-      for (unsigned int longitude = 0; longitude <= tessU; ++longitude) // phi angle
-      {
-        const float phi = (float) longitude * phi_step;
-        const float sinPhi = sinf(phi);
-        const float cosPhi = cosf(phi);
+        m_attributes.reserve((tessU + 1) * (tessV + 1));
+        m_indices.reserve(8 * tessU * tessV);
 
-        TriangleAttributes attrib;
+        const float u = (float) tessU;
+        const float v = (float) tessV;
 
-        attrib.vertex   = make_float3(radius * cosPhi, outerRadius * sinTheta, radius * -sinPhi);
-        attrib.tangent  = make_float3(-sinPhi, 0.0f, -cosPhi);
-        attrib.normal   = make_float3(cosPhi * cosTheta, sinTheta, -sinPhi * cosTheta);
-        attrib.texcoord = make_float3((float) longitude / u, (float) latitude / v, 0.0f);
+        float phi_step = 2.0f * M_PIf / u;
+        float theta_step = 2.0f * M_PIf / v;
 
-        m_attributes.push_back(attrib);
-      }
+        // Setup vertices and normals.
+        // Generate the torus exactly like the sphere with rings around the origin along the latitudes.
+        for (unsigned int latitude = 0; latitude <= tessV; ++latitude) // theta angle
+        {
+            const float theta = (float) latitude * theta_step;
+            const float sinTheta = sinf(theta);
+            const float cosTheta = cosf(theta);
+
+            const float radius = innerRadius + outerRadius * cosTheta;
+
+            for (unsigned int longitude = 0; longitude <= tessU; ++longitude) // phi angle
+            {
+                const float phi = (float) longitude * phi_step;
+                const float sinPhi = sinf(phi);
+                const float cosPhi = cosf(phi);
+
+                TriangleAttributes attrib;
+
+                attrib.vertex = make_float3(radius * cosPhi, outerRadius * sinTheta, radius * -sinPhi);
+                attrib.tangent = make_float3(-sinPhi, 0.0f, -cosPhi);
+                attrib.normal = make_float3(cosPhi * cosTheta, sinTheta, -sinPhi * cosTheta);
+                attrib.texcoord = make_float3((float) longitude / u, (float) latitude / v, 0.0f);
+
+                m_attributes.push_back(attrib);
+            }
+        }
+
+        // We have generated tessU + 1 vertices per latitude.
+        const int columns = tessU + 1;
+
+        // Setup m_indices
+        for (unsigned int latitude = 0; latitude < tessV; ++latitude) {
+            for (unsigned int longitude = 0; longitude < tessU; ++longitude) {
+                m_indices.push_back(latitude * columns + longitude); // lower left
+                m_indices.push_back(latitude * columns + longitude + 1); // lower right
+                m_indices.push_back((latitude + 1) * columns + longitude + 1); // upper right
+
+                m_indices.push_back((latitude + 1) * columns + longitude + 1); // upper right
+                m_indices.push_back((latitude + 1) * columns + longitude); // upper left
+                m_indices.push_back(latitude * columns + longitude); // lower left
+            }
+        }
     }
-
-    // We have generated tessU + 1 vertices per latitude.
-    const int columns = tessU + 1;
-
-    // Setup m_indices
-    for (unsigned int latitude = 0; latitude < tessV; ++latitude)
-    {
-      for (unsigned int longitude = 0; longitude < tessU; ++longitude)
-      {
-        m_indices.push_back(latitude       * columns + longitude);      // lower left
-        m_indices.push_back(latitude       * columns + longitude + 1);  // lower right
-        m_indices.push_back((latitude + 1) * columns + longitude + 1);  // upper right
-
-        m_indices.push_back((latitude + 1) * columns + longitude + 1);  // upper right
-        m_indices.push_back((latitude + 1) * columns + longitude);      // upper left
-        m_indices.push_back(latitude       * columns + longitude);      // lower left
-      }
-    }
-  }
-
 } // namespace sg

@@ -42,127 +42,137 @@
 #include <memory>
 #include <vector>
 
-namespace sg
-{
+namespace sg {
+    enum NodeType {
+        NT_GROUP,
+        NT_INSTANCE,
+        NT_TRIANGLES,
+        NT_CURVES
+    };
 
-  enum NodeType
-  {
-    NT_GROUP,
-    NT_INSTANCE,
-    NT_TRIANGLES,
-    NT_CURVES
-  };
+    class Node {
+    public:
+        Node(const unsigned int id);
 
-  class Node
-  {
-  public:
-    Node(const unsigned int id);
-    //~Node();
+        //~Node();
 
-    virtual sg::NodeType getType() const = 0;
-    
-    unsigned int getId() const
-    {
-      return m_id;
-    }
+        virtual sg::NodeType getType() const = 0;
 
-  private:
-    unsigned int m_id;
-  };
+        unsigned int getId() const
+        {
+            return m_id;
+        }
+
+    private:
+        unsigned int m_id;
+    };
 
 
-  class Triangles : public Node
-  {
-  public:
-    Triangles(const unsigned int id);
-    //~Triangles();
+    class Triangles : public Node {
+    public:
+        Triangles(const unsigned int id);
 
-    sg::NodeType getType() const;
+        //~Triangles();
 
-    void createBox();
-    void createPlane(const unsigned int tessU, const unsigned int tessV, const unsigned int upAxis);
-    void createSphere(const unsigned int tessU, const unsigned int tessV, const float radius, const float maxTheta);
-    void createTorus(const unsigned int tessU, const unsigned int tessV, const float innerRadius, const float outerRadius);
+        sg::NodeType getType() const;
 
-    void calculateLightArea(LightGUI& lightGUI) const;
+        void createBox();
 
-    void setAttributes(const std::vector<TriangleAttributes>& attributes);
-    const std::vector<TriangleAttributes>& getAttributes() const;
-    
-    void setIndices(const std::vector<unsigned int>& indices);
-    const std::vector<unsigned int>& getIndices() const;
+        void createPlane(const unsigned int tessU, const unsigned int tessV, const unsigned int upAxis);
 
-  private:
-    std::vector<TriangleAttributes> m_attributes;
-    std::vector<unsigned int>       m_indices; // If m_indices.size() == 0, m_attributes are independent primitives (not actually supported in this renderer implementation!)
-  };
+        void createSphere(const unsigned int tessU, const unsigned int tessV, const float radius, const float maxTheta);
 
-  class Curves : public Node
-  {
-  public:
-    Curves(const unsigned int id);
-    //~Curves();
+        void createTorus(const unsigned int tessU, const unsigned int tessV, const float innerRadius,
+                         const float outerRadius);
 
-    sg::NodeType getType() const;
+        void calculateLightArea(LightGUI &lightGUI) const;
 
-    bool createHair(std::string const& filename, const float scale);
+        void setAttributes(const std::vector<TriangleAttributes> &attributes);
 
-    void setAttributes(std::vector<CurveAttributes> const& attributes);
-    std::vector<CurveAttributes> const& getAttributes() const; 
-    
-    void setIndices(std::vector<unsigned int> const&);
-    std::vector<unsigned int> const& getIndices() const;
+        const std::vector<TriangleAttributes> &getAttributes() const;
 
-  private:
-    std::vector<CurveAttributes> m_attributes;
-    std::vector<unsigned int>    m_indices;
-  };
+        void setIndices(const std::vector<unsigned int> &indices);
+
+        const std::vector<unsigned int> &getIndices() const;
+
+    private:
+        std::vector<TriangleAttributes> m_attributes;
+        std::vector<unsigned int> m_indices;
+        // If m_indices.size() == 0, m_attributes are independent primitives (not actually supported in this renderer implementation!)
+    };
+
+    class Curves : public Node {
+    public:
+        Curves(const unsigned int id);
+
+        //~Curves();
+
+        sg::NodeType getType() const;
+
+        bool createHair(std::string const &filename, const float scale);
+
+        void setAttributes(std::vector<CurveAttributes> const &attributes);
+
+        std::vector<CurveAttributes> const &getAttributes() const;
+
+        void setIndices(std::vector<unsigned int> const &);
+
+        std::vector<unsigned int> const &getIndices() const;
+
+    private:
+        std::vector<CurveAttributes> m_attributes;
+        std::vector<unsigned int> m_indices;
+    };
 
 
-  class Instance : public Node
-  {
-  public:
-    Instance(const unsigned int id);
-    //~Instance();
+    class Instance : public Node {
+    public:
+        Instance(const unsigned int id);
 
-    sg::NodeType getType() const;
+        //~Instance();
 
-    void setTransform(const float m[12]);
-    const float* getTransform() const;
-    
-    void setChild(std::shared_ptr<sg::Node> node);
-    std::shared_ptr<sg::Node> getChild();
+        sg::NodeType getType() const;
 
-    void setMaterial(const int index);
-    int  getMaterial() const;
+        void setTransform(const float m[12]);
 
-    void setLight(const int index);
-    int  getLight() const;
+        const float *getTransform() const;
 
-  private:
-    int                       m_material;
-    int                       m_light;
-    float                     m_matrix[12];
-    std::shared_ptr<sg::Node> m_child; // An Instance can either hold a Group or Triangles as child.
-  };
+        void setChild(std::shared_ptr<sg::Node> node);
 
-  class Group : public Node
-  {
-  public:
-    Group(const unsigned int id);
-    //~Group();
+        std::shared_ptr<sg::Node> getChild();
 
-    sg::NodeType getType() const;
+        void setMaterial(const int index);
 
-    void addChild(std::shared_ptr<sg::Instance> instance); // Groups can only hold Instances.
+        int getMaterial() const;
 
-    size_t getNumChildren() const;
-    std::shared_ptr<sg::Instance> getChild(size_t index);
+        void setLight(const int index);
 
-  private:
-    std::vector< std::shared_ptr<sg::Instance> > m_children;
-  };
+        int getLight() const;
 
+    private:
+        int m_material;
+        int m_light;
+        float m_matrix[12];
+        std::shared_ptr<sg::Node> m_child; // An Instance can either hold a Group or Triangles as child.
+    };
+
+    class Group : public Node {
+    public:
+        Group(const unsigned int id);
+
+        //~Group();
+
+        sg::NodeType getType() const;
+
+        void addChild(std::shared_ptr<sg::Instance> instance); // Groups can only hold Instances.
+
+        size_t getNumChildren() const;
+
+        std::shared_ptr<sg::Instance> getChild(size_t index);
+
+    private:
+        std::vector<std::shared_ptr<sg::Instance> > m_children;
+    };
 } // namespace sg
 
 #endif // SCENEGRAPH_H

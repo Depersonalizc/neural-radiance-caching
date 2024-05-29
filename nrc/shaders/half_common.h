@@ -33,7 +33,7 @@
 
 #include "config.h"
 
- // Only used when the renderer is switched to RGBA16F rendering.
+// Only used when the renderer is switched to RGBA16F rendering.
 #if !USE_FP32_OUTPUT
 
 #include <cuda_fp16.h>

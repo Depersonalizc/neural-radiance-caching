@@ -27,19 +27,18 @@
  */
 
 #pragma once
- 
+
 #ifndef TONEMAPPER_GUI_H
 #define TONEMAPPER_GUI_H
 
-struct TonemapperGUI
-{
-  float gamma;
-  float whitePoint;
-  float colorBalance[3];
-  float burnHighlights;
-  float crushBlacks;
-  float saturation;
-  float brightness;
+struct TonemapperGUI {
+    float gamma;
+    float whitePoint;
+    float colorBalance[3];
+    float burnHighlights;
+    float crushBlacks;
+    float saturation;
+    float brightness;
 };
 
 #endif // TONEMAPPER_GUI_H

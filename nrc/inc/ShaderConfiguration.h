@@ -39,53 +39,59 @@
 // This holds all boolean values and constants a renderer will need.
 // This will be converted to a DeviceShaderConfiguration structure
 // which contains all direct callable indices and the constant parameter values.
-struct ShaderConfiguration
-{
-  // The state of the expressions:
-  bool is_thin_walled_constant;
-  bool is_surface_bsdf_valid;
-  bool is_backface_bsdf_valid;
-  bool is_surface_edf_valid;
-  bool is_surface_intensity_constant;
-  bool is_surface_intensity_mode_constant;
-  bool is_backface_edf_valid;
-  bool is_backface_intensity_constant;
-  bool is_backface_intensity_mode_constant;
-  bool use_backface_edf;
-  bool use_backface_intensity;
-  bool use_backface_intensity_mode;
-  bool is_ior_constant;
-  bool is_vdf_valid;
-  bool is_absorption_coefficient_constant;
-  bool use_volume_absorption;
-  bool is_scattering_coefficient_constant;
-  bool is_directional_bias_constant;
-  bool use_volume_scattering;
-  bool is_cutout_opacity_constant;
-  bool use_cutout_opacity;
-  bool is_hair_bsdf_valid;
-  
-  // The constant expression values:
-  bool            thin_walled;
-  mi::math::Color surface_intensity;
-  mi::Sint32      surface_intensity_mode;
-  mi::math::Color backface_intensity;
-  mi::Sint32      backface_intensity_mode;
-  mi::math::Color ior;
-  mi::math::Color absorption_coefficient;
-  mi::math::Color scattering_coefficient;
-  mi::Float32     directional_bias;          
-  mi::Float32     cutout_opacity;
+struct ShaderConfiguration {
+    // The state of the expressions:
+    bool is_thin_walled_constant;
+    bool is_surface_bsdf_valid;
+    bool is_backface_bsdf_valid;
+    bool is_surface_edf_valid;
+    bool is_surface_intensity_constant;
+    bool is_surface_intensity_mode_constant;
+    bool is_backface_edf_valid;
+    bool is_backface_intensity_constant;
+    bool is_backface_intensity_mode_constant;
+    bool use_backface_edf;
+    bool use_backface_intensity;
+    bool use_backface_intensity_mode;
+    bool is_ior_constant;
+    bool is_vdf_valid;
+    bool is_absorption_coefficient_constant;
+    bool use_volume_absorption;
+    bool is_scattering_coefficient_constant;
+    bool is_directional_bias_constant;
+    bool use_volume_scattering;
+    bool is_cutout_opacity_constant;
+    bool use_cutout_opacity;
+    bool is_hair_bsdf_valid;
 
-  bool isEmissive() const
-  {
-    const bool surfaceEmissive  = is_surface_edf_valid  && (!is_surface_intensity_constant  || (is_surface_intensity_constant  && (0.0f < surface_intensity[0]  || 0.0f < surface_intensity[1]  || 0.0f < surface_intensity[2])));
-    const bool backfaceEmissive = is_backface_edf_valid && (!is_backface_intensity_constant || (is_backface_intensity_constant && (0.0f < backface_intensity[0] || 0.0f < backface_intensity[1] || 0.0f < backface_intensity[2])));
-    const bool thinWalled       = !is_thin_walled_constant || (is_thin_walled_constant && thin_walled);
-   
-    return surfaceEmissive || (thinWalled && backfaceEmissive);
-  }
+    // The constant expression values:
+    bool thin_walled;
+    mi::math::Color surface_intensity;
+    mi::Sint32 surface_intensity_mode;
+    mi::math::Color backface_intensity;
+    mi::Sint32 backface_intensity_mode;
+    mi::math::Color ior;
+    mi::math::Color absorption_coefficient;
+    mi::math::Color scattering_coefficient;
+    mi::Float32 directional_bias;
+    mi::Float32 cutout_opacity;
 
+    bool isEmissive() const
+    {
+        const bool surfaceEmissive = is_surface_edf_valid && (
+                                         !is_surface_intensity_constant || (
+                                             is_surface_intensity_constant && (
+                                                 0.0f < surface_intensity[0] || 0.0f < surface_intensity[1] || 0.0f <
+                                                 surface_intensity[2])));
+        const bool backfaceEmissive = is_backface_edf_valid && (
+                                          !is_backface_intensity_constant || (
+                                              is_backface_intensity_constant && (
+                                                  0.0f < backface_intensity[0] || 0.0f < backface_intensity[1] || 0.0f <
+                                                  backface_intensity[2])));
+        const bool thinWalled = !is_thin_walled_constant || (is_thin_walled_constant && thin_walled);
+
+        return surfaceEmissive || (thinWalled && backfaceEmissive);
+    }
 };
 
 #endif // SHADER_CONFIGURATION_H

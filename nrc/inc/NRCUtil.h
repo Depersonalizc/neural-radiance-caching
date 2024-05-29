@@ -6,9 +6,8 @@
 #include <curand.h>
 
 namespace nrc {
+    __host__ size_t getRadixSortTempStorageBytes(nrc::ControlBlock &cb, CUstream hStream);
 
-__host__ size_t getRadixSortTempStorageBytes(nrc::ControlBlock& cb, CUstream hStream);
-
-__host__ void generateRandomPermutationForTrain(nrc::ControlBlock &cb, CUstream hStream, curandGenerator_t generator);
-
+    __host__ void generateRandomPermutationForTrain(nrc::ControlBlock &cb, CUstream hStream,
+                                                    curandGenerator_t generator);
 };

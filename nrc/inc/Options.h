@@ -33,31 +33,36 @@
 
 #include <string>
 
-class Options
-{
+class Options {
 public:
-  Options();
-  //~Options();
+    Options();
 
-  bool parseCommandLine(int argc, char *argv[]);
+    //~Options();
 
-  int         getWidth() const;
-  int         getHeight() const;
-  int         getMode() const;
-  bool        getOptimize() const;
-  std::string getSystem() const;
-  std::string getScene() const;
+    bool parseCommandLine(int argc, char *argv[]);
+
+    int getWidth() const;
+
+    int getHeight() const;
+
+    int getMode() const;
+
+    bool getOptimize() const;
+
+    std::string getSystem() const;
+
+    std::string getScene() const;
 
 private:
-  void printUsage(const std::string& argv);
+    void printUsage(const std::string &argv);
 
 private:
-  int         m_width;
-  int         m_height;
-  int         m_mode;
-  bool        m_optimize;
-  std::string m_filenameSystem;
-  std::string m_filenameScene;
+    int m_width;
+    int m_height;
+    int m_mode;
+    bool m_optimize;
+    std::string m_filenameSystem;
+    std::string m_filenameScene;
 };
 
 #endif // OPTIONS_H

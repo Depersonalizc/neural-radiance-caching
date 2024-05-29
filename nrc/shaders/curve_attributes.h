@@ -31,11 +31,12 @@
 #ifndef CURVE_ATTRIBUTES_H
 #define CURVE_ATTRIBUTES_H
 
-struct CurveAttributes
-{
-  float4 vertex;    // .xyz = 3D position in object space, .w = radius in world space.
-  float4 reference; // .xyz = Constant reference vector along the fiber. Used to calculate circular intersection value vFiber [0.0, 1.0] around the hair. .w = unused.
-  float4 texcoord;  // .xyz = 3D texture coordinates. .w = interpolant along the whole fiber. Used to calculate uFiber in range [0.0, 1.0] from root to tip.
+struct CurveAttributes {
+    float4 vertex; // .xyz = 3D position in object space, .w = radius in world space.
+    float4 reference;
+    // .xyz = Constant reference vector along the fiber. Used to calculate circular intersection value vFiber [0.0, 1.0] around the hair. .w = unused.
+    float4 texcoord;
+    // .xyz = 3D texture coordinates. .w = interpolant along the whole fiber. Used to calculate uFiber in range [0.0, 1.0] from root to tip.
 };
 
 #endif // CURVE_ATTRIBUTES_H

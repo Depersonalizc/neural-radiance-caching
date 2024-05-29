@@ -28,7 +28,7 @@
  */
 
 #pragma once
- 
+
 #ifndef DEVICE_SHADER_CONFIGURATION_H
 #define DEVICE_SHADER_CONFIGURATION_H
 
@@ -42,60 +42,59 @@
 #define USE_EMISSION       (1u << 1)
 #define USE_CUTOUT_OPACITY (1u << 2)
 
-struct DeviceShaderConfiguration
-{
-  unsigned int flags{0u}; // See defines above.
+struct DeviceShaderConfiguration {
+    unsigned int flags{0u}; // See defines above.
 
-  // All callable indices are defaulted to the invalid value -1.
-  // The MDL code generator will generate all functions by default (sample, evaluate, pdf),
-  // but pdf functions are disabled with backend set_option("enable_pdf", "off")
-  // This is only containing the direct callables which are required inside the pipeline of this unidirectional path tracer.
+    // All callable indices are defaulted to the invalid value -1.
+    // The MDL code generator will generate all functions by default (sample, evaluate, pdf),
+    // but pdf functions are disabled with backend set_option("enable_pdf", "off")
+    // This is only containing the direct callables which are required inside the pipeline of this unidirectional path tracer.
 
-  int idxCallInit{-1}; // The material global init function.
-  
-  int idxCallThinWalled{-1};
+    int idxCallInit{-1}; // The material global init function.
 
-  int idxCallSurfaceScatteringSample{-1};
-  int idxCallSurfaceScatteringEval{-1};
-  int idxCallSurfaceScatteringAux{-1};
+    int idxCallThinWalled{-1};
 
-  int idxCallBackfaceScatteringSample{-1};
-  int idxCallBackfaceScatteringEval{-1};
-  int idxCallBackfaceScatteringAux{-1};
+    int idxCallSurfaceScatteringSample{-1};
+    int idxCallSurfaceScatteringEval{-1};
+    int idxCallSurfaceScatteringAux{-1};
 
-  int idxCallSurfaceEmissionEval{-1};
-  int idxCallSurfaceEmissionIntensity{-1};
-  int idxCallSurfaceEmissionIntensityMode{-1};
+    int idxCallBackfaceScatteringSample{-1};
+    int idxCallBackfaceScatteringEval{-1};
+    int idxCallBackfaceScatteringAux{-1};
 
-  int idxCallBackfaceEmissionEval{-1};
-  int idxCallBackfaceEmissionIntensity{-1};
-  int idxCallBackfaceEmissionIntensityMode{-1};
+    int idxCallSurfaceEmissionEval{-1};
+    int idxCallSurfaceEmissionIntensity{-1};
+    int idxCallSurfaceEmissionIntensityMode{-1};
 
-  int idxCallIor{-1};
+    int idxCallBackfaceEmissionEval{-1};
+    int idxCallBackfaceEmissionIntensity{-1};
+    int idxCallBackfaceEmissionIntensityMode{-1};
 
-  // No direct callables for VDFs itself. The MDL SDK is not generating code for VDFs.
+    int idxCallIor{-1};
 
-  int idxCallVolumeAbsorptionCoefficient{-1};
-  int idxCallVolumeScatteringCoefficient{-1};
-  int idxCallVolumeDirectionalBias{-1};
+    // No direct callables for VDFs itself. The MDL SDK is not generating code for VDFs.
 
-  int idxCallGeometryCutoutOpacity{-1};
+    int idxCallVolumeAbsorptionCoefficient{-1};
+    int idxCallVolumeScatteringCoefficient{-1};
+    int idxCallVolumeDirectionalBias{-1};
 
-  int idxCallHairSample{-1};
-  int idxCallHairEval{-1};
-  int idxCallHairAux{-1};
+    int idxCallGeometryCutoutOpacity{-1};
 
-  // The constant expression values:
-  //bool thin_walled; // Stored inside flags.
-  float3 surface_intensity;
-  int    surface_intensity_mode;
-  float3 backface_intensity;
-  int    backface_intensity_mode;
-  float3 ior;
-  float3 absorption_coefficient;
-  float3 scattering_coefficient;
-  float  directional_bias;
-  float  cutout_opacity;
+    int idxCallHairSample{-1};
+    int idxCallHairEval{-1};
+    int idxCallHairAux{-1};
+
+    // The constant expression values:
+    //bool thin_walled; // Stored inside flags.
+    float3 surface_intensity;
+    int surface_intensity_mode;
+    float3 backface_intensity;
+    int backface_intensity_mode;
+    float3 ior;
+    float3 absorption_coefficient;
+    float3 scattering_coefficient;
+    float directional_bias;
+    float cutout_opacity;
 };
 
 #endif // DEVICE_SHADER_CONFIGURATION_H

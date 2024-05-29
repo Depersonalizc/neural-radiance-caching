@@ -38,19 +38,19 @@
 #undef MY_ASSERT
 
 #if !defined(NDEBUG)
-  #if defined(_WIN32) // Windows 32/64-bit
-    #include <windows.h>
-    #define DBGBREAK() DebugBreak();
-  #else
+#if defined(_WIN32) // Windows 32/64-bit
+#include <windows.h>
+#define DBGBREAK() DebugBreak();
+#else
     #define DBGBREAK() __builtin_trap();
-  #endif
-  #define MY_ASSERT(expr) if (!(expr)) DBGBREAK()
+#endif
+#define MY_ASSERT(expr) if (!(expr)) DBGBREAK()
 #else
   #define MY_ASSERT(expr)
 #endif
 
 #if !defined(NDEBUG)
-  #define MY_VERIFY(expr) MY_ASSERT(expr)
+#define MY_VERIFY(expr) MY_ASSERT(expr)
 #else
   #define MY_VERIFY(expr) (static_cast<void>(expr))
 #endif

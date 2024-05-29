@@ -40,31 +40,33 @@
 #include <string>
 
 // Host side GUI light parameters, only stores the values not held inside the material already.
-struct LightGUI
-{
-  TypeLight typeLight; // Zero-based light type to select the light sampling and evaluation callables.
+struct LightGUI {
+    TypeLight typeLight; // Zero-based light type to select the light sampling and evaluation callables.
 
-  dp::math::Mat44f matrix;    // object to world
-  dp::math::Mat44f matrixInv; // world to object
+    dp::math::Mat44f matrix; // object to world
+    dp::math::Mat44f matrixInv; // world to object
 
-  dp::math::Quatf  orientation;    // object to world, rotation only
-  dp::math::Quatf  orientationInv; // world to object, rotation only
+    dp::math::Quatf orientation; // object to world, rotation only
+    dp::math::Quatf orientationInv; // world to object, rotation only
 
-  unsigned int idGeometry; // Geometry data index for mesh lights. (Supports GAS sharing!)
-  int          idMaterial; // Needed for explicit light sampling to be able to determine the used shader.
-  int          idObject;   // Application-specific ID used for state.object_id in explicit light mesh sampling. Matches GeometryInstanceData::idObject.
+    unsigned int idGeometry; // Geometry data index for mesh lights. (Supports GAS sharing!)
+    int idMaterial; // Needed for explicit light sampling to be able to determine the used shader.
+    int idObject;
+    // Application-specific ID used for state.object_id in explicit light mesh sampling. Matches GeometryInstanceData::idObject.
 
-  std::string nameEmission; // The filename of the emission texture. Empty when none.
-  std::string nameProfile;  // The filename of the IES light profile when typeEDF is TYPE_EDF_IES, otherwise unused. Empty when none.
+    std::string nameEmission; // The filename of the emission texture. Empty when none.
+    std::string nameProfile;
+    // The filename of the IES light profile when typeEDF is TYPE_EDF_IES, otherwise unused. Empty when none.
 
-  float3 colorEmission;      // The emission base color.
-  float  multiplierEmission; // A multiplier on top of colorEmission to get HDR lights.
+    float3 colorEmission; // The emission base color.
+    float multiplierEmission; // A multiplier on top of colorEmission to get HDR lights.
 
-  float spotAngle;    // Full cone angle in degrees, means max. 180 degrees is a hemispherical distribution.
-  float spotExponent; // Exponent on the cosine of the sotAngle, used to generate intensity falloff from spot cone center to outer angle. Set to 0.0 for no falloff.
+    float spotAngle; // Full cone angle in degrees, means max. 180 degrees is a hemispherical distribution.
+    float spotExponent;
+    // Exponent on the cosine of the sotAngle, used to generate intensity falloff from spot cone center to outer angle. Set to 0.0 for no falloff.
 
-  std::vector<float> cdfAreas; // CDF over the areas of the mesh triangles used for uniform sampling.
-  float              area;     // Overall surface area of the mesh light in world space.
+    std::vector<float> cdfAreas; // CDF over the areas of the mesh triangles used for uniform sampling.
+    float area; // Overall surface area of the mesh light in world space.
 };
 
 #endif // LIGHT_GUI_H

@@ -60,69 +60,78 @@
 //hair.setThickness(thickness);     // Constant thickness. Use setThicknessArray() if values differ along strands.
 //hair.save(filename);
 
-class Hair
-{
-  // HAIR File Header (128 Bytes)
-  struct Header
-  {
-    char         signature[4];    // Bytes 0-3 Must be "HAIR" in ascii code (48 41 49 52)
-    unsigned int numStrands;      // Bytes 4-7 Number of hair strands as unsigned int
-    unsigned int numPoints;       // Bytes 8-11 Total number of points of all strands as unsigned int
-    unsigned int bits;            // Bytes 12-15 Bit array of data in the file
-                                  // Bit-0 is 1 if the file has segments array.
-                                  // Bit-1 is 1 if the file has points array (this bit must be 1).
-                                  // Bit-2 is 1 if the file has thickness array.
-                                  // Bit-3 is 1 if the file has transparency array.
-                                  // Bit-4 is 1 if the file has color array.
-                                  // Bit-5 to Bit-31 are reserved for future extension (must be 0).
-    unsigned int numSegments;     // Bytes 16-19 Default number of segments of hair strands as unsigned int
-                                  // If the file does not have a segments array, this default value is used.
-    float        thickness;       // Bytes 20-23 Default thickness hair strands as float
-                                  // If the file does not have a thickness array, this default value is used.
-    float        transparency;    // Bytes 24-27 Default transparency hair strands as float
-                                  // If the file does not have a transparency array, this default value is used.
-    float3       color;           // Bytes 28-39 Default color hair strands as float array of size 3
-                                  // If the file does not have a thickness array, this default value is used.
-    char         information[88]; // Bytes 40-127 File information as char array of size 88 in ascii
-  };
+class Hair {
+    // HAIR File Header (128 Bytes)
+    struct Header {
+        char signature[4]; // Bytes 0-3 Must be "HAIR" in ascii code (48 41 49 52)
+        unsigned int numStrands; // Bytes 4-7 Number of hair strands as unsigned int
+        unsigned int numPoints; // Bytes 8-11 Total number of points of all strands as unsigned int
+        unsigned int bits; // Bytes 12-15 Bit array of data in the file
+        // Bit-0 is 1 if the file has segments array.
+        // Bit-1 is 1 if the file has points array (this bit must be 1).
+        // Bit-2 is 1 if the file has thickness array.
+        // Bit-3 is 1 if the file has transparency array.
+        // Bit-4 is 1 if the file has color array.
+        // Bit-5 to Bit-31 are reserved for future extension (must be 0).
+        unsigned int numSegments; // Bytes 16-19 Default number of segments of hair strands as unsigned int
+        // If the file does not have a segments array, this default value is used.
+        float thickness; // Bytes 20-23 Default thickness hair strands as float
+        // If the file does not have a thickness array, this default value is used.
+        float transparency; // Bytes 24-27 Default transparency hair strands as float
+        // If the file does not have a transparency array, this default value is used.
+        float3 color; // Bytes 28-39 Default color hair strands as float array of size 3
+        // If the file does not have a thickness array, this default value is used.
+        char information[88]; // Bytes 40-127 File information as char array of size 88 in ascii
+    };
 
 public:
-  Hair();
-  //~Hair();
-  
-  bool load(const std::string& filename);
-  bool save(const std::string& filename);
+    Hair();
 
-  void         setNumStrands(const unsigned int num);
-  unsigned int getNumStrands() const;
+    //~Hair();
 
-  void         setNumSegments(const unsigned int num);
-  void         setSegmentsArray(const std::vector<unsigned short>& segments);
-  unsigned int getNumSegments(const unsigned int idxStrand) const;
+    bool load(const std::string &filename);
 
-  void   setPointsArray(const std::vector<float3>& points); // This also sets m_header.numPoints!
-  float3 getPoint(const unsigned int idx) const;
+    bool save(const std::string &filename);
 
-  void  setThickness(const float thickness);
-  void  setThicknessArray(const std::vector<float>& thickness);
-  float getThickness(const unsigned int idx) const;
+    void setNumStrands(const unsigned int num);
 
-  void  setTransparency(const float transparency);
-  void  setTransparencyArray(const std::vector<float>& transparency);
-  float getTransparency(const unsigned int idx) const;
+    unsigned int getNumStrands() const;
 
-  void   setColor(const float3 color);
-  void   setColorArray(const std::vector<float3>& color);
-  float3 getColor(const unsigned int idx) const;
+    void setNumSegments(const unsigned int num);
+
+    void setSegmentsArray(const std::vector<unsigned short> &segments);
+
+    unsigned int getNumSegments(const unsigned int idxStrand) const;
+
+    void setPointsArray(const std::vector<float3> &points); // This also sets m_header.numPoints!
+    float3 getPoint(const unsigned int idx) const;
+
+    void setThickness(const float thickness);
+
+    void setThicknessArray(const std::vector<float> &thickness);
+
+    float getThickness(const unsigned int idx) const;
+
+    void setTransparency(const float transparency);
+
+    void setTransparencyArray(const std::vector<float> &transparency);
+
+    float getTransparency(const unsigned int idx) const;
+
+    void setColor(const float3 color);
+
+    void setColorArray(const std::vector<float3> &color);
+
+    float3 getColor(const unsigned int idx) const;
 
 private:
-  Header m_header;
+    Header m_header;
 
-  std::vector<unsigned short> m_segmentsArray;     // Empty or size numStrands.
-  std::vector<float3>         m_pointsArray;       // Size numPoints.
-  std::vector<float>          m_thicknessArray;    // Empty or size numPoints.
-  std::vector<float>          m_transparencyArray; // Empty or size numPoints.
-  std::vector<float3>         m_colorArray;        // Empty or size numPoints.
+    std::vector<unsigned short> m_segmentsArray; // Empty or size numStrands.
+    std::vector<float3> m_pointsArray; // Size numPoints.
+    std::vector<float> m_thicknessArray; // Empty or size numPoints.
+    std::vector<float> m_transparencyArray; // Empty or size numPoints.
+    std::vector<float3> m_colorArray; // Empty or size numPoints.
 };
 
 #endif // HAIR_H

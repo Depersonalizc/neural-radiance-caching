@@ -52,7 +52,7 @@
 #include <GL/wglew.h>
 #endif
 
- // CUDA Driver API version of the OpenGL interop header. 
+ // CUDA Driver API version of the OpenGL interop header.
 #include <cudaGL.h>
 
 #include <algorithm>
@@ -375,7 +375,7 @@ Device::Device(const int ordinal,
 		| OPTIX_EXCEPTION_FLAG_USER
 #if (OPTIX_VERSION < 80000)
 		// Removed in OptiX SDK 8.0.0.
-		// Use OptixDeviceContextOptions validationMode 
+		// Use OptixDeviceContextOptions validationMode
 		//   = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL instead.
 		| OPTIX_EXCEPTION_FLAG_DEBUG
 #endif
@@ -385,7 +385,7 @@ Device::Device(const int ordinal,
 #if (OPTIX_VERSION >= 70100)
 	// New in OptiX 7.1.0.
 	// This renderer supports triangles and cubic B-splines.
-	m_pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE 
+	m_pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE
 								 | OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_CUBIC_BSPLINE;
 #endif
 
@@ -396,7 +396,7 @@ Device::Device(const int ordinal,
 	// Full debug. Never profile kernels with this setting!
 	m_plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
 #else
-    // Keep generated line info for Nsight Compute profiling. 
+    // Keep generated line info for Nsight Compute profiling.
 	// (NVCC_OPTIONS use --generate-line-info in CMakeLists.txt)
 #if (OPTIX_VERSION >= 70400)
 	m_plo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
@@ -411,7 +411,7 @@ Device::Device(const int ordinal,
 
 	// (Static) NRC Allocations
 	initNRC();
-	
+
 	// Curand RNG, only used for shuffling NRC training data right now.
 	CURAND_CHECK(curandCreateGenerator(&m_curandGenerator, CURAND_RNG_PSEUDO_DEFAULT));
 	CURAND_CHECK(curandSetStream(m_curandGenerator, m_cudaStream));
@@ -439,11 +439,11 @@ Device::~Device()
 	unloadModule(m_moduleCompositor);
 	unloadModule(m_moduleNRCHelpers);
 
-	for (const auto &[_, texture] : m_mapTextures) 
+	for (const auto &[_, texture] : m_mapTextures)
 	{
 		if (texture)
 		{
-			// The texture array data might be owned by a peer device. 
+			// The texture array data might be owned by a peer device.
 			// Explicitly destroy only the parts which belong to this device.
 			m_sizeMemoryTextureArrays -= texture->destroy(this);
 
@@ -503,11 +503,11 @@ Device::~Device()
 
 	MY_ASSERT(m_sizeMemoryTextureArrays == 0); // Make sure the texture memory tracking is correct.
 
-	if (m_pipeline) 
+	if (m_pipeline)
 	{
 		OPTIX_CHECK_NO_THROW(m_api.optixPipelineDestroy(m_pipeline));
 	}
-	if (m_optixContext) 
+	if (m_optixContext)
 	{
 		OPTIX_CHECK_NO_THROW(m_api.optixDeviceContextDestroy(m_optixContext));
 	}
@@ -522,7 +522,7 @@ Device::~Device()
 	{
 		CU_CHECK_NO_THROW(cuStreamDestroy(m_cudaStream));
 	}
-	if (m_cudaContext) 
+	if (m_cudaContext)
 	{
 		CU_CHECK_NO_THROW(cuCtxDestroy(m_cudaContext));
 	}
@@ -695,7 +695,6 @@ void Device::loadNativeModules()
 		CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
 	}
 
-	
 	// This single module contains all the helper kernels.
 	{
 		CU_CHECK(cuModuleLoad(&m_moduleNRCHelpers, "./nrc_core/nrc_helpers.ptx"));
@@ -723,15 +722,13 @@ void Device::loadNativeModules()
 OptixResult Device::initFunctionTable()
 {
 #ifdef _WIN32
-	void* handle = optixLoadWindowsDll();
-	if (!handle)
-	{
+	void *handle = optixLoadWindowsDll();
+	if (!handle) {
 		return OPTIX_ERROR_LIBRARY_NOT_FOUND;
 	}
 
-	void* symbol = reinterpret_cast<void*>(GetProcAddress((HMODULE)handle, "optixQueryFunctionTable"));
-	if (!symbol)
-	{
+	void *symbol = reinterpret_cast<void *>(GetProcAddress((HMODULE) handle, "optixQueryFunctionTable"));
+	if (!symbol) {
 		return OPTIX_ERROR_ENTRY_SYMBOL_NOT_FOUND;
 	}
 #else
@@ -749,11 +746,10 @@ OptixResult Device::initFunctionTable()
 	}
 #endif
 
-	OptixQueryFunctionTable_t* optixQueryFunctionTable = reinterpret_cast<OptixQueryFunctionTable_t*>(symbol);
+	auto optixQueryFunctionTable = reinterpret_cast<OptixQueryFunctionTable_t *>(symbol);
 
-	return optixQueryFunctionTable(OPTIX_ABI_VERSION, 0, 0, 0, &m_api, sizeof(OptixFunctionTable));
+	return optixQueryFunctionTable(OPTIX_ABI_VERSION, 0, nullptr, nullptr, &m_api, sizeof(OptixFunctionTable));
 }
-
 
 void Device::initNRCPipeline()
 {
@@ -780,8 +776,8 @@ void Device::initNRCPipeline()
 	// Create pipeline by linking all program groups together
 	char log[2048];
 	size_t sizeLog = sizeof(log);
-	OPTIX_CHECK(m_api.optixPipelineCreate(m_optixContext, 
-		&m_pco, &m_plo, programGroups.data(), (unsigned int)programGroups.size(), 
+	OPTIX_CHECK(m_api.optixPipelineCreate(m_optixContext,
+		&m_pco, &m_plo, programGroups.data(), (unsigned int)programGroups.size(),
 		log, &sizeLog, &m_pipeline));
 	if (sizeLog > 1) std::cerr << log << '\n';
 
@@ -789,10 +785,10 @@ void Device::initNRCPipeline()
 	const auto pss = estimatePipelineStackSizes(programGroups);
 	OPTIX_CHECK(m_api.optixPipelineSetStackSize(m_pipeline,
 		pss.directCallableStackSizeFromTraversal
-			//* 2  // Shouldn't be necessary, but doing so fixed some device memory issues we had.
+		//* 2  // Shouldn't be necessary, but doing so fixed some device memory issues we had.
 		,
-		pss.directCallableStackSizeFromState 
-			//* 2  // Shouldn't be necessary, but doing so fixed some device memory issues we had.
+		pss.directCallableStackSizeFromState
+		//* 2  // Shouldn't be necessary, but doing so fixed some device memory issues we had.
 		,
 		pss.continuationStackSize,
 		pss.maxTraversableGraphDepth
@@ -803,20 +799,17 @@ void Device::initNRCPipeline()
 
 	// After all required optixSbtRecordPackHeader, optixProgramGroupGetStackSize, and optixPipelineCreate
 	// calls have been done, the OptixProgramGroup and OptixModule objects can be destroyed.
-	for (auto pg : programGroups)
-	{
+	for (auto pg: programGroups) {
 		OPTIX_CHECK(m_api.optixProgramGroupDestroy(pg));
 	}
 	// This also destroyed the program groups in m_programGroupsMDL, so these can be cleared.
 	m_programGroupsMDL.clear();
 
-	for (auto m : modules)
-	{
+	for (auto m: modules) {
 		OPTIX_CHECK(m_api.optixModuleDestroy(m));
 	}
 	// Destroy the modules with the MDL generated direct callables which were used to build the m_programGroupsMDL.
-	for (auto m : m_modulesMDL)
-	{
+	for (auto m: m_modulesMDL) {
 		OPTIX_CHECK(m_api.optixModuleDestroy(m));
 	}
 	m_modulesMDL.clear();
@@ -824,14 +817,14 @@ void Device::initNRCPipeline()
 
 void Device::adjustTileSize(int numTrainRecords)
 {
-	const auto ratio = static_cast<float>(numTrainRecords * 1.25f) 
-					 / static_cast<float>(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+	const auto ratio = static_cast<float>(numTrainRecords * 1.25f)
+	                   / static_cast<float>(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
 	const auto r = std::sqrtf(ratio);
-	
+
 	const auto newSizeX = std::max(static_cast<int>(m_systemData.pf.tileSize.x * r + 0.5f), 2);
 	const auto newSizeY = std::max(static_cast<int>(m_systemData.pf.tileSize.y * r + 0.5f), 2);
-	
-	m_systemData.pf.tileSize = { newSizeX, newSizeY };
+
+	m_systemData.pf.tileSize = {newSizeX, newSizeY};
 }
 
 // Create all modules:
@@ -849,7 +842,7 @@ std::vector<OptixModule> Device::buildModules() const
 #endif
 
 	std::vector<OptixModule> modules(NUM_MODULE_IDENTIFIERS);
-	
+
 	// Create custom modules
 	char log[2048];
 	for (int i = MODULE_ID_FIRST_CUSTOM; i <= MODULE_ID_LAST_CUSTOM; i++) {
@@ -860,13 +853,13 @@ std::vector<OptixModule> Device::buildModules() const
 			log, &sizeLog, &modules[i]));
 		if (sizeLog > 1) std::cerr << log << '\n';
 	}
-	
+
 	// Get the built-in Cubic B-Spline intersection module
 	static constexpr OptixBuiltinISOptions builtinISOptions = {
 		.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE,
 	};
 	OPTIX_CHECK(m_api.optixBuiltinISModuleGet(m_optixContext,
-		&m_mco, &m_pco, &builtinISOptions, 
+		&m_mco, &m_pco, &builtinISOptions,
 		&modules[MODULE_ID_BUILTIN_CUBIC_BSPLINE_IS]));
 
 	return modules;
@@ -876,20 +869,17 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 {
 	std::vector<OptixProgramGroupDesc> pgds(NUM_PROGRAM_GROUP_IDS);
 
-	OptixProgramGroupDesc* pgd;
+	OptixProgramGroupDesc *pgd;
 
 	// Raygen
 	pgd = &pgds[PGID_RAYGENERATION];
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->raygen.module = modules[MODULE_ID_RAYGENERATION];
-	if (m_count > 1)
-	{
+	if (m_count > 1) {
 		// Only use the multi-GPU specific raygen program when there are multiple devices enabled.
 		pgd->raygen.entryFunctionName = "__raygen__path_tracer_local_copy";
-	}
-	else
-	{
+	} else {
 		// Use a single-GPU raygen program which doesn't need compositing.
 		//pgd->raygen.entryFunctionName = "__raygen__path_tracer";
 		pgd->raygen.entryFunctionName = "__raygen__nrc_path_tracer";
@@ -907,17 +897,17 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->miss.module = modules[MODULE_ID_MISS];
-	switch (m_typeEnv)
-	{
-	case TYPE_LIGHT_ENV_CONST:
-		pgd->miss.entryFunctionName = "__miss__env_constant";
-		break;
-	case TYPE_LIGHT_ENV_SPHERE:
-		pgd->miss.entryFunctionName = "__miss__env_sphere";
-		break;
-	default: // Every other ID means there is no environment light, esp. using m_typeEnv == NUM_LIGHT_TYPES for that.
-		pgd->miss.entryFunctionName = "__miss__env_null";
-		break;
+	switch (m_typeEnv) {
+		case TYPE_LIGHT_ENV_CONST:
+			pgd->miss.entryFunctionName = "__miss__env_constant";
+			break;
+		case TYPE_LIGHT_ENV_SPHERE:
+			pgd->miss.entryFunctionName = "__miss__env_sphere";
+			break;
+		default:
+			// Every other ID means there is no environment light, esp. using m_typeEnv == NUM_LIGHT_TYPES for that.
+			pgd->miss.entryFunctionName = "__miss__env_null";
+			break;
 	}
 
 	// Miss (shadow)
@@ -925,7 +915,7 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 	pgd->kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->miss.module = nullptr;
-	pgd->miss.entryFunctionName = nullptr; // No miss program for shadow rays. 
+	pgd->miss.entryFunctionName = nullptr; // No miss program for shadow rays.
 
 	// The hit groups for the radiance and shadow ray for opaque (instance sbtOffset 0) and cutout opacity (instance sbtOffset 1) hit records.
 	// 0 = no emission, no cutout
@@ -1059,7 +1049,7 @@ std::vector<OptixProgramGroupDesc> Device::buildProgramGroupDescs(const std::vec
 	pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
 	pgd->callables.moduleDC = modules[MODULE_ID_LIGHT_SAMPLE];
 	pgd->callables.entryFunctionNameDC = "__direct_callable__light_ies";
-	
+
 	return pgds;
 }
 
@@ -1116,7 +1106,7 @@ PipelineStackSizes Device::estimatePipelineStackSizes(const std::vector<OptixPro
 // In this example all SBT records use no additional data!
 // The instance sbtOffset selects the material shader (hit record),
 // everything else needed per instance is indexed via the instancId.
-void Device::initSBT(const std::vector<OptixProgramGroup>& programGroups)
+void Device::initSBT(const std::vector<OptixProgramGroup> &programGroups)
 {
 	// Upload all SbtRecordHeader types to device (m_d_sbtRecordHeaders)
 	{
@@ -1143,18 +1133,20 @@ void Device::initSBT(const std::vector<OptixProgramGroup>& programGroups)
 		m_sbt.exceptionRecord = m_d_sbtRecordHeaders + sizeof(SbtRecordHeader) * PGID_EXCEPTION;
 
 		m_sbt.missRecordBase = m_d_sbtRecordHeaders + sizeof(SbtRecordHeader) * PGID_MISS_RADIANCE;
-		m_sbt.missRecordStrideInBytes = (unsigned int)sizeof(SbtRecordHeader);
+		m_sbt.missRecordStrideInBytes = (unsigned int) sizeof(SbtRecordHeader);
 		m_sbt.missRecordCount = NUM_RAY_TYPES;
 
-		m_sbt.hitgroupRecordBase = m_d_sbtRecordHeaders + sizeof(SbtRecordHeader) * PGID_FIRST_HIT_GROUP; /*=PGID_HIT_RADIANCE_0*/
-		m_sbt.hitgroupRecordStrideInBytes = (unsigned int)sizeof(SbtRecordHeader);
+		m_sbt.hitgroupRecordBase = m_d_sbtRecordHeaders + sizeof(SbtRecordHeader) * PGID_FIRST_HIT_GROUP;
+		/*=PGID_HIT_RADIANCE_0*/
+		m_sbt.hitgroupRecordStrideInBytes = (unsigned int) sizeof(SbtRecordHeader);
 		// Five hitRecords, *2 ray types
 		// 0 to 3 == (no emission, emission) x (no cutout, cutout)
 		// 4      == non-emissive opaque cubic curves.
 		m_sbt.hitgroupRecordCount = PGID_LAST_HIT_GROUP - PGID_FIRST_HIT_GROUP + 1;
 
-		m_sbt.callablesRecordBase = m_d_sbtRecordHeaders + sizeof(SbtRecordHeader) * PGID_FIRST_DIRECT_CALLABLE; /*=PGID_LENS_PINHOLE*/
-		m_sbt.callablesRecordStrideInBytes = (unsigned int)sizeof(SbtRecordHeader);
+		m_sbt.callablesRecordBase = m_d_sbtRecordHeaders + sizeof(SbtRecordHeader) * PGID_FIRST_DIRECT_CALLABLE;
+		/*=PGID_LENS_PINHOLE*/
+		m_sbt.callablesRecordStrideInBytes = (unsigned int) sizeof(SbtRecordHeader);
 		// Note that programGroups include more direct callables from MDL
 		m_sbt.callablesRecordCount = programGroups.size() - PGID_FIRST_DIRECT_CALLABLE + 1;
 	}
@@ -1174,7 +1166,7 @@ void Device::initNRC()
 	auto& staticBufs = m_nrcControlBlock.bufStatic;
 	staticBufs.trainingRecords = reinterpret_cast<TrainingRecord*>(
 		memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(TrainingRecord)));
-	
+
 	staticBufs.trainingRadianceTargets.buffer(0) = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
 	staticBufs.trainingRadianceTargets.buffer(1) = reinterpret_cast<float3*>(
@@ -1184,12 +1176,13 @@ void Device::initNRC()
 		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
 	staticBufs.radianceQueriesTraining.buffer(1) = reinterpret_cast<RadianceQuery*>(
 		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
-	
+
 	// Auxiliary
 
 	// trainingRecordIndices
 	staticBufs.trainingRecordIndices.buffer(0) = reinterpret_cast<int*>(
 		memAlloc(sizeof(int) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(int)));
+
 	{
 		// trainingRecordIndices.buffer(0) contains the constant indices [0..NUM_TRAINING_RECORDS_PER_FRAME)
 		std::vector<int> indices(NUM_TRAINING_RECORDS_PER_FRAME);
@@ -1197,6 +1190,7 @@ void Device::initNRC()
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(staticBufs.trainingRecordIndices.buffer(0)),
 			indices.data(), sizeof(int) * NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
 	}
+
 	staticBufs.trainingRecordIndices.buffer(1) = reinterpret_cast<int*>(
 		memAlloc(sizeof(int) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(int)));
 
@@ -1211,9 +1205,11 @@ void Device::initNRC()
 	staticBufs.tempStorage = reinterpret_cast<void*>(memAlloc(staticBufs.tempStorageBytes, 4));
 
 	// NOTE: m_nrcControlBlock.bufDynamic are allocated in render() on resize
-	
+
 	// Copy the static buffers (pointers) over to device
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufStatic), &staticBufs, sizeof(staticBufs), m_cudaStream));
+	CU_CHECK(cuMemcpyHtoDAsync(
+		reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufStatic),
+		&staticBufs, sizeof(staticBufs), m_cudaStream));
 }
 
 // Resize dynamic NRC buffers according to the current screensize
@@ -1223,11 +1219,11 @@ void Device::resizeNRC()
 
 	const auto numPixels = m_systemData.resolution.x * m_systemData.resolution.y;
 
-	auto& dynBufs = m_nrcControlBlock.bufDynamic;
+	auto &dynBufs = m_nrcControlBlock.bufDynamic;
 
 	// dynBufs.lastRenderThroughput (#pixels)
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.lastRenderThroughput));
-	dynBufs.lastRenderThroughput = reinterpret_cast<float3*>(
+	dynBufs.lastRenderThroughput = reinterpret_cast<float3 *>(
 		memAlloc(sizeof(float3) * numPixels, alignof(float3)/*64*/));
 
 	// dynBufs
@@ -1235,10 +1231,10 @@ void Device::resizeNRC()
 	// .radianceResultsCacheVis (#pixels)
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceQueriesCacheVis));
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceResultsCacheVis));
-	
-	dynBufs.radianceQueriesCacheVis = reinterpret_cast<RadianceQuery*>(
+
+	dynBufs.radianceQueriesCacheVis = reinterpret_cast<RadianceQuery *>(
 		memAlloc(sizeof(RadianceQuery) * numPixels, alignof(RadianceQuery)/*64*/));
-	dynBufs.radianceResultsCacheVis = reinterpret_cast<float3*>(
+	dynBufs.radianceResultsCacheVis = reinterpret_cast<float3 *>(
 		memAlloc(sizeof(float3) * numPixels, alignof(float3)/*64*/));
 
 	// dynBufs
@@ -1247,17 +1243,18 @@ void Device::resizeNRC()
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceQueriesInference));
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceResultsInference));
 
-	const auto numTilesMax = (m_systemData.resolution.x / 2) * (m_systemData.resolution.y / 2); // #tiles at min tile size (2x2)
+	const auto numTilesMax = (m_systemData.resolution.x / 2) * (m_systemData.resolution.y / 2);
+	// #tiles at min tile size (2x2)
 	const auto numQueriesInference = numPixels + numTilesMax;
 
-	dynBufs.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
+	dynBufs.radianceQueriesInference = reinterpret_cast<RadianceQuery *>(
 		memAlloc(sizeof(RadianceQuery) * numQueriesInference, alignof(RadianceQuery)/*64*/));
-	dynBufs.radianceResultsInference = reinterpret_cast<float3*>(
+	dynBufs.radianceResultsInference = reinterpret_cast<float3 *>(
 		memAlloc(sizeof(float3) * numQueriesInference, alignof(float3)/*64*/));
-	
+
 	// dynBufs.trainSuffixEndVertices
 	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.trainSuffixEndVertices));
-	dynBufs.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex*>(
+	dynBufs.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex *>(
 		memAlloc(sizeof(TrainingSuffixEndVertex) * numTilesMax, alignof(TrainingSuffixEndVertex)/*64*/));
 
 	//// Copy the new buffer addresses to device
@@ -1278,7 +1275,7 @@ void Device::nrcInferRadiance(int screenSize, int numTiles, bool skipRenderCache
 	auto numQueries = screenSize + numTiles;
 	auto queries = m_nrcControlBlock.bufDynamic.radianceQueriesInference;
 	auto results = m_nrcControlBlock.bufDynamic.radianceResultsInference;
-		
+
 	// Skip rendering queries if we don't need them
 	if (skipRenderCache)
 	{
@@ -1316,7 +1313,7 @@ void Device::nrcAccumulateRadiance(bool skipRenderCache)
 	CUlaunchConfig cfg{/*.gridDimX, .gridDimY,*/ .gridDimZ = 1u,
 					   .blockDimX = 32u, /*.blockDimY,*/ .blockDimZ = 1u,
 					   .hStream = m_cudaStream };
-	
+
 	if (!skipRenderCache)
 	{
 		void* args[] = { /*float3        *endRenderRadiance*/ &m_nrcControlBlock.bufDynamic.radianceResultsInference,
@@ -1324,7 +1321,8 @@ void Device::nrcAccumulateRadiance(bool skipRenderCache)
 						 /*RadianceQuery *endRenderQueries */ &m_nrcControlBlock.bufDynamic.radianceQueriesInference,
 #endif
 						 /*float3 *endRenderThroughput     */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput,
-						 /*int    mode                     */ &m_nrcRenderMode };
+						 /*int    mode                     */ &m_nrcRenderMode
+		};
 
 		cfg.blockDimY = m_fnAccumulateRenderRadianceBlockSize / cfg.blockDimX;
 		cfg.gridDimX = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
@@ -1350,7 +1348,7 @@ void Device::nrcVisualizeFirstRadiance(int screenSize)
 	{
 		m_nrcNetwork.infer(flatten(m_nrcControlBlock.bufDynamic.radianceQueriesCacheVis),
 						   flatten(m_nrcControlBlock.bufDynamic.radianceResultsCacheVis), screenSize);
-		
+
 		// Copy the data over to the output buffer
 		void* args[] = {
 			/*float3        *radiance*/ &m_nrcControlBlock.bufDynamic.radianceResultsCacheVis,
@@ -1393,7 +1391,7 @@ void Device::nrcPropagateRadiance(int screenSize)
 	[[maybe_unused]] nrc::RadianceQuery* trainRadianceQueries = m_nrcControlBlock.bufStatic.radianceQueriesTraining.getBuffer(0);
 	float3* endTrainingRadiance  = m_nrcControlBlock.bufDynamic.radianceResultsInference + screenSize;
 	[[maybe_unused]] nrc::RadianceQuery* endTrainingQueries = m_nrcControlBlock.bufDynamic.radianceQueriesInference + screenSize;
-	
+
 	void* args[] = {
 		/*TrainingSuffixEndVertex *trainSuffixEndVertices */ &m_nrcControlBlock.bufDynamic.trainSuffixEndVertices,
 		/*float3                  *endTrainRadiance       */ &endTrainingRadiance,
@@ -1447,13 +1445,17 @@ void Device::nrcShuffleTrainingData()
 #endif
 
 	// Kernel launch config
-	CUlaunchConfig cfg{/*.gridDimX, .gridDimY,*/ .gridDimZ = 1u,
-					   .blockDimX = 32u, /*.blockDimY,*/ .blockDimZ = 1u,
-					   .hStream = m_cudaStream };
+	CUlaunchConfig cfg{
+		/*.gridDimX, .gridDimY,*/ .gridDimZ = 1u,
+		.blockDimX = 32u, /*.blockDimY,*/ .blockDimZ = 1u,
+		.hStream = m_cudaStream
+	};
 
-	void* args[] = { /*DoubleBuffer<RadianceQuery> trainRadianceQueries */ &m_nrcControlBlock.bufStatic.radianceQueriesTraining,
-					 /*DoubleBuffer<float3>        trainRadianceTargets */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets,
-					 /*int                         *permutation         */ &permutation };
+	void *args[] = {
+		/*DoubleBuffer<RadianceQuery> trainRadianceQueries */ &m_nrcControlBlock.bufStatic.radianceQueriesTraining,
+		/*DoubleBuffer<float3>        trainRadianceTargets */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets,
+		/*int                         *permutation         */ &permutation
+	};
 
 	cfg.blockDimX = m_fnPermuteTrainDataBlockSize;
 	cfg.blockDimY = 1;
@@ -1477,28 +1479,28 @@ void Device::nrcTrainRadiance()
 	// DEBUG: Inspect the shuffled training samples
 #if 0
 	{
-	std::vector<nrc::RadianceQuery> queries_h(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
-	std::vector<float3>             targets_h(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
-	CU_CHECK(cuMemcpyDtoHAsync(queries_h.data(),
-		reinterpret_cast<CUdeviceptr>(queriesShuffled),
-		sizeof(nrc::RadianceQuery) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
+		std::vector<nrc::RadianceQuery> queries_h(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		std::vector<float3> targets_h(nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		CU_CHECK(cuMemcpyDtoHAsync(queries_h.data(),
+			reinterpret_cast<CUdeviceptr>(queriesShuffled),
+			sizeof(nrc::RadianceQuery) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
 
-	CU_CHECK(cuMemcpyDtoHAsync(targets_h.data(),
-		reinterpret_cast<CUdeviceptr>(targetsShuffled),
-		sizeof(float3) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
-	synchronizeStream();
+		CU_CHECK(cuMemcpyDtoHAsync(targets_h.data(),
+			reinterpret_cast<CUdeviceptr>(targetsShuffled),
+			sizeof(float3) * nrc::NUM_TRAINING_RECORDS_PER_FRAME, m_cudaStream));
+		synchronizeStream();
 
-	queries_h; targets_h;
+		queries_h;
+		targets_h;
 	}
 #endif
 
 #if TCNN_TRAIN
-	nrc::RadianceQuery* batchInputs = queriesShuffled;
-	float3* batchTargets = targetsShuffled;
-	float batchLoss, totalLoss{ 0.f };
+	nrc::RadianceQuery *batchInputs = queriesShuffled;
+	float3 *batchTargets = targetsShuffled;
+	float batchLoss, totalLoss{0.f};
 
-	for (auto b = 0; b < nrc::NUM_BATCHES; b++)
-	{
+	for (auto b = 0; b < nrc::NUM_BATCHES; b++) {
 		m_nrcNetwork.train(flatten(batchInputs), flatten(batchTargets), &batchLoss);
 		totalLoss += batchLoss;
 
@@ -1522,17 +1524,18 @@ void Device::initCameras(const std::vector<CameraDefinition>& cameras)
 	MY_ASSERT(0 < numCameras); // There must be at least one camera defintion or the lens shaders won't work.
 
 	// The default initialization of numCameras is 0.
-	if (m_systemData.numCameras != numCameras)
-	{
+	if (m_systemData.numCameras != numCameras) {
 		memFree(reinterpret_cast<CUdeviceptr>(m_systemData.cameraDefinitions));
-		m_systemData.cameraDefinitions = reinterpret_cast<CameraDefinition*>(memAlloc(sizeof(CameraDefinition) * numCameras, 16));
+		m_systemData.cameraDefinitions = reinterpret_cast<CameraDefinition *>(memAlloc(
+			sizeof(CameraDefinition) * numCameras, 16));
 	}
 
 	// Update the camera data.
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.cameraDefinitions), cameras.data(), sizeof(CameraDefinition) * numCameras, m_cudaStream));
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.cameraDefinitions),
+		cameras.data(), sizeof(CameraDefinition) * numCameras, m_cudaStream));
 	m_systemData.numCameras = numCameras;
 
-	m_isDirtySystemData = true;  // Trigger full update of the device system data on the next launch.
+	m_isDirtySystemData = true; // Trigger full update of the device system data on the next launch.
 }
 
 void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vector<GeometryData>& geometryData, const unsigned int stride, const unsigned int index)
@@ -1545,20 +1548,21 @@ void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vecto
 	const int numLights = static_cast<int>(lightsGUI.size()); // This is allowed to be zero.
 
 	// The default initialization of m_systemData.numLights is 0.
-	if (m_systemData.numLights != numLights)
-	{
+	if (m_systemData.numLights != numLights) {
 		memFree(reinterpret_cast<CUdeviceptr>(m_systemData.lightDefinitions));
 		m_systemData.lightDefinitions = nullptr;
 
-		m_systemData.lightDefinitions = (0 < numLights) ? reinterpret_cast<LightDefinition*>(memAlloc(sizeof(LightDefinition) * numLights, 16)) : nullptr;
+		m_systemData.lightDefinitions = (0 < numLights)
+			                                ? reinterpret_cast<LightDefinition *>(memAlloc(
+				                                sizeof(LightDefinition) * numLights, 16))
+			                                : nullptr;
 
 		m_lights.resize(numLights);
 	}
 
-	for (int i = 0; i < numLights; ++i)
-	{
-		const LightGUI& lightGUI = lightsGUI[i]; // LightGUI data on the host.
-		LightDefinition& light = m_lights[i];  // LightDefinition data on the host in device layout.
+	for (int i = 0; i < numLights; ++i) {
+		const LightGUI &lightGUI = lightsGUI[i]; // LightGUI data on the host.
+		LightDefinition &light = m_lights[i]; // LightDefinition data on the host in device layout.
 
 		light.typeLight = lightGUI.typeLight;
 		light.idMaterial = lightGUI.idMaterial;
@@ -1589,12 +1593,11 @@ void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vecto
 		light.spotAngleHalf = dp::math::degToRad(lightGUI.spotAngle * 0.5f);
 		light.spotExponent = lightGUI.spotExponent;
 
-		if (!lightGUI.nameEmission.empty())
-		{
-			std::map<std::string, Texture*>::const_iterator it = m_mapTextures.find(lightGUI.nameEmission);
+		if (!lightGUI.nameEmission.empty()) {
+			std::map<std::string, Texture *>::const_iterator it = m_mapTextures.find(lightGUI.nameEmission);
 			MY_ASSERT(it != m_mapTextures.end());
 
-			const Texture* texture = it->second;
+			const Texture *texture = it->second;
 
 			light.textureEmission = texture->getTextureObject();
 			light.cdfU = texture->getCDF_U();
@@ -1604,9 +1607,8 @@ void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vecto
 			light.invIntegral = 1.0f / texture->getIntegral();
 		}
 
-		if (light.typeLight == TYPE_LIGHT_MESH)
-		{
-			const GeometryData& geom = geometryData[lightGUI.idGeometry * stride + index];
+		if (light.typeLight == TYPE_LIGHT_MESH) {
+			const GeometryData &geom = geometryData[lightGUI.idGeometry * stride + index];
 
 			light.attributes = geom.d_attributes;
 			light.indices = geom.d_indices;
@@ -1619,45 +1621,46 @@ void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vecto
 			light.cdfU = memAlloc(sizeBytes, 4);
 			CU_CHECK(cuMemcpyHtoDAsync(light.cdfU, lightGUI.cdfAreas.data(), sizeBytes, m_cudaStream));
 
-			light.width = static_cast<unsigned int>(lightGUI.cdfAreas.size() - 1); // The last element index in the CDF matches the number of triangles.
+			light.width = static_cast<unsigned int>(lightGUI.cdfAreas.size() - 1);
+			// The last element index in the CDF matches the number of triangles.
 		}
 
-		if (light.typeLight == TYPE_LIGHT_IES)
-		{
-			if (!lightGUI.nameProfile.empty())
-			{
-				std::map<std::string, Texture*>::const_iterator it = m_mapTextures.find(lightGUI.nameProfile);
+		if (light.typeLight == TYPE_LIGHT_IES) {
+			if (!lightGUI.nameProfile.empty()) {
+				auto it = m_mapTextures.find(lightGUI.nameProfile);
 				MY_ASSERT(it != m_mapTextures.end());
 
-				const Texture* texture = it->second;
+				const Texture *texture = it->second;
 
 				light.textureProfile = texture->getTextureObject();
 			}
 		}
 	}
 
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.lightDefinitions), m_lights.data(), sizeof(LightDefinition) * numLights, m_cudaStream));
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.lightDefinitions),
+		m_lights.data(), sizeof(LightDefinition) * numLights, m_cudaStream));
 	m_systemData.numLights = numLights;
 
 	m_isDirtySystemData = true; // Trigger full update of the device system data on the next launch.
 }
 
 
-void Device::updateCamera(const int idCamera, const CameraDefinition& camera)
+void Device::updateCamera(const int idCamera, const CameraDefinition &camera)
 {
 	activateContext();
 	synchronizeStream();
 
 	MY_ASSERT(idCamera < m_systemData.numCameras);
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.cameraDefinitions[idCamera]), &camera, sizeof(CameraDefinition), m_cudaStream));
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.cameraDefinitions[idCamera]),
+		&camera, sizeof(CameraDefinition), m_cudaStream));
 }
 
-void Device::updateLight(const int idLight, const LightGUI& lightGUI)
+void Device::updateLight(const int idLight, const LightGUI &lightGUI)
 {
 	activateContext();
 	synchronizeStream();
 
-	LightDefinition& light = m_lights[idLight];
+	LightDefinition &light = m_lights[idLight];
 
 	// Curently only these material parameters affecting the light can be changed inside the GUI.
 	memcpy(light.matrix, (~lightGUI.matrix).getPtr(), sizeof(float) * 12);
@@ -1674,7 +1677,8 @@ void Device::updateLight(const int idLight, const LightGUI& lightGUI)
 	light.spotExponent = lightGUI.spotExponent;
 
 	MY_ASSERT(idLight < m_systemData.numLights);
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.lightDefinitions[idLight]), &light, sizeof(LightDefinition), m_cudaStream));
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.lightDefinitions[idLight]),
+		&light, sizeof(LightDefinition), m_cudaStream));
 }
 
 //void Device::updateLight(const int idLight, const LightDefinition& light)
@@ -1686,7 +1690,7 @@ void Device::updateLight(const int idLight, const LightGUI& lightGUI)
 //  CU_CHECK( cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.lightDefinitions[idLight]), &light, sizeof(LightDefinition), m_cudaStream) );
 //}
 
-void Device::updateMaterial(const int idMaterial, const MaterialMDL* materialMDL)
+void Device::updateMaterial(const int idMaterial, const MaterialMDL *materialMDL)
 {
 	activateContext();
 	synchronizeStream();
@@ -1702,14 +1706,12 @@ void Device::updateMaterial(const int idMaterial, const MaterialMDL* materialMDL
 static int2 calculateTileShift(const int2 tileSize)
 {
 	int xShift = 0;
-	while (xShift < 32 && (tileSize.x & (1 << xShift)) == 0)
-	{
+	while (xShift < 32 && (tileSize.x & (1 << xShift)) == 0) {
 		++xShift;
 	}
 
 	int yShift = 0;
-	while (yShift < 32 && (tileSize.y & (1 << yShift)) == 0)
-	{
+	while (yShift < 32 && (tileSize.y & (1 << yShift)) == 0) {
 		++yShift;
 	}
 
@@ -1719,25 +1721,22 @@ static int2 calculateTileShift(const int2 tileSize)
 }
 
 
-void Device::setState(const DeviceState& state)
+void Device::setState(const DeviceState &state)
 {
 	activateContext();
 	synchronizeStream();
 
 	// The system can switch dynamically betweeen brute force path tracing and direct lighting (next event estimation)
 	// That's used to compare direct lighting results with the normally correct brute force path tracing at runtime.
-	if (m_systemData.directLighting != state.directLighting)
-	{
+	if (m_systemData.directLighting != state.directLighting) {
 		m_systemData.directLighting = state.directLighting;
-
 		m_isDirtySystemData = true;
 	}
 
 	// Special handling from the previous DeviceMultiGPULocalCopy class.
 	if (m_systemData.resolution != state.resolution
 		//|| m_systemData.pf.tileSize != state.tileSize
-		)
-	{
+	) {
 		//if (1 < m_count)
 		//{
 		//	// Calculate the new launch width for the tiled rendering.
@@ -1753,8 +1752,7 @@ void Device::setState(const DeviceState& state)
 		}
 	}
 
-	if (m_systemData.resolution != state.resolution)
-	{
+	if (m_systemData.resolution != state.resolution) {
 		m_systemData.resolution = state.resolution;
 
 		m_isDirtyOutputBuffer = true;
@@ -1768,8 +1766,7 @@ void Device::setState(const DeviceState& state)
 	//	m_isDirtySystemData = true;
 	//}
 
-	if (m_systemData.samplesSqrt != state.samplesSqrt)
-	{
+	if (m_systemData.samplesSqrt != state.samplesSqrt) {
 		m_systemData.samplesSqrt = state.samplesSqrt;
 
 #if 0
@@ -1787,26 +1784,22 @@ void Device::setState(const DeviceState& state)
 		m_isDirtySystemData = true;
 	}
 
-	if (m_systemData.typeLens != state.typeLens)
-	{
+	if (m_systemData.typeLens != state.typeLens) {
 		m_systemData.typeLens = state.typeLens;
 		m_isDirtySystemData = true;
 	}
 
-	if (m_systemData.pathLengths != state.pathLengths)
-	{
+	if (m_systemData.pathLengths != state.pathLengths) {
 		m_systemData.pathLengths = state.pathLengths;
 		m_isDirtySystemData = true;
 	}
 
-	if (m_systemData.walkLength != state.walkLength)
-	{
+	if (m_systemData.walkLength != state.walkLength) {
 		m_systemData.walkLength = state.walkLength;
 		m_isDirtySystemData = true;
 	}
 
-	if (m_systemData.sceneEpsilon != state.epsilonFactor * SCENE_EPSILON_SCALE)
-	{
+	if (m_systemData.sceneEpsilon != state.epsilonFactor * SCENE_EPSILON_SCALE) {
 		m_systemData.sceneEpsilon = state.epsilonFactor * SCENE_EPSILON_SCALE;
 		m_isDirtySystemData = true;
 	}
@@ -1821,33 +1814,28 @@ void Device::setState(const DeviceState& state)
 
 	// NRC related
 
-	if (m_systemData.pf.nrcTrainUnbiasedRatio != state.nrcTrainUnbiasedRatio)
-	{
+	if (m_systemData.pf.nrcTrainUnbiasedRatio != state.nrcTrainUnbiasedRatio) {
 		// Per-frame sys data, will always be copied.
 		m_systemData.pf.nrcTrainUnbiasedRatio = state.nrcTrainUnbiasedRatio;
 	}
 
-	if (m_systemData.pf.nrcAreaSpreadFactorSqrt != state.nrcAreaSpreadFactorSqrt)
-	{
+	if (m_systemData.pf.nrcAreaSpreadFactorSqrt != state.nrcAreaSpreadFactorSqrt) {
 		// Per-frame sys data, will always be copied.
 		m_systemData.pf.nrcAreaSpreadFactorSqrt = state.nrcAreaSpreadFactorSqrt;
 	}
 
 	// Passed as argument to the radiance accumulation kernel
-	if (m_nrcRenderMode != state.nrcRenderMode)
-	{
+	if (m_nrcRenderMode != state.nrcRenderMode) {
 		m_nrcRenderMode = state.nrcRenderMode;
 	}
 
 	// Triggered when the user slides the lr, OR when the input encoding is changed.
-	if (m_nrcHyperParams.learningRate != state.nrcTrainLearningRate)
-	{
+	if (m_nrcHyperParams.learningRate != state.nrcTrainLearningRate) {
 		m_nrcHyperParams.learningRate = state.nrcTrainLearningRate;
 		m_isDirtyHyperParams = true; // Triggers a tcnn hyperparam update
 	}
 
-	if (m_nrcInputEncoding != state.nrcInputEncoding)
-	{
+	if (m_nrcInputEncoding != state.nrcInputEncoding) {
 		m_nrcInputEncoding = state.nrcInputEncoding;
 		m_nrcNeedsReset = true; // Triggers a full network reset.
 	}
@@ -1864,8 +1852,8 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
 	data.primitiveType = PT_TRIANGLES;
 	data.owner = m_index;
 
-	const std::vector<TriangleAttributes>& attributes = geometry->getAttributes();
-	const std::vector<unsigned int>& indices = geometry->getIndices();
+	const std::vector<TriangleAttributes> &attributes = geometry->getAttributes();
+	const std::vector<unsigned int> &indices = geometry->getIndices();
 
 	const size_t attributesSizeInBytes = sizeof(TriangleAttributes) * attributes.size();
 	const size_t indicesSizeInBytes = sizeof(unsigned int) * indices.size();
@@ -1894,7 +1882,7 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
 	buildInput.triangleArray.numIndexTriplets = static_cast<unsigned int>(indices.size()) / 3;
 	buildInput.triangleArray.indexBuffer = data.d_indices;
 
-	unsigned int inputFlags[1] = { OPTIX_GEOMETRY_FLAG_NONE };
+	unsigned int inputFlags[1] = {OPTIX_GEOMETRY_FLAG_NONE};
 
 	buildInput.triangleArray.flags = inputFlags;
 	buildInput.triangleArray.numSbtRecords = 1;
@@ -1906,8 +1894,7 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
 	OptixAccelBuildOptions accelBuildOptions = {};
 
 	accelBuildOptions.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
-	if (m_count == 1)
-	{
+	if (m_count == 1) {
 		// PERF Enable OPTIX_BUILD_FLAG_PREFER_FAST_TRACE on single-GPU only.
 		// Note that OPTIX_BUILD_FLAG_PREFER_FAST_TRACE will use more memory,
 		// which performs worse when sharing across the NVLINK bridge which is much slower than VRAM accesses.
@@ -1918,9 +1905,11 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
 
 	OptixAccelBufferSizes accelBufferSizes;
 
-	OPTIX_CHECK(m_api.optixAccelComputeMemoryUsage(m_optixContext, &accelBuildOptions, &buildInput, 1, &accelBufferSizes));
+	OPTIX_CHECK(
+		m_api.optixAccelComputeMemoryUsage(m_optixContext, &accelBuildOptions, &buildInput, 1, &accelBufferSizes));
 
-	data.d_gas = memAlloc(accelBufferSizes.outputSizeInBytes, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT, cuda::USAGE_TEMP); // This is a temporary buffer. The Compaction will be the static one!
+	data.d_gas = memAlloc(accelBufferSizes.outputSizeInBytes, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT, cuda::USAGE_TEMP);
+	// This is a temporary buffer. The Compaction will be the static one!
 
 	CUdeviceptr d_tmp = memAlloc(accelBufferSizes.tempSizeInBytes, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT, cuda::USAGE_TEMP);
 
@@ -1945,11 +1934,12 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
 	memFree(d_tmp);
 
 	// Compact the AS only when possible. This can save more than half the memory on RTX boards.
-	if (sizeCompact < accelBufferSizes.outputSizeInBytes)
-	{
-		CUdeviceptr d_gasCompact = memAlloc(sizeCompact, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT); // This is the static GAS allocation!
+	if (sizeCompact < accelBufferSizes.outputSizeInBytes) {
+		CUdeviceptr d_gasCompact = memAlloc(sizeCompact, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT);
+		// This is the static GAS allocation!
 
-		OPTIX_CHECK(m_api.optixAccelCompact(m_optixContext, m_cudaStream, data.traversable, d_gasCompact, sizeCompact, &data.traversable));
+		OPTIX_CHECK(m_api.optixAccelCompact(m_optixContext, m_cudaStream, data.traversable,
+				d_gasCompact, sizeCompact, &data.traversable));
 
 		synchronizeStream(); // Must finish accessing data.d_gas source before it can be freed and overridden.
 
@@ -1982,8 +1972,8 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Curves> geometry)
 	data.primitiveType = PT_CURVES;
 	data.owner = m_index;
 
-	const std::vector<CurveAttributes>& attributes = geometry->getAttributes();
-	const std::vector<unsigned int>& indices = geometry->getIndices();
+	const std::vector<CurveAttributes> &attributes = geometry->getAttributes();
+	const std::vector<unsigned int> &indices = geometry->getIndices();
 
 	const size_t attributesSizeInBytes = sizeof(CurveAttributes) * attributes.size();
 
@@ -1992,7 +1982,8 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Curves> geometry)
 
 	CU_CHECK(cuMemcpyHtoDAsync(data.d_attributes, attributes.data(), attributesSizeInBytes, m_cudaStream));
 
-	CUdeviceptr d_radii = data.d_attributes + sizeof(float3); // Pointer to the radius in the .w component of the float4 vertex attribute
+	CUdeviceptr d_radii = data.d_attributes + sizeof(float3);
+	// Pointer to the radius in the .w component of the float4 vertex attribute
 
 	const size_t indicesSizeInBytes = sizeof(unsigned int) * indices.size();
 
@@ -2013,7 +2004,7 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Curves> geometry)
 	buildInput.curveArray.widthBuffers = &d_radii;
 	buildInput.curveArray.widthStrideInBytes = sizeof(CurveAttributes);
 	buildInput.curveArray.normalBuffers = nullptr; // Reserved for future use
-	buildInput.curveArray.normalStrideInBytes = 0;       // Reserved for future use
+	buildInput.curveArray.normalStrideInBytes = 0; // Reserved for future use
 	buildInput.curveArray.indexBuffer = data.d_indices;
 	buildInput.curveArray.indexStrideInBytes = sizeof(unsigned int);
 	buildInput.curveArray.flag = OPTIX_GEOMETRY_FLAG_NONE; // Only one flag because Curves have only one SBT entry.
@@ -2026,8 +2017,7 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Curves> geometry)
 	OptixAccelBuildOptions accelBuildOptions = {};
 
 	accelBuildOptions.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
-	if (m_count == 1)
-	{
+	if (m_count == 1) {
 		// PERF Enable OPTIX_BUILD_FLAG_PREFER_FAST_TRACE on single-GPU only.
 		// Note that OPTIX_BUILD_FLAG_PREFER_FAST_TRACE will use more memory,
 		// which performs worse when sharing across the NVLINK bridge which is much slower than VRAM accesses.
@@ -2038,9 +2028,11 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Curves> geometry)
 
 	OptixAccelBufferSizes accelBufferSizes;
 
-	OPTIX_CHECK(m_api.optixAccelComputeMemoryUsage(m_optixContext, &accelBuildOptions, &buildInput, 1, &accelBufferSizes));
+	OPTIX_CHECK(
+		m_api.optixAccelComputeMemoryUsage(m_optixContext, &accelBuildOptions, &buildInput, 1, &accelBufferSizes));
 
-	data.d_gas = memAlloc(accelBufferSizes.outputSizeInBytes, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT, cuda::USAGE_TEMP); // This is a temporary buffer. The Compaction will be the static one!
+	data.d_gas = memAlloc(accelBufferSizes.outputSizeInBytes, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT, cuda::USAGE_TEMP);
+	// This is a temporary buffer. The Compaction will be the static one!
 
 	CUdeviceptr d_tmp = memAlloc(accelBufferSizes.tempSizeInBytes, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT, cuda::USAGE_TEMP);
 
@@ -2065,11 +2057,13 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Curves> geometry)
 	memFree(d_tmp);
 
 	// Compact the AS only when possible. This can save more than half the memory on RTX boards.
-	if (sizeCompact < accelBufferSizes.outputSizeInBytes)
-	{
-		CUdeviceptr d_gasCompact = memAlloc(sizeCompact, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT); // This is the static GAS allocation!
+	if (sizeCompact < accelBufferSizes.outputSizeInBytes) {
+		CUdeviceptr d_gasCompact = memAlloc(sizeCompact, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT);
+		// This is the static GAS allocation!
 
-		OPTIX_CHECK(m_api.optixAccelCompact(m_optixContext, m_cudaStream, data.traversable, d_gasCompact, sizeCompact, &data.traversable));
+		OPTIX_CHECK(
+			m_api.optixAccelCompact(m_optixContext, m_cudaStream, data.traversable, d_gasCompact, sizeCompact, &data.
+				traversable));
 
 		synchronizeStream(); // Must finish accessing data.d_gas source before it can be freed and overridden.
 
@@ -2092,20 +2086,20 @@ GeometryData Device::createGeometry(std::shared_ptr<sg::Curves> geometry)
 }
 
 
-void Device::destroyGeometry(GeometryData& data)
+void Device::destroyGeometry(GeometryData &data)
 {
 	memFree(data.d_gas);
 	memFree(data.d_indices);
 	memFree(data.d_attributes);
 }
 
-void Device::createInstance(const GeometryData& geometryData, const InstanceData& instanceData, const float matrix[12])
+void Device::createInstance(const GeometryData &geometryData, const InstanceData &instanceData, const float matrix[12])
 {
 	activateContext();
 	synchronizeStream();
 
 	// If the GeometryData is owned by a different device, that means it has been created in a different OptiX context.
-	// Then check if the data is compatible with the OptiX context on this device. 
+	// Then check if the data is compatible with the OptiX context on this device.
 	// If yes, it can be shared via peer-to-peer as well because the device pointers are all unique with UVA. It's not actually relocated.
 	// If not, no instance with this geometry data is created and it'll be missing from the rendering.
 	// Same when there is no valid material or shader index assigned.
@@ -2119,9 +2113,10 @@ void Device::createInstance(const GeometryData& geometryData, const InstanceData
 		OPTIX_CHECK(m_api.optixAccelCheckRelocationCompatibility(m_optixContext, &geometryData.info, &compatible));
 #endif
 
-		if (compatible == 0)
-		{
-			std::cerr << "ERROR: createInstance() device index " << m_index << " is not AS-compatible with the GeometryData owner " << geometryData.owner << ". Instance ignored!\n";
+		if (compatible == 0) {
+			std::cerr << "ERROR: createInstance() device index " << m_index <<
+					" is not AS-compatible with the GeometryData owner " << geometryData.owner <<
+					". Instance ignored!\n";
 			MY_ASSERT(!"createInstance() AS incompatible");
 			return; // This means this geometry will not actually be present in the OptiX render graph of this device!
 		}
@@ -2130,8 +2125,7 @@ void Device::createInstance(const GeometryData& geometryData, const InstanceData
 	// First check if there is a valid material assigned to this instance.
 	const int idMaterial = instanceData.idMaterial;
 
-	if (idMaterial < 0 || static_cast<int>(m_materialDefinitions.size()) < idMaterial)
-	{
+	if (idMaterial < 0 || static_cast<int>(m_materialDefinitions.size()) < idMaterial) {
 		std::cerr << "ERROR: createInstance() idMaterial " << idMaterial << " is invalid. Instance ignored!\n";
 		MY_ASSERT(!"createInstance() idMaterial invalid.");
 		return;
@@ -2140,8 +2134,7 @@ void Device::createInstance(const GeometryData& geometryData, const InstanceData
 	// Then check if we actually have a valid shader compiled for this material.
 	const int indexShader = m_materialDefinitions[idMaterial].indexShader;
 
-	if (indexShader < 0 || static_cast<int>(m_deviceShaderConfigurations.size()) < indexShader)
-	{
+	if (indexShader < 0 || static_cast<int>(m_deviceShaderConfigurations.size()) < indexShader) {
 		std::cerr << "ERROR: createInstance() indexShader " << indexShader << " is invalid. Instance ignored!\n";
 		MY_ASSERT(!"createInstance() indexShader invalid.");
 		return;
@@ -2159,14 +2152,13 @@ void Device::createInstance(const GeometryData& geometryData, const InstanceData
 	// Cubic B-splines: Hit record 4.
 
 	unsigned int hitRecord = 0;
-	if (geometryData.primitiveType == PT_CURVES)
-	{
+	if (geometryData.primitiveType == PT_CURVES) {
 		hitRecord = 4; // Cubic B-spline curves.
-	}
-	else
-	{
-		hitRecord |= ((m_deviceShaderConfigurations[indexShader].flags & USE_EMISSION) == 0) ? 0 : 1; // no emission, emission
-		hitRecord |= ((m_deviceShaderConfigurations[indexShader].flags & USE_CUTOUT_OPACITY) == 0) ? 0 : 2; // no cutout  , cutout
+	} else {
+		hitRecord |= ((m_deviceShaderConfigurations[indexShader].flags & USE_EMISSION) == 0) ? 0 : 1;
+		// no emission, emission
+		hitRecord |= ((m_deviceShaderConfigurations[indexShader].flags & USE_CUTOUT_OPACITY) == 0) ? 0 : 2;
+		// no cutout  , cutout
 	}
 
 	instance.sbtOffset = NUM_RAY_TYPES * hitRecord;
@@ -2175,7 +2167,8 @@ void Device::createInstance(const GeometryData& geometryData, const InstanceData
 
 	m_instances.push_back(instance); // OptixInstance data
 
-	m_instanceData.push_back(instanceData); // Per instance data, indexed with instanceId: idGeometry, idMaterial, idLight, idObject.
+	m_instanceData.push_back(instanceData);
+	// Per instance data, indexed with instanceId: idGeometry, idMaterial, idLight, idObject.
 }
 
 
@@ -2199,15 +2192,15 @@ void Device::createTLAS()
 	OptixAccelBuildOptions accelBuildOptions = {};
 
 	accelBuildOptions.buildFlags = OPTIX_BUILD_FLAG_NONE;
-	if (m_count == 1)
-	{
+	if (m_count == 1) {
 		accelBuildOptions.buildFlags |= OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
 	}
 	accelBuildOptions.operation = OPTIX_BUILD_OPERATION_BUILD;
 
 	OptixAccelBufferSizes accelBufferSizes;
 
-	OPTIX_CHECK(m_api.optixAccelComputeMemoryUsage(m_optixContext, &accelBuildOptions, &instanceInput, 1, &accelBufferSizes));
+	OPTIX_CHECK(
+		m_api.optixAccelComputeMemoryUsage(m_optixContext, &accelBuildOptions, &instanceInput, 1, &accelBufferSizes));
 
 	m_d_ias = memAlloc(accelBufferSizes.outputSizeInBytes, OPTIX_ACCEL_BUFFER_BYTE_ALIGNMENT);
 
@@ -2226,7 +2219,8 @@ void Device::createTLAS()
 }
 
 
-void Device::createGeometryInstanceData(const std::vector<GeometryData>& geometryData, const unsigned int stride, const unsigned int index)
+void Device::createGeometryInstanceData(const std::vector<GeometryData> &geometryData, const unsigned int stride,
+                                        const unsigned int index)
 {
 	activateContext();
 	synchronizeStream();
@@ -2235,32 +2229,33 @@ void Device::createGeometryInstanceData(const std::vector<GeometryData>& geometr
 
 	m_geometryInstanceData.resize(numInstances);
 
-	for (unsigned int i = 0; i < numInstances; ++i)
-	{
-		const InstanceData& inst = m_instanceData[i];
-		const GeometryData& geom = geometryData[inst.idGeometry * stride + index]; // This addressing supports both peer-to-peer shared and non-shared GAS.
+	for (unsigned int i = 0; i < numInstances; ++i) {
+		const InstanceData &inst = m_instanceData[i];
+		const GeometryData &geom = geometryData[inst.idGeometry * stride + index];
+		// This addressing supports both peer-to-peer shared and non-shared GAS.
 
-		GeometryInstanceData& gid = m_geometryInstanceData[i];
+		GeometryInstanceData &gid = m_geometryInstanceData[i];
 
 		gid.ids = make_int4(inst.idMaterial, inst.idLight, inst.idObject, 0);
 		gid.attributes = geom.d_attributes;
 		gid.indices = geom.d_indices;
 	}
 
-	m_d_geometryInstanceData = reinterpret_cast<GeometryInstanceData*>(memAlloc(sizeof(GeometryInstanceData) * numInstances, 16)); // int4 requires 16 byte alignment.
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_geometryInstanceData), m_geometryInstanceData.data(), sizeof(GeometryInstanceData) * numInstances, m_cudaStream));
+	m_d_geometryInstanceData = reinterpret_cast<GeometryInstanceData *>(memAlloc(
+		sizeof(GeometryInstanceData) * numInstances, 16)); // int4 requires 16 byte alignment.
+	CU_CHECK(
+		cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_geometryInstanceData), m_geometryInstanceData.data(), sizeof
+			(GeometryInstanceData) * numInstances, m_cudaStream));
 
 	m_systemData.geometryInstanceData = m_d_geometryInstanceData;
 }
 
 
 // Given an OpenGL UUID find the matching CUDA device.
-bool Device::matchUUID(const char* uuid)
+bool Device::matchUUID(const char *uuid)
 {
-	for (size_t i = 0; i < 16; ++i)
-	{
-		if (m_deviceUUID.bytes[i] != uuid[i])
-		{
+	for (size_t i = 0; i < 16; ++i) {
+		if (m_deviceUUID.bytes[i] != uuid[i]) {
 			return false;
 		}
 	}
@@ -2268,16 +2263,13 @@ bool Device::matchUUID(const char* uuid)
 }
 
 // Given an OpenGL LUID find the matching CUDA device.
-bool Device::matchLUID(const char* luid, const unsigned int nodeMask)
+bool Device::matchLUID(const char *luid, const unsigned int nodeMask)
 {
-	if ((m_nodeMask & nodeMask) == 0)
-	{
+	if ((m_nodeMask & nodeMask) == 0) {
 		return false;
 	}
-	for (size_t i = 0; i < 8; ++i)
-	{
-		if (m_deviceLUID[i] != luid[i])
-		{
+	for (size_t i = 0; i < 8; ++i) {
+		if (m_deviceLUID[i] != luid[i]) {
 			return false;
 		}
 	}
@@ -2297,9 +2289,9 @@ void Device::synchronizeStream() const
 	//CU_CHECK(cuStreamSynchronize(m_cudaStream));
 }
 
-void Device::render(const unsigned int iterationIndex, 
-					const unsigned int totalSubframeIndex,
-					void** buffer, const int /*mode*/)
+void Device::render(const unsigned int iterationIndex,
+                    const unsigned int totalSubframeIndex,
+                    void **buffer, const int /*mode*/)
 {
 	activateContext();
 
@@ -2308,8 +2300,8 @@ void Device::render(const unsigned int iterationIndex,
 	m_systemData.pf.totalSubframeIndex = totalSubframeIndex;
 
 	const auto screenSize = m_systemData.resolution.x * m_systemData.resolution.y;
-	
-	bool isDirtyNRCDynamicBuffers{ false };
+
+	bool isDirtyNRCDynamicBuffers{false};
 	if (m_isDirtyOutputBuffer) [[unlikely]]
 	{
 		// Adjust the tile size due to screen-size change
@@ -2321,7 +2313,8 @@ void Device::render(const unsigned int iterationIndex,
 		}
 
 		MY_ASSERT(buffer != nullptr);
-		if (*buffer == nullptr) // The buffer is nullptr for the device which should allocate the full resolution buffers. This device is called first!
+		if (*buffer == nullptr)
+		// The buffer is nullptr for the device which should allocate the full resolution buffers. This device is called first!
 		{
 			// Only allocate the host buffer once, not per each device.
 			m_bufferHost.resize(screenSize);
@@ -2335,64 +2328,71 @@ void Device::render(const unsigned int iterationIndex,
 			m_systemData.outputBuffer = memAlloc(sizeof(Half4) * m_systemData.resolution.x * m_systemData.resolution.y, sizeof(Half4));
 #endif
 
-			*buffer = reinterpret_cast<void*>(m_systemData.outputBuffer); // Set the pointer, so that other devices don't allocate it. It's not shared!
+			*buffer = reinterpret_cast<void *>(m_systemData.outputBuffer);
+			// Set the pointer, so that other devices don't allocate it. It's not shared!
 
-			if (1 < m_count)
-			{
+			if (1 < m_count) {
 				// This is a temporary buffer on the primary board which is used by the compositor. The texelBuffer needs to stay intact for the accumulation.
 				memFree(m_systemData.tileBuffer);
 #if USE_FP32_OUTPUT
-				m_systemData.tileBuffer = memAlloc(sizeof(float4) * m_launchWidth * m_systemData.resolution.y, sizeof(float4));
+				m_systemData.tileBuffer = memAlloc(sizeof(float4) * m_launchWidth * m_systemData.resolution.y,
+				                                   sizeof(float4));
 #else
 				m_systemData.tileBuffer = memAlloc(sizeof(Half4) * m_launchWidth * m_systemData.resolution.y, sizeof(Half4));
 #endif
 				m_d_compositorData = memAlloc(sizeof(CompositorData), 16);
 			}
 
-			m_ownsSharedBuffer = true; // Indicate which device owns the m_systemData.outputBuffer and m_bufferHost so that display routines can assert.
+			m_ownsSharedBuffer = true;
+			// Indicate which device owns the m_systemData.outputBuffer and m_bufferHost so that display routines can assert.
 
 			if (m_cudaGraphicsResource != nullptr) // Need to unregister texture or PBO before resizing it.
 			{
 				CU_CHECK(cuGraphicsUnregisterResource(m_cudaGraphicsResource));
 			}
 
-			switch (m_interop)
-			{
-			case INTEROP_MODE_OFF:
-				break;
+			switch (m_interop) {
+				case INTEROP_MODE_OFF:
+					break;
 
-			case INTEROP_MODE_TEX:
-				// Let the device which is called first resize the OpenGL texture.
+				case INTEROP_MODE_TEX:
+					// Let the device which is called first resize the OpenGL texture.
 #if USE_FP32_OUTPUT
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (GLsizei)m_systemData.resolution.x, (GLsizei)m_systemData.resolution.y, 0, GL_RGBA, GL_FLOAT, (GLvoid*)m_bufferHost.data()); // RGBA32F
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (GLsizei) m_systemData.resolution.x,
+					             (GLsizei) m_systemData.resolution.y, 0, GL_RGBA, GL_FLOAT,
+					             (GLvoid *) m_bufferHost.data()); // RGBA32F
 #else
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, (GLsizei)m_systemData.resolution.x, (GLsizei)m_systemData.resolution.y, 0, GL_RGBA, GL_HALF_FLOAT_ARB, (GLvoid*)m_bufferHost.data()); // RGBA16F
 #endif
-				glFinish(); // Synchronize with following CUDA operations.
+					glFinish(); // Synchronize with following CUDA operations.
 
-				CU_CHECK(cuGraphicsGLRegisterImage(&m_cudaGraphicsResource, m_tex, GL_TEXTURE_2D, CU_GRAPHICS_REGISTER_FLAGS_WRITE_DISCARD));
-				break;
+					CU_CHECK(
+						cuGraphicsGLRegisterImage(&m_cudaGraphicsResource, m_tex, GL_TEXTURE_2D,
+							CU_GRAPHICS_REGISTER_FLAGS_WRITE_DISCARD));
+					break;
 
-			case INTEROP_MODE_PBO:
-				glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbo);
+				case INTEROP_MODE_PBO:
+					glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbo);
 #if USE_FP32_OUTPUT
-				glBufferData(GL_PIXEL_UNPACK_BUFFER, screenSize * sizeof(float4), nullptr, GL_DYNAMIC_DRAW);
+					glBufferData(GL_PIXEL_UNPACK_BUFFER, screenSize * sizeof(float4), nullptr, GL_DYNAMIC_DRAW);
 #else
 				glBufferData(GL_PIXEL_UNPACK_BUFFER, screenSize * sizeof(Half4), nullptr, GL_DYNAMIC_DRAW);
 #endif
-				glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+					glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
-				CU_CHECK(cuGraphicsGLRegisterBuffer(&m_cudaGraphicsResource, m_pbo, CU_GRAPHICS_REGISTER_FLAGS_WRITE_DISCARD));
-				break;
+					CU_CHECK(
+						cuGraphicsGLRegisterBuffer(&m_cudaGraphicsResource, m_pbo,
+							CU_GRAPHICS_REGISTER_FLAGS_WRITE_DISCARD));
+					break;
 			}
 		}
 
-		if (1 < m_count)
-		{
+		if (1 < m_count) {
 			// Allocate a GPU local buffer in the per-device launch size. This is where the accumulation happens.
 			memFree(m_systemData.texelBuffer);
 #if USE_FP32_OUTPUT
-			m_systemData.texelBuffer = memAlloc(sizeof(float4) * m_launchWidth * m_systemData.resolution.y, sizeof(float4));
+			m_systemData.texelBuffer = memAlloc(sizeof(float4) * m_launchWidth * m_systemData.resolution.y,
+			                                    sizeof(float4));
 #else
 			m_systemData.texelBuffer = memAlloc(sizeof(Half4) * m_launchWidth * m_systemData.resolution.y, sizeof(Half4));
 #endif
@@ -2403,7 +2403,7 @@ void Device::render(const unsigned int iterationIndex,
 		isDirtyNRCDynamicBuffers = true;
 
 		m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
-		m_isDirtySystemData   = true;  // Now the entire sysData on the device needs to be updated.
+		m_isDirtySystemData = true; // Now the entire sysData on the device needs to be updated.
 	}
 
 	if (m_isDirtyHyperParams) [[unlikely]]
@@ -2428,53 +2428,65 @@ void Device::render(const unsigned int iterationIndex,
 	}
 
 	// PER-FRAME: Update the number of tiles
-	m_systemData.pf.numTiles = { m_systemData.resolution.x / m_systemData.pf.tileSize.x,
-								 m_systemData.resolution.y / m_systemData.pf.tileSize.y };
+	m_systemData.pf.numTiles = {
+		m_systemData.resolution.x / m_systemData.pf.tileSize.x,
+		m_systemData.resolution.y / m_systemData.pf.tileSize.y
+	};
 
 	// We simpy sync here because this NRC demo only supports interactive mode on single device
 	synchronizeStream();
-	
-	if (m_isDirtySystemData) // Update the whole SystemData block because more than per-frame data has changed. This normally means a GUI interaction.
+
+	if (m_isDirtySystemData)
+	// Update the whole SystemData block because more than per-frame data has changed. This normally means a GUI interaction.
 	{
-		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
-		CU_CHECK(cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData_nrcHelpers), reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), m_cudaStream));
+		CU_CHECK(
+			cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData),
+				m_cudaStream));
+		CU_CHECK(
+			cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData_nrcHelpers), reinterpret_cast<CUdeviceptr>(
+				m_d_systemData), sizeof(SystemData), m_cudaStream));
 		m_isDirtySystemData = false;
-	}
-	else // Only update the per-frame data
+	} else // Only update the per-frame data
 	{
 		// NOTE This won't work for async launches, but single-frame benchmarking doesn't make sense for NRC anyway.
 		static constexpr auto perFrameDataSize = sizeof(SystemData) - offsetof(SystemData, pf);
-		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), &m_systemData.pf, perFrameDataSize, m_cudaStream));
-		CU_CHECK(cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData_nrcHelpers->pf), reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), perFrameDataSize, m_cudaStream));
+		CU_CHECK(
+			cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), &m_systemData.pf, perFrameDataSize,
+				m_cudaStream));
+		CU_CHECK(
+			cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData_nrcHelpers->pf), reinterpret_cast<
+				CUdeviceptr>(&m_d_systemData->pf), perFrameDataSize, m_cudaStream));
 	}
 
-	if (isDirtyNRCDynamicBuffers)
-	{
-		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), 
-								   &m_nrcControlBlock.bufDynamic, sizeof(m_nrcControlBlock.bufDynamic), m_cudaStream));
+	if (isDirtyNRCDynamicBuffers) {
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic),
+			&m_nrcControlBlock.bufDynamic, sizeof(m_nrcControlBlock.bufDynamic), m_cudaStream));
 	}
 
 	// Reset the per-frame data of the NRC block (currently just numTrainingRecords)
-	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 
-							  std::bit_cast<unsigned int>(0), 1ull, m_cudaStream));
+	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords),
+		std::bit_cast<unsigned int>(0), 1ull, m_cudaStream));
 
 	// Zero out all the target radiance
-	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(0)),
-					          std::bit_cast<unsigned int>(0.f), // Should just be 0u
-					          3ull * nrc::NUM_TRAINING_RECORDS_PER_FRAME, // Number of floats
-					          m_cudaStream));
+	CU_CHECK(
+		cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.bufStatic.trainingRadianceTargets.getBuffer(0))
+			,
+			std::bit_cast<unsigned int>(0.f), // Should just be 0u
+			3ull * nrc::NUM_TRAINING_RECORDS_PER_FRAME, // Number of floats
+			m_cudaStream));
 
-	// Path Tracing: 
+	// Path Tracing:
 	// - Generate training data for NRC
-	// - Populate queries, training records           
+	// - Populate queries, training records
 	// Note the launch width per device to render in tiles.
-	OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), 
-								  &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
+	OPTIX_CHECK(
+		m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData),
+			&m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 
 	// Sync with Device the per-frame data of the NRC block (currently just numTrainingRecords)
-	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock.numTrainingRecords, 
-							   reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 
-							   sizeof(m_nrcControlBlock.numTrainingRecords), m_cudaStream));
+	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock.numTrainingRecords,
+		reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords),
+		sizeof(m_nrcControlBlock.numTrainingRecords), m_cudaStream));
 
 	synchronizeStream();
 
@@ -2484,12 +2496,12 @@ void Device::render(const unsigned int iterationIndex,
 
 	using nrc::RenderMode;
 	const bool skipRenderCache = (m_nrcRenderMode == RenderMode::NoCache) ||
-						         (m_nrcRenderMode == RenderMode::CacheFirstVertex);
+	                             (m_nrcRenderMode == RenderMode::CacheFirstVertex);
 
 	nrcInferRadiance(screenSize, numTiles, skipRenderCache);
 	nrcAccumulateRadiance(skipRenderCache);
 	nrcVisualizeFirstRadiance(screenSize);
-	
+
 	// Training
 	m_nrcTrainStat.loss = 0.f;
 	if (numTrainRecords > 0) [[likely]]
@@ -2512,103 +2524,119 @@ void Device::updateDisplayTexture()
 	// Only allow this on the device which owns the shared peer-to-peer buffer which also resized the host buffer to copy this to the host.
 	MY_ASSERT(!m_isDirtyOutputBuffer && m_ownsSharedBuffer && m_tex != 0);
 
-	switch (m_interop)
-	{
-	case INTEROP_MODE_OFF:
-		// Copy the GPU local render buffer into host and update the HDR texture image from there.
+	switch (m_interop) {
+		case INTEROP_MODE_OFF:
+			// Copy the GPU local render buffer into host and update the HDR texture image from there.
 #if USE_FP32_OUTPUT
-		CU_CHECK(cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream));
+			CU_CHECK(
+				cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(float4) * m_systemData.
+					resolution.x * m_systemData.resolution.y, m_cudaStream));
 #else
 		CU_CHECK(cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(Half4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream));
 #endif
-		synchronizeStream(); // Wait for the buffer to arrive on the host.
+			synchronizeStream(); // Wait for the buffer to arrive on the host.
 
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, m_tex);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, m_tex);
 #if USE_FP32_OUTPUT
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (GLsizei)m_systemData.resolution.x, (GLsizei)m_systemData.resolution.y, 0, GL_RGBA, GL_FLOAT, m_bufferHost.data()); // RGBA32F from host buffer data.
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (GLsizei) m_systemData.resolution.x,
+			             (GLsizei) m_systemData.resolution.y, 0, GL_RGBA, GL_FLOAT,
+			             m_bufferHost.data()); // RGBA32F from host buffer data.
 #else
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, (GLsizei)m_systemData.resolution.x, (GLsizei)m_systemData.resolution.y, 0, GL_RGBA, GL_HALF_FLOAT_ARB, m_bufferHost.data()); // RGBA16F from host buffer data.
 #endif
-		break;
+			break;
 
-	case INTEROP_MODE_TEX:
-	{
-		// Map the Texture object directly and copy the output buffer. 
-		CU_CHECK(cuGraphicsMapResources(1, &m_cudaGraphicsResource, m_cudaStream)); // This is an implicit cuSynchronizeStream().
+		case INTEROP_MODE_TEX: {
+			// Map the Texture object directly and copy the output buffer.
+			CU_CHECK(cuGraphicsMapResources(1, &m_cudaGraphicsResource, m_cudaStream));
+			// This is an implicit cuSynchronizeStream().
 
-		CUarray dstArray = nullptr;
+			CUarray dstArray = nullptr;
 
-		CU_CHECK(cuGraphicsSubResourceGetMappedArray(&dstArray, m_cudaGraphicsResource, 0, 0)); // arrayIndex = 0, mipLevel = 0
+			CU_CHECK(cuGraphicsSubResourceGetMappedArray(&dstArray, m_cudaGraphicsResource, 0, 0));
+			// arrayIndex = 0, mipLevel = 0
 
-		CUDA_MEMCPY3D params = {};
+			CUDA_MEMCPY3D params = {};
 
-		params.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-		params.srcDevice = m_systemData.outputBuffer;
+			params.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+			params.srcDevice = m_systemData.outputBuffer;
 #if USE_FP32_OUTPUT
-		params.srcPitch = m_systemData.resolution.x * sizeof(float4); // RGBA32F
+			params.srcPitch = m_systemData.resolution.x * sizeof(float4); // RGBA32F
 #else
 		params.srcPitch = m_systemData.resolution.x * sizeof(Half4); // RGBA16F
 #endif
-		params.srcHeight = m_systemData.resolution.y;
+			params.srcHeight = m_systemData.resolution.y;
 
-		params.dstMemoryType = CU_MEMORYTYPE_ARRAY;
-		params.dstArray = dstArray;
+			params.dstMemoryType = CU_MEMORYTYPE_ARRAY;
+			params.dstArray = dstArray;
 #if USE_FP32_OUTPUT
-		params.WidthInBytes = m_systemData.resolution.x * sizeof(float4);
+			params.WidthInBytes = m_systemData.resolution.x * sizeof(float4);
 #else
 		params.WidthInBytes = m_systemData.resolution.x * sizeof(Half4);
 #endif
-		params.Height = m_systemData.resolution.y;
-		params.Depth = 1;
+			params.Height = m_systemData.resolution.y;
+			params.Depth = 1;
 
-		CU_CHECK(cuMemcpy3D(&params)); // Copy from linear to array layout.
+			CU_CHECK(cuMemcpy3D(&params)); // Copy from linear to array layout.
 
-		CU_CHECK(cuGraphicsUnmapResources(1, &m_cudaGraphicsResource, m_cudaStream)); // This is an implicit cuSynchronizeStream().
-	}
-	break;
+			CU_CHECK(cuGraphicsUnmapResources(1, &m_cudaGraphicsResource, m_cudaStream));
+			// This is an implicit cuSynchronizeStream().
+		}
+		break;
 
-	case INTEROP_MODE_PBO: // This contains two device-to-device copies and is just for demonstration. Use INTEROP_MODE_TEX when possible.
-	{
-		size_t size = 0;
-		CUdeviceptr d_ptr;
+		case INTEROP_MODE_PBO:
+			// This contains two device-to-device copies and is just for demonstration. Use INTEROP_MODE_TEX when possible.
+		{
+			size_t size = 0;
+			CUdeviceptr d_ptr;
 
-		CU_CHECK(cuGraphicsMapResources(1, &m_cudaGraphicsResource, m_cudaStream)); // This is an implicit cuSynchronizeStream().
-		CU_CHECK(cuGraphicsResourceGetMappedPointer(&d_ptr, &size, m_cudaGraphicsResource)); // The pointer can change on every map!
-		// PERF PBO interop is kind of moot with a direct texture access.
+			CU_CHECK(cuGraphicsMapResources(1, &m_cudaGraphicsResource, m_cudaStream));
+			// This is an implicit cuSynchronizeStream().
+			CU_CHECK(cuGraphicsResourceGetMappedPointer(&d_ptr, &size, m_cudaGraphicsResource));
+			// The pointer can change on every map!
+			// PERF PBO interop is kind of moot with a direct texture access.
 #if USE_FP32_OUTPUT
-		MY_ASSERT(m_systemData.resolution.x * m_systemData.resolution.y * sizeof(float4) <= size);
-		CU_CHECK(cuMemcpyDtoDAsync(d_ptr, m_systemData.outputBuffer, m_systemData.resolution.x * m_systemData.resolution.y * sizeof(float4), m_cudaStream));
+			MY_ASSERT(m_systemData.resolution.x * m_systemData.resolution.y * sizeof(float4) <= size);
+			CU_CHECK(
+				cuMemcpyDtoDAsync(d_ptr, m_systemData.outputBuffer, m_systemData.resolution.x * m_systemData.resolution.
+					y * sizeof(float4), m_cudaStream));
 #else
 		MY_ASSERT(m_systemData.resolution.x * m_systemData.resolution.y * sizeof(Half4) <= size);
 		CU_CHECK(cuMemcpyDtoDAsync(d_ptr, m_systemData.outputBuffer, m_systemData.resolution.x * m_systemData.resolution.y * sizeof(Half4), m_cudaStream));
 #endif
-		CU_CHECK(cuGraphicsUnmapResources(1, &m_cudaGraphicsResource, m_cudaStream)); // This is an implicit cuSynchronizeStream().
+			CU_CHECK(cuGraphicsUnmapResources(1, &m_cudaGraphicsResource, m_cudaStream));
+			// This is an implicit cuSynchronizeStream().
 
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, m_tex);
-		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbo);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, m_tex);
+			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbo);
 #if USE_FP32_OUTPUT
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (GLsizei)m_systemData.resolution.x, (GLsizei)m_systemData.resolution.y, 0, GL_RGBA, GL_FLOAT, (GLvoid*)0); // RGBA32F from byte offset 0 in the pixel unpack buffer.
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (GLsizei) m_systemData.resolution.x,
+			             (GLsizei) m_systemData.resolution.y, 0, GL_RGBA, GL_FLOAT,
+			             (GLvoid *) 0); // RGBA32F from byte offset 0 in the pixel unpack buffer.
 #else
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, (GLsizei)m_systemData.resolution.x, (GLsizei)m_systemData.resolution.y, 0, GL_RGBA, GL_HALF_FLOAT_ARB, (GLvoid*)0); // RGBA32F from byte offset 0 in the pixel unpack buffer.
 #endif
-		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-	}
-	break;
+			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+		}
+		break;
 	}
 }
 
 
-const void* Device::getOutputBufferHost()
+const void *Device::getOutputBufferHost()
 {
 	activateContext();
 
-	MY_ASSERT(!m_isDirtyOutputBuffer && m_ownsSharedBuffer); // Only allow this on the device which owns the shared peer-to-peer buffer and resized the host buffer to copy this to the host.
+	MY_ASSERT(!m_isDirtyOutputBuffer && m_ownsSharedBuffer);
+	// Only allow this on the device which owns the shared peer-to-peer buffer and resized the host buffer to copy this to the host.
 
 	// Note that the caller takes care to sync the other devices before calling into here or this image might not be complete!
 #if USE_FP32_OUTPUT
-	CU_CHECK(cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream));
+	CU_CHECK(
+		cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(float4) * m_systemData.resolution.x *
+			m_systemData.resolution.y, m_cudaStream));
 #else
 	CU_CHECK(cuMemcpyDtoHAsync(m_bufferHost.data(), m_systemData.outputBuffer, sizeof(Half4) * m_systemData.resolution.x * m_systemData.resolution.y, m_cudaStream));
 #endif
@@ -2620,14 +2648,13 @@ const void* Device::getOutputBufferHost()
 
 // PERF This is NOT called when there is only one active device!
 // That is using a different ray generation program instead which accumulates directly into the output buffer.
-void Device::compositor(Device* other)
+void Device::compositor(Device *other)
 {
 	MY_ASSERT(!m_isDirtyOutputBuffer && m_ownsSharedBuffer);
 
-	// The compositor sources the tileBuffer, which is only allocated on the primary device. 
+	// The compositor sources the tileBuffer, which is only allocated on the primary device.
 	// The texelBuffer is a GPU local buffer on all devices and contains the accumulation.
-	if (this == other)
-	{
+	if (this == other) {
 		activateContext();
 #if USE_FP32_OUTPUT
 		CU_CHECK(cuMemcpyDtoDAsync(m_systemData.tileBuffer, m_systemData.texelBuffer,
@@ -2636,17 +2663,17 @@ void Device::compositor(Device* other)
 		CU_CHECK(cuMemcpyDtoDAsync(m_systemData.tileBuffer, m_systemData.texelBuffer,
 			sizeof(Half4) * m_launchWidth * m_systemData.resolution.y, m_cudaStream));
 #endif
-	}
-	else
-	{
+	} else {
 		// Make sure the other device has finished rendering! Otherwise there can be checkerboard corruption visible.
 		other->activateContext();
 		other->synchronizeStream();
 
 		activateContext();
 #if USE_FP32_OUTPUT
-		CU_CHECK(cuMemcpyPeerAsync(m_systemData.tileBuffer, m_cudaContext, other->m_systemData.texelBuffer, other->m_cudaContext,
-			sizeof(float4) * m_launchWidth * m_systemData.resolution.y, m_cudaStream));
+		CU_CHECK(
+			cuMemcpyPeerAsync(m_systemData.tileBuffer, m_cudaContext, other->m_systemData.texelBuffer, other->
+				m_cudaContext,
+				sizeof(float4) * m_launchWidth * m_systemData.resolution.y, m_cudaStream));
 #else
 		CU_CHECK(cuMemcpyPeerAsync(m_systemData.tileBuffer, m_cudaContext, other->m_systemData.texelBuffer, other->m_cudaContext,
 			sizeof(Half4) * m_launchWidth * m_systemData.resolution.y, m_cudaStream));
@@ -2662,12 +2689,12 @@ void Device::compositor(Device* other)
 	//compositorData.tileShift = m_systemData.pf.tileShift;
 	compositorData.launchWidth = m_launchWidth;
 	compositorData.deviceCount = m_systemData.deviceCount;
-	compositorData.deviceIndex = other->m_systemData.deviceIndex; // This is the only value which changes per device. 
+	compositorData.deviceIndex = other->m_systemData.deviceIndex; // This is the only value which changes per device.
 
 	// Need a synchronous copy here to not overwrite or delete the compositorData above.
 	CU_CHECK(cuMemcpyHtoD(m_d_compositorData, &compositorData, sizeof(CompositorData)));
 
-	void* args[1] = { &m_d_compositorData };
+	void *args[1] = {&m_d_compositorData};
 
 	// FIXME PERF Should this be 32x32 for 1024 threads?
 	const int blockDimX = std::min(compositorData.tileSize.x, 16);
@@ -2680,16 +2707,16 @@ void Device::compositor(Device* other)
 		gridDimY <= m_deviceAttribute.maxGridDimY);
 
 	// Reduction kernel with launch dimension of height blocks with 32 threads.
-	CU_CHECK(cuLaunchKernel(m_functionCompositor,    // CUfunction f,
-		gridDimX,    // unsigned int gridDimX,
-		gridDimY,    // unsigned int gridDimY,
-		1,    // unsigned int gridDimZ,
-		blockDimX,    // unsigned int blockDimX,
-		blockDimY,    // unsigned int blockDimY,
-		1,    // unsigned int blockDimZ,
-		0,    // unsigned int sharedMemBytes,
-		m_cudaStream,    // CUstream hStream,
-		args,    // void **kernelParams,
+	CU_CHECK(cuLaunchKernel(m_functionCompositor, // CUfunction f,
+		gridDimX, // unsigned int gridDimX,
+		gridDimY, // unsigned int gridDimY,
+		1, // unsigned int gridDimZ,
+		blockDimX, // unsigned int blockDimX,
+		blockDimY, // unsigned int blockDimY,
+		1, // unsigned int blockDimZ,
+		0, // unsigned int sharedMemBytes,
+		m_cudaStream, // CUstream hStream,
+		args, // void **kernelParams,
 		nullptr)); // void **extra
 
 	synchronizeStream();
@@ -2731,17 +2758,16 @@ size_t Device::getMemoryAllocated() const
 	return m_allocator->getSizeMemoryAllocated() + m_sizeMemoryTextureArrays;
 }
 
-Texture* Device::initTexture(const std::string& name, const Picture* picture, const unsigned int flags)
+Texture *Device::initTexture(const std::string &name, const Picture *picture, const unsigned int flags)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
 
-	Texture* texture;
+	Texture *texture;
 
 	// FIXME Only using the filename as key and not the load flags. This will not support the same image with different flags!
-	std::map<std::string, Texture*>::const_iterator it = m_mapTextures.find(name);
-	if (it == m_mapTextures.end())
-	{
+	std::map<std::string, Texture *>::const_iterator it = m_mapTextures.find(name);
+	if (it == m_mapTextures.end()) {
 		texture = new Texture(this); // This device is the owner of the CUarray or CUmipmappedArray data.
 
 		texture->create(picture, flags);
@@ -2751,9 +2777,7 @@ Texture* Device::initTexture(const std::string& name, const Picture* picture, co
 		m_mapTextures[name] = texture;
 
 		std::cout << "initTexture() device ordinal = " << m_ordinal << ": name = " << name << '\n'; // DEBUG
-	}
-	else
-	{
+	} else {
 		texture = it->second; // Return the existing texture under this name.
 
 		std::cout << "initTexture() Texture " << name << " reused\n"; // DEBUG
@@ -2763,16 +2787,15 @@ Texture* Device::initTexture(const std::string& name, const Picture* picture, co
 }
 
 
-void Device::shareTexture(const std::string& name, const Texture* shared)
+void Device::shareTexture(const std::string &name, const Texture *shared)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
 
-	std::map<std::string, Texture*>::const_iterator it = m_mapTextures.find(name);
+	std::map<std::string, Texture *>::const_iterator it = m_mapTextures.find(name);
 
-	if (it == m_mapTextures.end())
-	{
-		Texture* texture = new Texture(shared->getOwner());
+	if (it == m_mapTextures.end()) {
+		Texture *texture = new Texture(shared->getOwner());
 
 		texture->create(shared); // No texture memory tracking in this case. Arrays are reused.
 
@@ -2781,7 +2804,7 @@ void Device::shareTexture(const std::string& name, const Texture* shared)
 }
 
 
-unsigned int Device::appendProgramGroupMDL(const int indexModule, const std::string& nameFunction)
+unsigned int Device::appendProgramGroupMDL(const int indexModule, const std::string &nameFunction)
 {
 	OptixProgramGroupDesc pgd = {};
 
@@ -2807,10 +2830,10 @@ unsigned int Device::appendProgramGroupMDL(const int indexModule, const std::str
 
 
 // Compile_result and MaterialMDL is per reference, ShaderConfiguration is per shader (code).
-void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
-	MaterialMDL* material,
-	const Compile_result& res,
-	const ShaderConfiguration& config)
+void Device::compileMaterial(mi::neuraylib::ITransaction *transaction,
+                             MaterialMDL *material,
+                             const Compile_result &res,
+                             const ShaderConfiguration &config)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
@@ -2823,10 +2846,9 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 	const std::string suffix = std::to_string(indexShader);
 
 	// If the shader index hasn't been seen before, we need to create a new OptixModule and a device side shader configuration.
-	// Otherwise the indexShader is already indexing the correct shader configuration and 
+	// Otherwise the indexShader is already indexing the correct shader configuration and
 	// only the per reference parameter argument block and texture_handler need to be setup per reference.
-	if (indexShader == m_modulesMDL.size())
-	{
+	if (indexShader == m_modulesMDL.size()) {
 		// Create MDL module
 		{
 #if (OPTIX_VERSION >= 70700)
@@ -2839,38 +2861,41 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 			char log[2048];
 			size_t sizeLog = sizeof(log);
 			OPTIX_CHECK(optixModuleCreateFn(m_optixContext,
-				&m_mco, &m_pco, res.target_code->get_code(), res.target_code->get_code_size(), 
+				&m_mco, &m_pco, res.target_code->get_code(), res.target_code->get_code_size(),
 				log, &sizeLog, &moduleMDL));
 			if (sizeLog > 1) std::cerr << log << '\n';
 		}
 
 		// Append shader desc
-		auto& dsc = m_deviceShaderConfigurations.emplace_back();
+		auto &dsc = m_deviceShaderConfigurations.emplace_back();
 
 		// Simplify the conditions by translating all constants unconditionally.
-		if (config.thin_walled)
-		{
+		if (config.thin_walled) {
 			dsc.flags |= IS_THIN_WALLED;
 		}
-		dsc.surface_intensity       = make_float3(config.surface_intensity[0], config.surface_intensity[1], config.surface_intensity[2]);
-		dsc.surface_intensity_mode  = config.surface_intensity_mode;
-		dsc.backface_intensity      = make_float3(config.backface_intensity[0], config.backface_intensity[1], config.backface_intensity[2]);
+		dsc.surface_intensity = make_float3(config.surface_intensity[0], config.surface_intensity[1],
+		                                    config.surface_intensity[2]);
+		dsc.surface_intensity_mode = config.surface_intensity_mode;
+		dsc.backface_intensity = make_float3(config.backface_intensity[0], config.backface_intensity[1],
+		                                     config.backface_intensity[2]);
 		dsc.backface_intensity_mode = config.backface_intensity_mode;
-		dsc.ior                     = make_float3(config.ior[0], config.ior[1], config.ior[2]);
-		dsc.absorption_coefficient  = make_float3(config.absorption_coefficient[0], config.absorption_coefficient[1], config.absorption_coefficient[2]);
-		dsc.scattering_coefficient  = make_float3(config.scattering_coefficient[0], config.scattering_coefficient[1], config.scattering_coefficient[2]);
-		dsc.cutout_opacity          = config.cutout_opacity;
+		dsc.ior = make_float3(config.ior[0], config.ior[1], config.ior[2]);
+		dsc.absorption_coefficient = make_float3(config.absorption_coefficient[0], config.absorption_coefficient[1],
+		                                         config.absorption_coefficient[2]);
+		dsc.scattering_coefficient = make_float3(config.scattering_coefficient[0], config.scattering_coefficient[1],
+		                                         config.scattering_coefficient[2]);
+		dsc.cutout_opacity = config.cutout_opacity;
 
 		// Record indices for direct callables
-		dsc.idxCallInit = appendProgramGroupMDL(indexShader, std::string("__direct_callable__init") + suffix); // The material init function.
+		dsc.idxCallInit = appendProgramGroupMDL(indexShader, std::string("__direct_callable__init") + suffix);
+		// The material init function.
 
-		if (!config.is_thin_walled_constant)
-		{
-			dsc.idxCallThinWalled = appendProgramGroupMDL(indexShader, std::string("__direct_callable__thin_walled") + suffix);
+		if (!config.is_thin_walled_constant) {
+			dsc.idxCallThinWalled = appendProgramGroupMDL(indexShader,
+			                                              std::string("__direct_callable__thin_walled") + suffix);
 		}
 
-		if (config.is_surface_bsdf_valid)
-		{
+		if (config.is_surface_bsdf_valid) {
 			const std::string name = std::string("__direct_callable__surface_scattering") + suffix;
 
 			dsc.idxCallSurfaceScatteringSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
@@ -2878,8 +2903,7 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 			dsc.idxCallSurfaceScatteringAux = appendProgramGroupMDL(indexShader, name + std::string("_auxiliary"));
 		}
 
-		if (config.is_backface_bsdf_valid)
-		{
+		if (config.is_backface_bsdf_valid) {
 			const std::string name = std::string("__direct_callable__backface_scattering") + suffix;
 
 			dsc.idxCallBackfaceScatteringSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
@@ -2887,107 +2911,94 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 			dsc.idxCallBackfaceScatteringAux = appendProgramGroupMDL(indexShader, name + std::string("_auxiliary"));
 		}
 
-		if (config.is_surface_edf_valid)
-		{
+		if (config.is_surface_edf_valid) {
 			const std::string name = std::string("__direct_callable__surface_emission_emission") + suffix;
 
 			dsc.idxCallSurfaceEmissionEval = appendProgramGroupMDL(indexShader, name + std::string("_evaluate"));
 
-			if (!config.is_surface_intensity_constant)
-			{
-				dsc.idxCallSurfaceEmissionIntensity = appendProgramGroupMDL(indexShader, std::string("__direct_callable__surface_emission_intensity") + suffix);
+			if (!config.is_surface_intensity_constant) {
+				dsc.idxCallSurfaceEmissionIntensity = appendProgramGroupMDL(
+					indexShader, std::string("__direct_callable__surface_emission_intensity") + suffix);
 			}
 
-			if (!config.is_surface_intensity_mode_constant)
-			{
-				dsc.idxCallSurfaceEmissionIntensityMode = appendProgramGroupMDL(indexShader, std::string("__direct_callable__surface_emission_mode") + suffix);
+			if (!config.is_surface_intensity_mode_constant) {
+				dsc.idxCallSurfaceEmissionIntensityMode = appendProgramGroupMDL(
+					indexShader, std::string("__direct_callable__surface_emission_mode") + suffix);
 			}
 		}
 
-		if (config.is_backface_edf_valid)
-		{
-			if (config.use_backface_edf)
-			{
+		if (config.is_backface_edf_valid) {
+			if (config.use_backface_edf) {
 				const std::string name = std::string("__direct_callable__backface_emission_emission") + suffix;
 
 				dsc.idxCallBackfaceEmissionEval = appendProgramGroupMDL(indexShader, name + std::string("_evaluate"));
-			}
-			else // Surface and backface expressions were identical. Reuse the code of the surface expression.
+			} else // Surface and backface expressions were identical. Reuse the code of the surface expression.
 			{
 				dsc.idxCallBackfaceEmissionEval = dsc.idxCallSurfaceEmissionEval;
 			}
 
-			if (config.use_backface_intensity)
-			{
-				if (!config.is_backface_intensity_constant)
-				{
-					dsc.idxCallBackfaceEmissionIntensity = appendProgramGroupMDL(indexShader, std::string("__direct_callable__backface_emission_intensity") + suffix);
+			if (config.use_backface_intensity) {
+				if (!config.is_backface_intensity_constant) {
+					dsc.idxCallBackfaceEmissionIntensity = appendProgramGroupMDL(
+						indexShader, std::string("__direct_callable__backface_emission_intensity") + suffix);
 				}
-			}
-			else // Surface and backface expressions were identical. Reuse the code of the surface expression.
+			} else // Surface and backface expressions were identical. Reuse the code of the surface expression.
 			{
 				dsc.idxCallBackfaceEmissionIntensity = dsc.idxCallSurfaceEmissionIntensity;
 			}
 
-			if (config.use_backface_intensity_mode)
-			{
-				if (!config.is_backface_intensity_mode_constant)
-				{
-					dsc.idxCallBackfaceEmissionIntensityMode = appendProgramGroupMDL(indexShader, std::string("__direct_callable__backface_emission_mode") + suffix);
+			if (config.use_backface_intensity_mode) {
+				if (!config.is_backface_intensity_mode_constant) {
+					dsc.idxCallBackfaceEmissionIntensityMode = appendProgramGroupMDL(
+						indexShader, std::string("__direct_callable__backface_emission_mode") + suffix);
 				}
-			}
-			else // Surface and backface expressions were identical. Reuse the code of the surface expression.
+			} else // Surface and backface expressions were identical. Reuse the code of the surface expression.
 			{
 				dsc.idxCallBackfaceEmissionIntensityMode = dsc.idxCallSurfaceEmissionIntensityMode;
 			}
 		}
 
-		if (config.isEmissive())
-		{
+		if (config.isEmissive()) {
 			dsc.flags |= USE_EMISSION;
 		}
 
-		if (!config.is_ior_constant)
-		{
+		if (!config.is_ior_constant) {
 			dsc.idxCallIor = appendProgramGroupMDL(indexShader, std::string("__direct_callable__ior") + suffix);
 		}
 
-		if (!config.is_absorption_coefficient_constant)
-		{
-			dsc.idxCallVolumeAbsorptionCoefficient = appendProgramGroupMDL(indexShader, std::string("__direct_callable__volume_absorption_coefficient") + suffix);
+		if (!config.is_absorption_coefficient_constant) {
+			dsc.idxCallVolumeAbsorptionCoefficient = appendProgramGroupMDL(
+				indexShader, std::string("__direct_callable__volume_absorption_coefficient") + suffix);
 		}
 
-		if (config.is_vdf_valid)
-		{
+		if (config.is_vdf_valid) {
 			// The MDL SDK doesn't generate code for the volume.scattering expression.
 			// Means volume scattering must be implemented by the renderer and only the parameter expresssions can be generated.
 
-			// The volume scattering coefficient and direction bias are only used when there is a valid VDF. 
-			if (!config.is_scattering_coefficient_constant)
-			{
-				dsc.idxCallVolumeScatteringCoefficient = appendProgramGroupMDL(indexShader, std::string("__direct_callable__volume_scattering_coefficient") + suffix);
+			// The volume scattering coefficient and direction bias are only used when there is a valid VDF.
+			if (!config.is_scattering_coefficient_constant) {
+				dsc.idxCallVolumeScatteringCoefficient = appendProgramGroupMDL(
+					indexShader, std::string("__direct_callable__volume_scattering_coefficient") + suffix);
 			}
 
-			if (!config.is_directional_bias_constant)
-			{
-				dsc.idxCallVolumeDirectionalBias = appendProgramGroupMDL(indexShader, std::string("__direct_callable__volume_directional_bias") + suffix);
+			if (!config.is_directional_bias_constant) {
+				dsc.idxCallVolumeDirectionalBias = appendProgramGroupMDL(
+					indexShader, std::string("__direct_callable__volume_directional_bias") + suffix);
 			}
 
 			// volume.scattering.emission_intensity not implemented.
 		}
 
-		if (config.use_cutout_opacity)
-		{
+		if (config.use_cutout_opacity) {
 			dsc.flags |= USE_CUTOUT_OPACITY;
 
-			if (!config.is_cutout_opacity_constant)
-			{
-				dsc.idxCallGeometryCutoutOpacity = appendProgramGroupMDL(indexShader, std::string("__direct_callable__geometry_cutout_opacity") + suffix);
+			if (!config.is_cutout_opacity_constant) {
+				dsc.idxCallGeometryCutoutOpacity = appendProgramGroupMDL(
+					indexShader, std::string("__direct_callable__geometry_cutout_opacity") + suffix);
 			}
 		}
 
-		if (config.is_hair_bsdf_valid)
-		{
+		if (config.is_hair_bsdf_valid) {
 			const std::string name = std::string("__direct_callable__hair") + suffix;
 
 			dsc.idxCallHairSample = appendProgramGroupMDL(indexShader, name + std::string("_sample"));
@@ -3000,23 +3011,23 @@ void Device::compileMaterial(mi::neuraylib::ITransaction* transaction,
 }
 
 
-const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* transaction,
-	mi::base::Handle<mi::neuraylib::IImage_api> image_api,
-	char const* texture_db_name,
-	mi::neuraylib::ITarget_code::Texture_shape texture_shape)
+const TextureMDLHost *Device::prepareTextureMDL(mi::neuraylib::ITransaction *transaction,
+                                                mi::base::Handle<mi::neuraylib::IImage_api> image_api,
+                                                char const *texture_db_name,
+                                                mi::neuraylib::ITarget_code::Texture_shape texture_shape)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
 
 	// Get access to the texture data by the texture database name from the target code.
-	mi::base::Handle<const mi::neuraylib::ITexture> texture(transaction->access<mi::neuraylib::ITexture>(texture_db_name));
+	mi::base::Handle<const mi::neuraylib::ITexture> texture(
+		transaction->access<mi::neuraylib::ITexture>(texture_db_name));
 
 	// First check the texture cache.
 	std::string entry_name = std::string(texture_db_name) + "_" + std::to_string(unsigned(texture_shape));
 
-	const auto& it = m_mapTextureNameToIndex.find(entry_name);
-	if (it != m_mapTextureNameToIndex.end())
-	{
+	const auto &it = m_mapTextureNameToIndex.find(entry_name);
+	if (it != m_mapTextureNameToIndex.end()) {
 		return &m_textureMDLHosts[it->second]; // The texture already exists inside the texture cache on this device.
 	}
 
@@ -3029,7 +3040,8 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 	// std::cout << "DEBUG: prepareTextureMDL() loading " << entry_name << '\n';
 
 	// Access image and canvas via the texture object
-	mi::base::Handle<const mi::neuraylib::IImage> image(transaction->access<mi::neuraylib::IImage>(texture->get_image()));
+	mi::base::Handle<const mi::neuraylib::IImage> image(
+		transaction->access<mi::neuraylib::IImage>(texture->get_image()));
 
 	mi::base::Handle<const mi::neuraylib::ICanvas> canvas(image->get_canvas(0, 0, 0));
 
@@ -3037,13 +3049,12 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 	mi::Uint32 tex_height = canvas->get_resolution_y();
 	mi::Uint32 tex_layers = canvas->get_layers_size();
 
-	if (image->is_uvtile() || image->is_animated())
-	{
+	if (image->is_uvtile() || image->is_animated()) {
 		std::cerr << "ERROR: prepareTextureMDL() uvtile and/or animated textures not supported!\n";
 		return nullptr;
 	}
 
-	char const* image_type = image->get_type(0, 0);
+	char const *image_type = image->get_type(0, 0);
 
 	// Determine the image type.
 
@@ -3068,23 +3079,19 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 	const mi::Float32 effectiveGamma = texture->get_effective_gamma(0, 0);
 
 	// Handle RGB8 and RGBA8 images natively.
-	if (strcmp(image_type, "Rgb") == 0)
-	{
+	if (strcmp(image_type, "Rgb") == 0) {
 		canvas = image_api->convert(canvas.get(), "Rgba"); // Append an alpha channel with 0xFF.
 
 		host.m_descArray3D.Format = CU_AD_FORMAT_UNSIGNED_INT8;
 		host.m_descArray3D.NumChannels = 4;
 
 		sizeBytesPerElement = sizeof(mi::Uint8);
-	}
-	else if (strcmp(image_type, "Rgba") == 0)
-	{
+	} else if (strcmp(image_type, "Rgba") == 0) {
 		host.m_descArray3D.Format = CU_AD_FORMAT_UNSIGNED_INT8;
 		host.m_descArray3D.NumChannels = 4;
 
 		sizeBytesPerElement = sizeof(mi::Uint8);
-	}
-	else // FIXME PERF All other formats are currently converted to linear float4 colors.
+	} else // FIXME PERF All other formats are currently converted to linear float4 colors.
 	{
 		if (effectiveGamma != 1.0f) // Convert image to linear color space if necessary.
 		{
@@ -3095,10 +3102,8 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 			image_api->adjust_gamma(gamma_canvas.get(), 1.0f);
 
 			canvas = gamma_canvas;
-		}
-		else if (strcmp(image_type, "Color") != 0 &&
-			strcmp(image_type, "Float32<4>") != 0)
-		{
+		} else if (strcmp(image_type, "Color") != 0 &&
+		           strcmp(image_type, "Float32<4>") != 0) {
 			// All other formats which aren't float4 already get converted to linear float4 color. Gamma is 1.0 here.
 			canvas = image_api->convert(canvas.get(), "Color");
 		}
@@ -3113,13 +3118,14 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 
 	// Copy image data to GPU array depending on texture shape
 	if (texture_shape == mi::neuraylib::ITarget_code::Texture_shape_cube ||
-		texture_shape == mi::neuraylib::ITarget_code::Texture_shape_3d ||
-		texture_shape == mi::neuraylib::ITarget_code::Texture_shape_bsdf_data) // DEBUG MBSDF data should not reach this code path.
+	    texture_shape == mi::neuraylib::ITarget_code::Texture_shape_3d ||
+	    texture_shape == mi::neuraylib::ITarget_code::Texture_shape_bsdf_data)
+	// DEBUG MBSDF data should not reach this code path.
 	{
 		// Cubemap and 3D texture objects require 3D CUDA arrays.
-		if (texture_shape == mi::neuraylib::ITarget_code::Texture_shape_cube && tex_layers != 6)
-		{
-			std::cerr << "ERROR: prepareTextureMDL() Invalid number of layers (" << tex_layers << "), cubemaps must have 6 layers!\n";
+		if (texture_shape == mi::neuraylib::ITarget_code::Texture_shape_cube && tex_layers != 6) {
+			std::cerr << "ERROR: prepareTextureMDL() Invalid number of layers (" << tex_layers <<
+					"), cubemaps must have 6 layers!\n";
 			return nullptr;
 		}
 
@@ -3130,10 +3136,10 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 
 		// Track the current texture allocation size on this device.
 		host.m_sizeBytesArray = host.m_descArray3D.Width *
-			host.m_descArray3D.Height *
-			host.m_descArray3D.Depth *
-			host.m_descArray3D.NumChannels *
-			((host.m_descArray3D.Format == CU_AD_FORMAT_UNSIGNED_INT8) ? 1 : 4);
+		                        host.m_descArray3D.Height *
+		                        host.m_descArray3D.Depth *
+		                        host.m_descArray3D.NumChannels *
+		                        ((host.m_descArray3D.Format == CU_AD_FORMAT_UNSIGNED_INT8) ? 1 : 4);
 		m_sizeMemoryTextureArrays += host.m_sizeBytesArray;
 
 		CU_CHECK(cuArray3DCreate(&host.m_d_array, &host.m_descArray3D));
@@ -3141,8 +3147,7 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 		// Prepare the memcpy parameter structure
 
 		// Copy the image data of all layers (the layers are not consecutive in memory)
-		for (mi::Uint32 layer = 0; layer < tex_layers; ++layer)
-		{
+		for (mi::Uint32 layer = 0; layer < tex_layers; ++layer) {
 			mi::base::Handle<const mi::neuraylib::ITile> tile(canvas->get_tile(layer));
 
 			CUDA_MEMCPY3D params = {};
@@ -3168,9 +3173,7 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 
 		host.m_resourceDescription.resType = CU_RESOURCE_TYPE_ARRAY;
 		host.m_resourceDescription.res.array.hArray = host.m_d_array;
-	}
-	else
-	{
+	} else {
 		// 2D texture objects use CUDA arrays
 		host.m_descArray3D.Width = tex_width;
 		host.m_descArray3D.Height = tex_height;
@@ -3178,9 +3181,9 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 
 		// Track the current texture allocation size on this device.
 		host.m_sizeBytesArray = host.m_descArray3D.Width *
-			host.m_descArray3D.Height *
-			host.m_descArray3D.NumChannels *
-			((host.m_descArray3D.Format == CU_AD_FORMAT_UNSIGNED_INT8) ? 1 : 4);
+		                        host.m_descArray3D.Height *
+		                        host.m_descArray3D.NumChannels *
+		                        ((host.m_descArray3D.Format == CU_AD_FORMAT_UNSIGNED_INT8) ? 1 : 4);
 		m_sizeMemoryTextureArrays += host.m_sizeBytesArray;
 
 		CU_CHECK(cuArray3DCreate(&host.m_d_array, &host.m_descArray3D));
@@ -3208,7 +3211,9 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 	}
 
 	// For cube maps we need clamped address mode to avoid artifacts in the corners.
-	CUaddress_mode addr_mode = (texture_shape == mi::neuraylib::ITarget_code::Texture_shape_cube) ? CU_TR_ADDRESS_MODE_CLAMP : CU_TR_ADDRESS_MODE_WRAP;
+	CUaddress_mode addr_mode = (texture_shape == mi::neuraylib::ITarget_code::Texture_shape_cube)
+		                           ? CU_TR_ADDRESS_MODE_CLAMP
+		                           : CU_TR_ADDRESS_MODE_WRAP;
 
 	// Create filtered texture object
 	host.m_textureDescription = {};
@@ -3222,20 +3227,20 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 
 	// Possible flags: CU_TRSF_READ_AS_INTEGER, CU_TRSF_NORMALIZED_COORDINATES, CU_TRSF_SRGB
 	host.m_textureDescription.flags = CU_TRSF_NORMALIZED_COORDINATES;
-	if (effectiveGamma != 1.0f && sizeBytesPerElement == 1)
-	{
+	if (effectiveGamma != 1.0f && sizeBytesPerElement == 1) {
 		host.m_textureDescription.flags |= CU_TRSF_SRGB;
 	}
 
 	host.m_textureDescription.maxAnisotropy = 1;
 
 	// LOD 0 only by default.
-	// This means when using mipmaps it's the developer's responsibility to set at least 
+	// This means when using mipmaps it's the developer's responsibility to set at least
 	// maxMipmapLevelClamp > 0.0f before calling Texture::create() to make sure mipmaps can be sampled!
 	host.m_textureDescription.mipmapFilterMode = CU_TR_FILTER_MODE_POINT;
 	host.m_textureDescription.mipmapLevelBias = 0.0f;
 	host.m_textureDescription.minMipmapLevelClamp = 0.0f;
-	host.m_textureDescription.maxMipmapLevelClamp = 0.0f; // This should be set to Picture::getNumberOfLevels() when using mipmaps.
+	host.m_textureDescription.maxMipmapLevelClamp = 0.0f;
+	// This should be set to Picture::getNumberOfLevels() when using mipmaps.
 
 	host.m_textureDescription.borderColor[0] = 0.0f;
 	host.m_textureDescription.borderColor[1] = 0.0f;
@@ -3249,8 +3254,7 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 	// Create unfiltered texture object if necessary (cube textures have no texel functions)
 	CUtexObject tex_obj_unfilt = 0;
 
-	if (texture_shape != mi::neuraylib::ITarget_code::Texture_shape_cube)
-	{
+	if (texture_shape != mi::neuraylib::ITarget_code::Texture_shape_cube) {
 		// Use a black border for access outside of the texture
 		host.m_textureDescription.addressMode[0] = CU_TR_ADDRESS_MODE_BORDER;
 		host.m_textureDescription.addressMode[1] = CU_TR_ADDRESS_MODE_BORDER;
@@ -3278,9 +3282,9 @@ const TextureMDLHost* Device::prepareTextureMDL(mi::neuraylib::ITransaction* tra
 }
 
 
-void Device::shareTextureMDL(const TextureMDLHost* shared,
-	char const* texture_db_name,
-	mi::neuraylib::ITarget_code::Texture_shape texture_shape)
+void Device::shareTextureMDL(const TextureMDLHost *shared,
+                             char const *texture_db_name,
+                             mi::neuraylib::ITarget_code::Texture_shape texture_shape)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
@@ -3288,9 +3292,8 @@ void Device::shareTextureMDL(const TextureMDLHost* shared,
 	// First check the texture cache.
 	std::string entry_name = std::string(texture_db_name) + "_" + std::to_string(unsigned(texture_shape));
 
-	const auto& it = m_mapTextureNameToIndex.find(entry_name);
-	if (it != m_mapTextureNameToIndex.end())
-	{
+	const auto &it = m_mapTextureNameToIndex.find(entry_name);
+	if (it != m_mapTextureNameToIndex.end()) {
 		// The texture already exists inside the per device cache,
 		// which also means the MaterialMDL indices point to that already.
 		return;
@@ -3302,7 +3305,9 @@ void Device::shareTextureMDL(const TextureMDLHost* shared,
 	host.m_texture.unfiltered_object = 0;
 
 	// Create filtered texture object
-	CUaddress_mode addr_mode = (texture_shape == mi::neuraylib::ITarget_code::Texture_shape_cube) ? CU_TR_ADDRESS_MODE_CLAMP : CU_TR_ADDRESS_MODE_WRAP;
+	CUaddress_mode addr_mode = (texture_shape == mi::neuraylib::ITarget_code::Texture_shape_cube)
+		                           ? CU_TR_ADDRESS_MODE_CLAMP
+		                           : CU_TR_ADDRESS_MODE_WRAP;
 
 	// If the flag CU_TRSF_NORMALIZED_COORDINATES is not set, the only supported address mode is CU_TR_ADDRESS_MODE_CLAMP.
 	host.m_textureDescription.addressMode[0] = addr_mode;
@@ -3311,10 +3316,11 @@ void Device::shareTextureMDL(const TextureMDLHost* shared,
 
 	host.m_textureDescription.filterMode = CU_TR_FILTER_MODE_LINEAR; // Bilinear filtering.
 
-	CU_CHECK(cuTexObjectCreate(&host.m_texture.filtered_object, &host.m_resourceDescription, &host.m_textureDescription, nullptr));
+	CU_CHECK(
+		cuTexObjectCreate(&host.m_texture.filtered_object, &host.m_resourceDescription, &host.m_textureDescription,
+			nullptr));
 
-	if (texture_shape != mi::neuraylib::ITarget_code::Texture_shape_cube)
-	{
+	if (texture_shape != mi::neuraylib::ITarget_code::Texture_shape_cube) {
 		// Use a black border for access outside of the texture
 		host.m_textureDescription.addressMode[0] = CU_TR_ADDRESS_MODE_BORDER;
 		host.m_textureDescription.addressMode[1] = CU_TR_ADDRESS_MODE_BORDER;
@@ -3322,12 +3328,15 @@ void Device::shareTextureMDL(const TextureMDLHost* shared,
 
 		host.m_textureDescription.filterMode = CU_TR_FILTER_MODE_POINT;
 
-		CU_CHECK(cuTexObjectCreate(&host.m_texture.unfiltered_object, &host.m_resourceDescription, &host.m_textureDescription, nullptr));
+		CU_CHECK(
+			cuTexObjectCreate(&host.m_texture.unfiltered_object, &host.m_resourceDescription, &host.m_textureDescription
+				, nullptr));
 	}
 
 	// Get the new texture entry index for the cache.
 	const int indexTexture = static_cast<int>(m_textureMDLHosts.size());
-	MY_ASSERT(host.m_index == indexTexture); // Make sure the index of the shared texture is the same as the newly appended reused texture.
+	MY_ASSERT(host.m_index == indexTexture);
+	// Make sure the index of the shared texture is the same as the newly appended reused texture.
 	// Store the texture array and object handles inside the vector of all textures on this device.
 	m_textureMDLHosts.push_back(host); // This array is the same size on all devices!
 	// Track the index inside the texture cache of this device.
@@ -3336,25 +3345,23 @@ void Device::shareTextureMDL(const TextureMDLHost* shared,
 
 
 bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
-	MbsdfHost& host,
-	const mi::neuraylib::IBsdf_measurement* bsdf_measurement)
+                                 MbsdfHost &host,
+                                 const mi::neuraylib::IBsdf_measurement *bsdf_measurement)
 {
 	mi::base::Handle<const mi::neuraylib::Bsdf_isotropic_data> dataset;
 
-	switch (part)
-	{
-	case mi::neuraylib::MBSDF_DATA_REFLECTION:
-		dataset = bsdf_measurement->get_reflection<mi::neuraylib::Bsdf_isotropic_data>();
-		break;
+	switch (part) {
+		case mi::neuraylib::MBSDF_DATA_REFLECTION:
+			dataset = bsdf_measurement->get_reflection<mi::neuraylib::Bsdf_isotropic_data>();
+			break;
 
-	case mi::neuraylib::MBSDF_DATA_TRANSMISSION:
-		dataset = bsdf_measurement->get_transmission<mi::neuraylib::Bsdf_isotropic_data>();
-		break;
+		case mi::neuraylib::MBSDF_DATA_TRANSMISSION:
+			dataset = bsdf_measurement->get_transmission<mi::neuraylib::Bsdf_isotropic_data>();
+			break;
 	}
 
 	// No data, fine.
-	if (!dataset)
-	{
+	if (!dataset) {
 		return true;
 	}
 
@@ -3366,7 +3373,7 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 
 	unsigned int num_channels = (dataset->get_type() == mi::neuraylib::BSDF_SCALAR) ? 1 : 3;
 
-	Mbsdf& mbsdf = host.m_mbsdf;
+	Mbsdf &mbsdf = host.m_mbsdf;
 
 	mbsdf.Add(part, res, num_channels);
 
@@ -3374,10 +3381,10 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 	mi::base::Handle<const mi::neuraylib::IBsdf_buffer> buffer(dataset->get_bsdf_buffer());
 
 	// {1, 3} * (index_theta_in * (res_phi * res_theta) + index_theta_out * res_phi + index_phi)
-	const mi::Float32* src_data = buffer->get_data();
+	const mi::Float32 *src_data = buffer->get_data();
 
 	// Prepare importance sampling data:
-	// - For theta_in we will be able to perform a two stage CDF, 
+	// - For theta_in we will be able to perform a two stage CDF,
 	//   first to select theta_out, and second to select phi_out.
 	// - Maximum component is used to "probability" in case of colored measurements.
 
@@ -3387,25 +3394,23 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 	// For each of theta_in x theta_out combination, a CDF of the probabilities to select a certain theta_out is stored.
 	const unsigned sample_data_size = cdf_theta_size + cdf_theta_size * res.y;
 
-	float* sample_data = new float[sample_data_size];
+	float *sample_data = new float[sample_data_size];
 
-	float* albedo_data = new float[res.x]; // albedo for sampling reflection and transmission
+	float *albedo_data = new float[res.x]; // albedo for sampling reflection and transmission
 
-	float* sample_data_theta = sample_data;                  // begin of the first (theta) CDF
-	float* sample_data_phi = sample_data + cdf_theta_size; // begin of the second (phi) CDFs
+	float *sample_data_theta = sample_data; // begin of the first (theta) CDF
+	float *sample_data_phi = sample_data + cdf_theta_size; // begin of the second (phi) CDFs
 
-	const float s_theta = (float)(M_PI * 0.5) / float(res.x); // step size
-	const float s_phi = (float)(M_PI) / float(res.y); // step size
+	const float s_theta = (float) (M_PI * 0.5) / float(res.x); // step size
+	const float s_phi = (float) (M_PI) / float(res.y); // step size
 
 	float max_albedo = 0.0f;
 
-	for (unsigned int t_in = 0; t_in < res.x; ++t_in)
-	{
+	for (unsigned int t_in = 0; t_in < res.x; ++t_in) {
 		float sum_theta = 0.0f;
 		float sintheta0_sqd = 0.0f;
 
-		for (unsigned int t_out = 0; t_out < res.x; ++t_out)
-		{
+		for (unsigned int t_out = 0; t_out < res.x; ++t_out) {
 			const float sintheta1 = sinf(float(t_out + 1) * s_theta);
 			const float sintheta1_sqd = sintheta1 * sintheta1;
 
@@ -3424,19 +3429,18 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 			// Build CDF for phi
 			float sum_phi = 0.0f;
 
-			for (unsigned int p_out = 0; p_out < res.y; ++p_out)
-			{
+			for (unsigned int p_out = 0; p_out < res.y; ++p_out) {
 				const unsigned int idx = offset_phi + p_out;
 				const unsigned int idx2 = offset_phi2 + p_out;
 
 				float value = 0.0f;
 
-				if (num_channels == 3)
-				{
-					value = fmax(fmaxf(src_data[3 * idx + 0], src_data[3 * idx + 1]), fmaxf(src_data[3 * idx + 2], 0.0f))
-						+ fmax(fmaxf(src_data[3 * idx2 + 0], src_data[3 * idx2 + 1]), fmaxf(src_data[3 * idx2 + 2], 0.0f));
-				}
-				else /* num_channels == 1 */
+				if (num_channels == 3) {
+					value = fmax(fmaxf(src_data[3 * idx + 0], src_data[3 * idx + 1]),
+					             fmaxf(src_data[3 * idx + 2], 0.0f))
+					        + fmax(fmaxf(src_data[3 * idx2 + 0], src_data[3 * idx2 + 1]),
+					               fmaxf(src_data[3 * idx2 + 2], 0.0f));
+				} else /* num_channels == 1 */
 				{
 					value = fmaxf(src_data[idx], 0.0f) + fmaxf(src_data[idx2], 0.0f);
 				}
@@ -3447,8 +3451,7 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 			}
 
 			// Normalize CDF for phi.
-			for (unsigned int p_out = 0; p_out < res.y; ++p_out)
-			{
+			for (unsigned int p_out = 0; p_out < res.y; ++p_out) {
 				const unsigned int idx = offset_phi + p_out;
 
 				sample_data_phi[idx] = sample_data_phi[idx] / sum_phi;
@@ -3459,16 +3462,14 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 			sample_data_theta[t_in * res.x + t_out] = sum_theta;
 		}
 
-		if (sum_theta > max_albedo)
-		{
+		if (sum_theta > max_albedo) {
 			max_albedo = sum_theta;
 		}
 
 		albedo_data[t_in] = sum_theta;
 
 		// normalize CDF for theta
-		for (unsigned int t_out = 0; t_out < res.x; ++t_out)
-		{
+		for (unsigned int t_out = 0; t_out < res.x; ++t_out) {
 			const unsigned int idx = t_in * res.x + t_out;
 
 			sample_data_theta[idx] = sample_data_theta[idx] / sum_theta;
@@ -3484,8 +3485,8 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 	CU_CHECK(cuMemcpyHtoD(d_albedo_obj, albedo_data, res.x * sizeof(float)));
 	delete[] albedo_data; // Copy is synchronous so this can be deleted now.
 
-	mbsdf.sample_data[part] = reinterpret_cast<float*>(d_sample_obj);
-	mbsdf.albedo_data[part] = reinterpret_cast<float*>(d_albedo_obj);
+	mbsdf.sample_data[part] = reinterpret_cast<float *>(d_sample_obj);
+	mbsdf.albedo_data[part] = reinterpret_cast<float *>(d_albedo_obj);
 	mbsdf.max_albedo[part] = max_albedo;
 
 	// Prepare evaluation data:
@@ -3494,29 +3495,23 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 	unsigned int lookup_channels = (num_channels == 3) ? 4 : 1;
 
 	// Make lookup data symmetric
-	float* lookup_data = new float[lookup_channels * res.y * res.x * res.x];
+	float *lookup_data = new float[lookup_channels * res.y * res.x * res.x];
 
-	for (unsigned int t_in = 0; t_in < res.x; ++t_in)
-	{
-		for (unsigned int t_out = 0; t_out < res.x; ++t_out)
-		{
+	for (unsigned int t_in = 0; t_in < res.x; ++t_in) {
+		for (unsigned int t_out = 0; t_out < res.x; ++t_out) {
 			const unsigned int offset_phi = (t_in * res.x + t_out) * res.y;
 			const unsigned int offset_phi2 = (t_out * res.x + t_in) * res.y;
 
-			for (unsigned int p_out = 0; p_out < res.y; ++p_out)
-			{
+			for (unsigned int p_out = 0; p_out < res.y; ++p_out) {
 				const unsigned int idx = offset_phi + p_out;
 				const unsigned int idx2 = offset_phi2 + p_out;
 
-				if (num_channels == 3)
-				{
+				if (num_channels == 3) {
 					lookup_data[4 * idx + 0] = (src_data[3 * idx + 0] + src_data[3 * idx2 + 0]) * 0.5f;
 					lookup_data[4 * idx + 1] = (src_data[3 * idx + 1] + src_data[3 * idx2 + 1]) * 0.5f;
 					lookup_data[4 * idx + 2] = (src_data[3 * idx + 2] + src_data[3 * idx2 + 2]) * 0.5f;
 					lookup_data[4 * idx + 3] = 1.0f;
-				}
-				else
-				{
+				} else {
 					lookup_data[idx] = (src_data[idx] + src_data[idx2]) * 0.5f;
 				}
 			}
@@ -3524,7 +3519,7 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 	}
 
 	// Allocate a 3D array on the GPU (phi_delta x theta_out x theta_in)
-	CUDA_ARRAY3D_DESCRIPTOR& descArray3D = host.m_descArray3D[part];
+	CUDA_ARRAY3D_DESCRIPTOR &descArray3D = host.m_descArray3D[part];
 
 	descArray3D = {};
 
@@ -3537,9 +3532,9 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 
 	// Track the current texture allocation size on this device.
 	host.m_sizeBytesArray[part] += descArray3D.Width *
-		descArray3D.Height *
-		descArray3D.Depth *
-		descArray3D.NumChannels * sizeof(float);
+			descArray3D.Height *
+			descArray3D.Depth *
+			descArray3D.NumChannels * sizeof(float);
 	m_sizeMemoryTextureArrays += host.m_sizeBytesArray[part];
 
 	CU_CHECK(cuArray3DCreate(&host.m_d_array[part], &descArray3D));
@@ -3563,14 +3558,14 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 
 	delete[] lookup_data;
 
-	CUDA_RESOURCE_DESC& resourceDesc = host.m_resourceDescription[part];
+	CUDA_RESOURCE_DESC &resourceDesc = host.m_resourceDescription[part];
 
 	resourceDesc = {};
 
 	resourceDesc.resType = CU_RESOURCE_TYPE_ARRAY;
 	resourceDesc.res.array.hArray = host.m_d_array[part];
 
-	CUDA_TEXTURE_DESC& textureDesc = host.m_textureDescription; // Same settings for both parts.
+	CUDA_TEXTURE_DESC &textureDesc = host.m_textureDescription; // Same settings for both parts.
 
 	textureDesc = {};
 
@@ -3601,15 +3596,16 @@ bool Device::prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
 }
 
 
-MbsdfHost* Device::prepareMBSDF(mi::neuraylib::ITransaction* transaction,
-	const mi::neuraylib::ITarget_code* code,
-	const int index)
+MbsdfHost *Device::prepareMBSDF(mi::neuraylib::ITransaction *transaction,
+                                const mi::neuraylib::ITarget_code *code,
+                                const int index)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
 
 	// Get access to the MBSDF data by the texture database name from the target code.
-	mi::base::Handle<const mi::neuraylib::IBsdf_measurement> bsdf_measurement(transaction->access<mi::neuraylib::IBsdf_measurement>(code->get_bsdf_measurement(index)));
+	mi::base::Handle<const mi::neuraylib::IBsdf_measurement> bsdf_measurement(
+		transaction->access<mi::neuraylib::IBsdf_measurement>(code->get_bsdf_measurement(index)));
 
 	MbsdfHost host;
 	memset(&host, 0, sizeof(MbsdfHost));
@@ -3617,14 +3613,12 @@ MbsdfHost* Device::prepareMBSDF(mi::neuraylib::ITransaction* transaction,
 	host.m_owner = this; // Track the device which owns the CUarray data.
 
 	// Handle reflection part.
-	if (!prepare_mbsdfs_part(mi::neuraylib::MBSDF_DATA_REFLECTION, host, bsdf_measurement.get()))
-	{
+	if (!prepare_mbsdfs_part(mi::neuraylib::MBSDF_DATA_REFLECTION, host, bsdf_measurement.get())) {
 		return nullptr;
 	}
 
 	// Handle transmission part.
-	if (!prepare_mbsdfs_part(mi::neuraylib::MBSDF_DATA_TRANSMISSION, host, bsdf_measurement.get()))
-	{
+	if (!prepare_mbsdfs_part(mi::neuraylib::MBSDF_DATA_TRANSMISSION, host, bsdf_measurement.get())) {
 		return nullptr;
 	}
 
@@ -3641,20 +3635,21 @@ MbsdfHost* Device::prepareMBSDF(mi::neuraylib::ITransaction* transaction,
 }
 
 
-void Device::shareMBSDF(const MbsdfHost* shared)
+void Device::shareMBSDF(const MbsdfHost *shared)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
 
-	MbsdfHost host = *shared;  // Copy everything from the shared MbsdfHost.
+	MbsdfHost host = *shared; // Copy everything from the shared MbsdfHost.
 
-	for (int part = 0; part < 2; ++part)
-	{
+	for (int part = 0; part < 2; ++part) {
 		host.m_mbsdf.eval_data[part] = 0; // Texture objects will be generated per-device.
 
 		if (host.m_d_array[part]) // If there is CUarray data for the part, create a texture object from that.
 		{
-			CU_CHECK(cuTexObjectCreate(&host.m_mbsdf.eval_data[part], &host.m_resourceDescription[part], &host.m_textureDescription, nullptr));
+			CU_CHECK(
+				cuTexObjectCreate(&host.m_mbsdf.eval_data[part], &host.m_resourceDescription[part], &host.
+					m_textureDescription, nullptr));
 		}
 	}
 
@@ -3667,22 +3662,23 @@ void Device::shareMBSDF(const MbsdfHost* shared)
 }
 
 
-LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* transaction,
-	const mi::neuraylib::ITarget_code* code,
-	int index)
+LightprofileHost *Device::prepareLightprofile(mi::neuraylib::ITransaction *transaction,
+                                              const mi::neuraylib::ITarget_code *code,
+                                              int index)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
 
 	// Get access to the light_profile data.
-	mi::base::Handle<const mi::neuraylib::ILightprofile> lprof_nr(transaction->access<mi::neuraylib::ILightprofile>(code->get_light_profile(index)));
+	mi::base::Handle<const mi::neuraylib::ILightprofile> lprof_nr(
+		transaction->access<mi::neuraylib::ILightprofile>(code->get_light_profile(index)));
 
-	uint2  res = make_uint2(lprof_nr->get_resolution_theta(), lprof_nr->get_resolution_phi());
+	uint2 res = make_uint2(lprof_nr->get_resolution_theta(), lprof_nr->get_resolution_phi());
 	float2 start = make_float2(lprof_nr->get_theta(0), lprof_nr->get_phi(0));
 	float2 delta = make_float2(lprof_nr->get_theta(1) - start.x, lprof_nr->get_phi(1) - start.y);
 
 	// phi-mayor: [res.x x res.y]
-	const float* data = lprof_nr->get_data();
+	const float *data = lprof_nr->get_data();
 
 	// Compute total power.
 	// Compute inverse CDF data for sampling.
@@ -3692,7 +3688,7 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 	// Rest (rex.x-1) * (res.y-1) for the individual cdfs for sampling phi (after theta).
 	size_t cdf_data_size = (res.x - 1) + (res.x - 1) * (res.y - 1);
 
-	float* cdf_data = new float[cdf_data_size];
+	float *cdf_data = new float[cdf_data_size];
 
 	float debug_total_area = 0.0f;
 	float sum_theta = 0.0f;
@@ -3700,8 +3696,7 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 
 	float cos_theta0 = cosf(start.x);
 
-	for (unsigned int t = 0; t < res.x - 1; ++t)
-	{
+	for (unsigned int t = 0; t < res.x - 1; ++t) {
 		const float cos_theta1 = cosf(start.x + float(t + 1) * delta.x);
 
 		// Area of the patch (grid cell)
@@ -3710,18 +3705,17 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 		cos_theta0 = cos_theta1;
 
 		// Build CDF for phi.
-		float* cdf_data_phi = cdf_data + (res.x - 1) + t * (res.y - 1);
+		float *cdf_data_phi = cdf_data + (res.x - 1) + t * (res.y - 1);
 
 		float sum_phi = 0.0f;
-		for (unsigned int p = 0; p < res.y - 1; ++p)
-		{
+		for (unsigned int p = 0; p < res.y - 1; ++p) {
 			// The probability to select a patch corresponds to the value times area.
 			// The value of a cell is the average of the corners.
 			// Omit the *1/4 as we normalize in the end.
 			float value = data[p * res.x + t]
-				+ data[p * res.x + t + 1]
-				+ data[(p + 1) * res.x + t]
-				+ data[(p + 1) * res.x + t + 1];
+			              + data[p * res.x + t + 1]
+			              + data[(p + 1) * res.x + t]
+			              + data[(p + 1) * res.x + t + 1];
 
 			sum_phi += value * mu;
 			cdf_data_phi[p] = sum_phi;
@@ -3730,8 +3724,7 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 		}
 
 		// Normalize CDF for phi.
-		for (unsigned int p = 0; p < res.y - 2; ++p)
-		{
+		for (unsigned int p = 0; p < res.y - 2; ++p) {
 			cdf_data_phi[p] = (0.0f < sum_phi) ? (cdf_data_phi[p] / sum_phi) : 0.0f;
 		}
 
@@ -3745,8 +3738,7 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 	total_power = sum_theta * 0.25f * delta.y;
 
 	// Normalize CDF for theta.
-	for (unsigned int t = 0; t < res.x - 2; ++t)
-	{
+	for (unsigned int t = 0; t < res.x - 2; ++t) {
 		cdf_data[t] = (0.0f < sum_theta) ? (cdf_data[t] / sum_theta) : cdf_data[t];
 	}
 
@@ -3765,7 +3757,7 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 	memset(&host, 0, sizeof(LightprofileHost));
 
 	// Allocate a 3D array on the GPU (phi_delta x theta_out x theta_in)
-	CUDA_ARRAY3D_DESCRIPTOR& descArray3D = host.m_descArray3D;
+	CUDA_ARRAY3D_DESCRIPTOR &descArray3D = host.m_descArray3D;
 
 	descArray3D = {};
 
@@ -3796,14 +3788,14 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 	CU_CHECK(cuMemcpy3D(&params));
 
 	// Create filtered texture object
-	CUDA_RESOURCE_DESC& resourceDesc = host.m_resourceDescription;
+	CUDA_RESOURCE_DESC &resourceDesc = host.m_resourceDescription;
 
 	resourceDesc = {};
 
 	resourceDesc.resType = CU_RESOURCE_TYPE_ARRAY;
 	resourceDesc.res.array.hArray = host.m_d_array;
 
-	CUDA_TEXTURE_DESC& textureDesc = host.m_textureDescription;
+	CUDA_TEXTURE_DESC &textureDesc = host.m_textureDescription;
 
 	textureDesc = {};
 
@@ -3831,12 +3823,12 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 	double multiplier = lprof_nr->get_candela_multiplier();
 
 	host.m_profile = Lightprofile(tex_obj,
-		reinterpret_cast<float*>(d_cdf_data_obj),
-		res,
-		start,
-		delta,
-		float(multiplier),
-		float(total_power * multiplier));
+	                              reinterpret_cast<float *>(d_cdf_data_obj),
+	                              res,
+	                              start,
+	                              delta,
+	                              float(multiplier),
+	                              float(total_power * multiplier));
 
 	const int indexCache = static_cast<int>(m_lightprofileHosts.size());
 
@@ -3849,18 +3841,19 @@ LightprofileHost* Device::prepareLightprofile(mi::neuraylib::ITransaction* trans
 }
 
 
-void Device::shareLightprofile(const LightprofileHost* shared)
+void Device::shareLightprofile(const LightprofileHost *shared)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
 
-	LightprofileHost host = *shared;  // Copy everything from the shared MbsdfHost.
+	LightprofileHost host = *shared; // Copy everything from the shared MbsdfHost.
 
 	host.m_profile.eval_data = 0; // Texture objects will be generated per-device.
 
-	if (host.m_d_array)
-	{
-		CU_CHECK(cuTexObjectCreate(&host.m_profile.eval_data, &host.m_resourceDescription, &host.m_textureDescription, nullptr));
+	if (host.m_d_array) {
+		CU_CHECK(
+			cuTexObjectCreate(&host.m_profile.eval_data, &host.m_resourceDescription, &host.m_textureDescription,
+				nullptr));
 	}
 
 	const int indexCache = static_cast<int>(m_lightprofileHosts.size());
@@ -3874,8 +3867,7 @@ static int numberOfBits(unsigned int num)
 {
 	int bit = 0;
 
-	while (num)
-	{
+	while (num) {
 		num &= ~(1u << bit);
 		++bit;
 	}
@@ -3884,21 +3876,19 @@ static int numberOfBits(unsigned int num)
 }
 
 
-void Device::initTextureHandler(std::vector<std::unique_ptr<MaterialMDL>>& materialsMDL)
+void Device::initTextureHandler(std::vector<std::unique_ptr<MaterialMDL> > &materialsMDL)
 {
 	activateContext();
 	synchronizeStream(); // PERF Required here?
 
 	const size_t numMaterialReferences = materialsMDL.size();
 
-	for (const auto& material : materialsMDL)
-	{
+	for (const auto &material: materialsMDL) {
 		MaterialDefinitionMDL materialDefinition = {}; // Set everything to zero.
 
 		const size_t sizeArgumentBlock = material->getArgumentBlockSize();
 		// If the material has an argument block, allocate and upload it.
-		if (0 < sizeArgumentBlock)
-		{
+		if (0 < sizeArgumentBlock) {
 			materialDefinition.arg_block = memAlloc(sizeArgumentBlock, 16);
 
 			CU_CHECK(cuMemcpyHtoD(materialDefinition.arg_block, material->getArgumentBlockData(), sizeArgumentBlock));
@@ -3911,54 +3901,60 @@ void Device::initTextureHandler(std::vector<std::unique_ptr<MaterialMDL>>& mater
 
 		Texture_handler handler = {};
 
-		if (!material->m_indicesToTextures.empty())
-		{
+		if (!material->m_indicesToTextures.empty()) {
 			std::vector<TextureMDL> textures;
 
-			for (int i : material->m_indicesToTextures)
-			{
+			for (int i: material->m_indicesToTextures) {
 				textures.push_back(m_textureMDLHosts[i].m_texture);
 			}
 
 			handler.num_textures = static_cast<unsigned int>(textures.size());
-			handler.textures = reinterpret_cast<TextureMDL*>(memAlloc(sizeof(TextureMDL) * textures.size(), 16));
+			handler.textures = reinterpret_cast<TextureMDL *>(memAlloc(sizeof(TextureMDL) * textures.size(), 16));
 
-			CU_CHECK(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(handler.textures), textures.data(), sizeof(TextureMDL) * textures.size())); // Synchronous to not overwrite the host data in the loop.
+			CU_CHECK(
+				cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(handler.textures),
+					textures.data(),
+					sizeof(TextureMDL) * textures.size())); // Synchronous to not overwrite the host data in the loop.
 		}
 
-		if (!material->m_indicesToMBSDFs.empty())
-		{
+		if (!material->m_indicesToMBSDFs.empty()) {
 			std::vector<Mbsdf> mbsdfs;
 
-			for (int i : material->m_indicesToMBSDFs)
-			{
+			for (int i: material->m_indicesToMBSDFs) {
 				mbsdfs.push_back(m_mbsdfHosts[i].m_mbsdf);
 			}
 
 			handler.num_mbsdfs = static_cast<unsigned int>(mbsdfs.size());
-			handler.mbsdfs = reinterpret_cast<Mbsdf*>(memAlloc(sizeof(Mbsdf) * mbsdfs.size(), 16));
+			handler.mbsdfs = reinterpret_cast<Mbsdf *>(memAlloc(sizeof(Mbsdf) * mbsdfs.size(), 16));
 
-			CU_CHECK(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(handler.mbsdfs), mbsdfs.data(), sizeof(Mbsdf) * mbsdfs.size())); // Synchronous to not overwrite the host data in the loop.
+			CU_CHECK(
+				cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(handler.mbsdfs),
+					mbsdfs.data(), sizeof(Mbsdf) * mbsdfs.size()
+				)); // Synchronous to not overwrite the host data in the loop.
 		}
 
-		if (!material->m_indicesToLightprofiles.empty())
-		{
+		if (!material->m_indicesToLightprofiles.empty()) {
 			std::vector<Lightprofile> profiles;
 
-			for (int i : material->m_indicesToLightprofiles)
-			{
+			for (int i: material->m_indicesToLightprofiles) {
 				profiles.push_back(m_lightprofileHosts[i].m_profile);
 			}
 
 			handler.num_lightprofiles = static_cast<unsigned int>(profiles.size());
-			handler.lightprofiles = reinterpret_cast<Lightprofile*>(memAlloc(sizeof(Lightprofile) * profiles.size(), 16));
+			handler.lightprofiles = reinterpret_cast<Lightprofile *>(memAlloc(
+				sizeof(Lightprofile) * profiles.size(), 16));
 
-			CU_CHECK(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(handler.lightprofiles), profiles.data(), sizeof(Lightprofile) * profiles.size())); // Synchronous to not overwrite the host data in the loop.
+			CU_CHECK(
+				cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(handler.lightprofiles),
+					profiles.data(),
+					sizeof(Lightprofile) * profiles.size())); // Synchronous to not overwrite the host data in the loop.
 		}
 
-		materialDefinition.texture_handler = reinterpret_cast<Texture_handler*>(memAlloc(sizeof(Texture_handler), 16));
+		materialDefinition.texture_handler = reinterpret_cast<Texture_handler *>(memAlloc(sizeof(Texture_handler), 16));
 
-		CU_CHECK(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(materialDefinition.texture_handler), &handler, sizeof(Texture_handler)));
+		CU_CHECK(
+			cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(materialDefinition.texture_handler), &handler, sizeof(
+				Texture_handler)));
 
 		// Set the index to the shader cache. This defines which shader configuration is used.
 		// If this indexShader is invalid, the instance with that material will not be put into the rendergraph!
@@ -3968,24 +3964,30 @@ void Device::initTextureHandler(std::vector<std::unique_ptr<MaterialMDL>>& mater
 	}
 
 	// Allocate the material definition device array, one entry per MDL material reference.
-	m_systemData.materialDefinitionsMDL = 0;  // The MDL material parameter argument block, texture handler and index into the shader.
+	m_systemData.materialDefinitionsMDL = nullptr;
+	// The MDL material parameter argument block, texture handler and index into the shader.
 
-	if (!m_materialDefinitions.empty())
-	{
-		m_systemData.materialDefinitionsMDL = reinterpret_cast<MaterialDefinitionMDL*>(memAlloc(sizeof(MaterialDefinitionMDL) * m_materialDefinitions.size(), 16));
+	if (!m_materialDefinitions.empty()) {
+		m_systemData.materialDefinitionsMDL = reinterpret_cast<MaterialDefinitionMDL *>(memAlloc(
+			sizeof(MaterialDefinitionMDL) * m_materialDefinitions.size(), 16));
 
-		CU_CHECK(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(m_systemData.materialDefinitionsMDL), m_materialDefinitions.data(), sizeof(MaterialDefinitionMDL) * m_materialDefinitions.size()));
+		CU_CHECK(
+			cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(m_systemData.materialDefinitionsMDL),
+				m_materialDefinitions.data(),
+				sizeof(MaterialDefinitionMDL) * m_materialDefinitions.size()));
 
 		m_systemData.numMaterials = static_cast<int>(m_materialDefinitions.size());
 	}
 
 	m_systemData.shaderConfigurations = 0;
 
-	if (!m_deviceShaderConfigurations.empty())
-	{
-		m_systemData.shaderConfigurations = reinterpret_cast<DeviceShaderConfiguration*>(memAlloc(sizeof(DeviceShaderConfiguration) * m_deviceShaderConfigurations.size(), 16));
+	if (!m_deviceShaderConfigurations.empty()) {
+		m_systemData.shaderConfigurations = reinterpret_cast<DeviceShaderConfiguration *>(memAlloc(
+			sizeof(DeviceShaderConfiguration) * m_deviceShaderConfigurations.size(), 16));
 
-		CU_CHECK(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(m_systemData.shaderConfigurations), m_deviceShaderConfigurations.data(), sizeof(DeviceShaderConfiguration) * m_deviceShaderConfigurations.size()));
+		CU_CHECK(
+			cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(m_systemData.shaderConfigurations), m_deviceShaderConfigurations.
+				data(), sizeof(DeviceShaderConfiguration) * m_deviceShaderConfigurations.size()));
 
 		m_systemData.numBitsShaders = numberOfBits(static_cast<unsigned int>(m_deviceShaderConfigurations.size()));
 	}

@@ -69,89 +69,89 @@
 #define MATERIAL_STACK_SIZE 4
 
 // This is the minimal size of the struct. float4 for vectorized access was slower due to more registers used.
-struct MaterialStack
-{
-  float3 ior;     // index of refraction
-  float3 sigma_a; // absorption coefficient
-  float3 sigma_s; // scattering coefficient
-  float  bias;    // directional bias
+struct MaterialStack {
+    float3 ior; // index of refraction
+    float3 sigma_a; // absorption coefficient
+    float3 sigma_s; // scattering coefficient
+    float bias; // directional bias
 };
 
 
 // Note that the fields are ordered by CUDA alignment restrictions.
-struct PerRayData
-{
-  // 16-byte alignment
-  
-  // 8-byte alignment
-  
-  // 4-byte alignment
-  float3 pos;         // Current surface hit point or volume sample point, in world space
-  float  distance;    // Distance from the ray origin to the current position, in world space. Needed for absorption of nested materials.
-  
-  float3 wo;          // Outgoing direction, to observer, in world space.
-  float3 wi;          // Incoming direction, to light, in world space.
+struct PerRayData {
+    // 16-byte alignment
 
-  float3 radiance;    // Radiance along the current path segment.
-  float  pdf;         // The last BSDF sample's pdf, tracked for multiple importance sampling.
-  
-  float3 throughput;  // The current path throughput. Starts white and gets modulated with bsdf_over_pdf with each sample.
-  
-  float3 lastRenderThroughput; // Throughput for accumulating the queried rendering radiance at the end of rendering path.
+    // 8-byte alignment
 
-  int    depth;
-  float  areaSpread;    // This is the *SQARE ROOT* of a(x1...xn) in Eq (3)
-  float  areaThreshold; // This is the *SQARE ROOT* of (c * a0) in Eq (4).
-                        // Once areaSpread > areaThreshold we terminate the ray and query from NRC
+    // 4-byte alignment
+    float3 pos; // Current surface hit point or volume sample point, in world space
+    float distance;
+    // Distance from the ray origin to the current position, in world space. Needed for absorption of nested materials.
 
-  unsigned int flags; // Bitfield with flags. See FLAG_* defines above for its contents.
+    float3 wo; // Outgoing direction, to observer, in world space.
+    float3 wi; // Incoming direction, to light, in world space.
 
-  float3 sigma_t;     // Extinction coefficient in a homogeneous medium.
-  int    walk;        // Number of random walk steps done through scattering volume.
-  float3 pdfVolume;   // Volume extinction sample pdf. Used to adjust the throughput along the random walk.
+    float3 radiance; // Radiance along the current path segment.
+    float pdf; // The last BSDF sample's pdf, tracked for multiple importance sampling.
 
-  mi::neuraylib::Bsdf_event_type eventType; // The type of events created by BSDF importance sampling.
+    float3 throughput;
+    // The current path throughput. Starts white and gets modulated with bsdf_over_pdf with each sample.
 
-  unsigned int seed;  // Random number generator input.
+    float3 lastRenderThroughput;
+    // Throughput for accumulating the queried rendering radiance at the end of rendering path.
 
-  // Needed for accumulating direct emission in __closesthit__radiance and environment map miss shaders.
-  // Remember that we defer the BSDF-sampling of MIS to the next hit(/env miss).
-  // Initialized to nrc::TRAIN_RECORD_INDEX_NONE in nrcIntegrator
-  int lastTrainRecordIndex;
+    int depth;
+    float areaSpread; // This is the *SQARE ROOT* of a(x1...xn) in Eq (3)
+    float areaThreshold; // This is the *SQARE ROOT* of (c * a0) in Eq (4).
+    // Once areaSpread > areaThreshold we terminate the ray and query from NRC
 
-  int pixelIndex;
-  int tileIndex;
-  
-  // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
-  int           idxStack; 
-  MaterialStack stack[MATERIAL_STACK_SIZE];
+    unsigned int flags; // Bitfield with flags. See FLAG_* defines above for its contents.
+
+    float3 sigma_t; // Extinction coefficient in a homogeneous medium.
+    int walk; // Number of random walk steps done through scattering volume.
+    float3 pdfVolume; // Volume extinction sample pdf. Used to adjust the throughput along the random walk.
+
+    mi::neuraylib::Bsdf_event_type eventType; // The type of events created by BSDF importance sampling.
+
+    unsigned int seed; // Random number generator input.
+
+    // Needed for accumulating direct emission in __closesthit__radiance and environment map miss shaders.
+    // Remember that we defer the BSDF-sampling of MIS to the next hit(/env miss).
+    // Initialized to nrc::TRAIN_RECORD_INDEX_NONE in nrcIntegrator
+    int lastTrainRecordIndex;
+
+    int pixelIndex;
+    int tileIndex;
+
+    // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
+    int idxStack;
+    MaterialStack stack[MATERIAL_STACK_SIZE];
 };
 
 
 // Alias the PerRayData pointer and an uint2 for the payload split and merge operations. This generates only move instructions.
-typedef union
-{
-  PerRayData* ptr;
-  uint2       dat;
+typedef union {
+    PerRayData *ptr;
+    uint2 dat;
 } Payload;
 
-__forceinline__ __device__ uint2 splitPointer(PerRayData* ptr)
+__forceinline__ __device__ uint2 splitPointer(PerRayData *ptr)
 {
-  Payload payload;
+    Payload payload;
 
-  payload.ptr = ptr;
+    payload.ptr = ptr;
 
-  return payload.dat;
+    return payload.dat;
 }
 
-__forceinline__ __device__ PerRayData* mergePointer(unsigned int p0, unsigned int p1)
+__forceinline__ __device__ PerRayData *mergePointer(unsigned int p0, unsigned int p1)
 {
-  Payload payload;
+    Payload payload;
 
-  payload.dat.x = p0;
-  payload.dat.y = p1;
+    payload.dat.x = p0;
+    payload.dat.y = p1;
 
-  return payload.ptr;
+    return payload.ptr;
 }
 
 #endif // PER_RAY_DATA_H

@@ -33,20 +33,22 @@
 
 #include <cuda.h>
 
-struct CompositorData
-{
-  // 8 byte alignment
-  CUdeviceptr outputBuffer;
-  CUdeviceptr tileBuffer;
+struct CompositorData {
+    // 8 byte alignment
+    CUdeviceptr outputBuffer;
+    CUdeviceptr tileBuffer;
 
-  int2 resolution;  // The actual rendering resolution. Independent from the launch dimensions for some rendering strategies.
-  int2 tileSize;    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
-  int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
+    int2 resolution;
+    // The actual rendering resolution. Independent from the launch dimensions for some rendering strategies.
+    int2 tileSize; // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
+    int2 tileShift;
+    // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant.
 
-  // 4 byte alignment
-  int launchWidth;  // The orignal launch width. Needed to calculate the source data index. The compositor launch gridDim.x * blockDim.x might be different!
-  int deviceCount;  // Number of devices doing the rendering.
-  int deviceIndex;  // Device index to be able to distinguish the individual devices in a multi-GPU environment.
+    // 4 byte alignment
+    int launchWidth;
+    // The orignal launch width. Needed to calculate the source data index. The compositor launch gridDim.x * blockDim.x might be different!
+    int deviceCount; // Number of devices doing the rendering.
+    int deviceIndex; // Device index to be able to distinguish the individual devices in a multi-GPU environment.
 };
 
 #endif // COMPOSITOR_DATA_H

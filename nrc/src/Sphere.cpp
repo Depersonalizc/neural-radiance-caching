@@ -31,76 +31,72 @@
 
 #include "shaders/vector_math.h"
 
-namespace sg
-{
-
-  void Triangles::createSphere(const unsigned int tessU, const unsigned int tessV, const float radius, const float maxTheta)
-  {
-    MY_ASSERT(3 <= tessU && 3 <= tessV);
-
-    m_attributes.clear();
-    m_indices.clear();
-
-    m_attributes.reserve((tessU + 1) * tessV);
-    m_indices.reserve(6 * tessU * (tessV - 1));
-
-    float phi_step = 2.0f * M_PIf / (float) tessU;
-    float theta_step = maxTheta / (float) (tessV - 1);
-
-    // Latitudinal rings.
-    // Starting at the south pole going upwards on the y-axis.
-    for (unsigned int latitude = 0; latitude < tessV; ++latitude) // theta angle
+namespace sg {
+    void Triangles::createSphere(const unsigned int tessU, const unsigned int tessV, const float radius,
+                                 const float maxTheta)
     {
-      float theta = (float) latitude * theta_step;
-      float sinTheta = sinf(theta);
-      float cosTheta = cosf(theta);
+        MY_ASSERT(3 <= tessU && 3 <= tessV);
 
-      float texv = (float) latitude / (float) (tessV - 1); // Range [0.0f, 1.0f]
+        m_attributes.clear();
+        m_indices.clear();
 
-      // Generate vertices along the latitudinal rings.
-      // On each latitude there are tessU + 1 vertices.
-      // The last one and the first one are on identical positions, but have different texture coordinates!
-      // FIXME Note that each second triangle connected to the two poles has zero area!
-      for (unsigned int longitude = 0; longitude <= tessU; ++longitude) // phi angle
-      {
-        float phi = (float) longitude * phi_step;
-        float sinPhi = sinf(phi);
-        float cosPhi = cosf(phi);
+        m_attributes.reserve((tessU + 1) * tessV);
+        m_indices.reserve(6 * tessU * (tessV - 1));
 
-        float texu = (float) longitude / (float) tessU; // Range [0.0f, 1.0f]
+        float phi_step = 2.0f * M_PIf / (float) tessU;
+        float theta_step = maxTheta / (float) (tessV - 1);
 
-        // Unit sphere coordinates are the normals.
-        float3 normal = make_float3(cosPhi * sinTheta,
-                                    -cosTheta,           // -y to start at the south pole.
-                                    -sinPhi * sinTheta);
-        TriangleAttributes attrib;
+        // Latitudinal rings.
+        // Starting at the south pole going upwards on the y-axis.
+        for (unsigned int latitude = 0; latitude < tessV; ++latitude) // theta angle
+        {
+            float theta = (float) latitude * theta_step;
+            float sinTheta = sinf(theta);
+            float cosTheta = cosf(theta);
 
-        attrib.vertex   = normal * radius;
-        attrib.tangent  = make_float3(-sinPhi, 0.0f, -cosPhi);
-        attrib.normal   = normal;
-        attrib.texcoord = make_float3(texu, texv, 0.0f);
+            float texv = (float) latitude / (float) (tessV - 1); // Range [0.0f, 1.0f]
 
-        m_attributes.push_back(attrib);
-      }
+            // Generate vertices along the latitudinal rings.
+            // On each latitude there are tessU + 1 vertices.
+            // The last one and the first one are on identical positions, but have different texture coordinates!
+            // FIXME Note that each second triangle connected to the two poles has zero area!
+            for (unsigned int longitude = 0; longitude <= tessU; ++longitude) // phi angle
+            {
+                float phi = (float) longitude * phi_step;
+                float sinPhi = sinf(phi);
+                float cosPhi = cosf(phi);
+
+                float texu = (float) longitude / (float) tessU; // Range [0.0f, 1.0f]
+
+                // Unit sphere coordinates are the normals.
+                float3 normal = make_float3(cosPhi * sinTheta,
+                                            -cosTheta, // -y to start at the south pole.
+                                            -sinPhi * sinTheta);
+                TriangleAttributes attrib;
+
+                attrib.vertex = normal * radius;
+                attrib.tangent = make_float3(-sinPhi, 0.0f, -cosPhi);
+                attrib.normal = normal;
+                attrib.texcoord = make_float3(texu, texv, 0.0f);
+
+                m_attributes.push_back(attrib);
+            }
+        }
+
+        // We have generated tessU + 1 vertices per latitude.
+        const unsigned int columns = tessU + 1;
+
+        // Calculate m_indices.
+        for (unsigned int latitude = 0; latitude < tessV - 1; ++latitude) {
+            for (unsigned int longitude = 0; longitude < tessU; ++longitude) {
+                m_indices.push_back(latitude * columns + longitude); // lower left
+                m_indices.push_back(latitude * columns + longitude + 1); // lower right
+                m_indices.push_back((latitude + 1) * columns + longitude + 1); // upper right
+
+                m_indices.push_back((latitude + 1) * columns + longitude + 1); // upper right
+                m_indices.push_back((latitude + 1) * columns + longitude); // upper left
+                m_indices.push_back(latitude * columns + longitude); // lower left
+            }
+        }
     }
-
-    // We have generated tessU + 1 vertices per latitude.
-    const unsigned int columns = tessU + 1;
-
-    // Calculate m_indices.
-    for (unsigned int latitude = 0; latitude < tessV - 1; ++latitude)
-    {
-      for (unsigned int longitude = 0; longitude < tessU; ++longitude)
-      {
-        m_indices.push_back( latitude      * columns + longitude);     // lower left
-        m_indices.push_back( latitude      * columns + longitude + 1); // lower right
-        m_indices.push_back((latitude + 1) * columns + longitude + 1); // upper right 
-
-        m_indices.push_back((latitude + 1) * columns + longitude + 1); // upper right 
-        m_indices.push_back((latitude + 1) * columns + longitude);     // upper left
-        m_indices.push_back( latitude      * columns + longitude);     // lower left
-      }
-    }
-  }
-
 } // namespace sg

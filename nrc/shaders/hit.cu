@@ -44,13 +44,13 @@
 #include "curve.h"
 #include "curve_attributes.h"
 
- // Contained in per_ray_data.h:
- //#include <mi/neuraylib/target_code_types.h>
+// Contained in per_ray_data.h:
+//#include <mi/neuraylib/target_code_types.h>
 
- // The MDL texture runtime functions: texture, MBSDF, light profile, and scene data (dummy) lookup functions.
- // These are declared extern and can only appear in one module inside the pipeline or there will be OptiX compilation errors.
- // Means all functions potentially accessing any of these MDL runtime functions must be implemented in this module.
- // That's the reason why the arbitrary mesh light sampling routine is here and not in light_sample.cu
+// The MDL texture runtime functions: texture, MBSDF, light profile, and scene data (dummy) lookup functions.
+// These are declared extern and can only appear in one module inside the pipeline or there will be OptiX compilation errors.
+// Means all functions potentially accessing any of these MDL runtime functions must be implemented in this module.
+// That's the reason why the arbitrary mesh light sampling routine is here and not in light_sample.cu
 #define TEX_SUPPORT_NO_VTABLES
 #define TEX_SUPPORT_NO_DUMMY_SCENEDATA
 #include "texture_lookup.h"
@@ -59,20 +59,19 @@
 // It only needs this Shading_state_materialy structure without derivatives support.
 using Mdl_state = mi::neuraylib::Shading_state_material;
 
-using BSDFSampleData    = mi::neuraylib::Bsdf_sample_data;
-using BSDFEvaluateData  = mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE>;
+using BSDFSampleData = mi::neuraylib::Bsdf_sample_data;
+using BSDFEvaluateData = mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE>;
 using BSDFAuxiliaryData = mi::neuraylib::Bsdf_auxiliary_data<mi::neuraylib::DF_HSM_NONE>;
 
 using EDFEvaluateData = mi::neuraylib::Edf_evaluate_data<mi::neuraylib::DF_HSM_NONE>;
 
-static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE 
-                                           | mi::neuraylib::BSDF_EVENT_GLOSSY;
+static constexpr auto BSDF_EVENT_NON_DIRAC = mi::neuraylib::BSDF_EVENT_DIFFUSE
+                                             | mi::neuraylib::BSDF_EVENT_GLOSSY;
 
 extern "C" __constant__ SystemData sysData;
 
 // Helpers
 namespace {
-
 #define SANITY_CHK 0
 
 #if SANITY_CHK
@@ -80,352 +79,351 @@ namespace {
 [[maybe_unused]] __forceinline__ __device__ bool allZero(const float3& v) { return v.x == 0.f && v.y == 0.f && v.z == 0.f; }
 #endif
 
-template<typename T>
-__forceinline__ __device__ T safeDiv(T a, T b) { return a / (b + static_cast<T>(DENOMINATOR_EPSILON)); }
+    template<typename T>
+    __forceinline__ __device__ T safeDiv(T a, T b) { return a / (b + static_cast<T>(DENOMINATOR_EPSILON)); }
 
-__forceinline__ __device__ Mdl_state buildMDLState(const GeometryInstanceData &theData)
-{
-    // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
-    
-    const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
+    __forceinline__ __device__ Mdl_state buildMDLState(const GeometryInstanceData &theData)
+    {
+        // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
 
-    // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
-    const uint3* indices = reinterpret_cast<uint3*>(theData.indices);
-    const uint3  tri = indices[thePrimitiveIndex];
+        const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
 
-    const TriangleAttributes* attributes = reinterpret_cast<const TriangleAttributes*>(theData.attributes);
+        // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
+        const uint3 *indices = reinterpret_cast<uint3 *>(theData.indices);
+        const uint3 tri = indices[thePrimitiveIndex];
 
-    const TriangleAttributes& attr0 = attributes[tri.x];
-    const TriangleAttributes& attr1 = attributes[tri.y];
-    const TriangleAttributes& attr2 = attributes[tri.z];
+        const TriangleAttributes *attributes = reinterpret_cast<const TriangleAttributes *>(theData.attributes);
 
-    const float2 theBarycentrics = optixGetTriangleBarycentrics(); // .x = beta, .y = gamma
-    const float  alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;
+        const TriangleAttributes &attr0 = attributes[tri.x];
+        const TriangleAttributes &attr1 = attributes[tri.y];
+        const TriangleAttributes &attr2 = attributes[tri.z];
 
-    float4 objectToWorld[3];
-    float4 worldToObject[3];
+        const float2 theBarycentrics = optixGetTriangleBarycentrics(); // .x = beta, .y = gamma
+        const float alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;
 
-    getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject); // Single instance level transformation list only.
+        float4 objectToWorld[3];
+        float4 worldToObject[3];
 
-    // Object space vertex attributes at the hit point.
-    float3 po = attr0.vertex * alpha + attr1.vertex * theBarycentrics.x + attr2.vertex * theBarycentrics.y;
-    float3 ns = attr0.normal * alpha + attr1.normal * theBarycentrics.x + attr2.normal * theBarycentrics.y;
-    float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
-    float3 tg = attr0.tangent * alpha + attr1.tangent * theBarycentrics.x + attr2.tangent * theBarycentrics.y;
+        getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject);
+        // Single instance level transformation list only.
 
-    // Transform attributes into internal space == world space.
-    po = transformPoint(objectToWorld, po);
-    ns = normalize(transformNormal(worldToObject, ns));
-    ng = normalize(transformNormal(worldToObject, ng));
-    // This is actually the geometry tangent which for the runtime generated geometry objects
-    // (plane, box, sphere, torus) match exactly with the texture space tangent.
-    // FIXME Generate these from the triangle's texture derivatives instead, but that's more expensive.
-    // Mind that tangents and bitangents are transformed as vectors, not normals, because they lie inside the surface's plane.
-    tg = normalize(transformVector(objectToWorld, tg));
-    // Calculate an ortho-normal system respective to the shading normal.
-    // Expanding the TBN tbn(tg, ns) constructor because TBN members can't be used as pointers for the Mdl_state with NUM_TEXTURE_SPACES > 1.
-    float3 bt = normalize(cross(ns, tg));
-    tg = cross(bt, ns); // Now the tangent is orthogonal to the shading normal.
+        // Object space vertex attributes at the hit point.
+        float3 po = attr0.vertex * alpha + attr1.vertex * theBarycentrics.x + attr2.vertex * theBarycentrics.y;
+        float3 ns = attr0.normal * alpha + attr1.normal * theBarycentrics.x + attr2.normal * theBarycentrics.y;
+        float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
+        float3 tg = attr0.tangent * alpha + attr1.tangent * theBarycentrics.x + attr2.tangent * theBarycentrics.y;
 
-    // The Mdl_state holds the texture attributes per texture space in separate arrays.
-    float3 texture_coordinates[NUM_TEXTURE_SPACES];
-    float3 texture_tangents[NUM_TEXTURE_SPACES];
-    float3 texture_bitangents[NUM_TEXTURE_SPACES];
+        // Transform attributes into internal space == world space.
+        po = transformPoint(objectToWorld, po);
+        ns = normalize(transformNormal(worldToObject, ns));
+        ng = normalize(transformNormal(worldToObject, ng));
+        // This is actually the geometry tangent which for the runtime generated geometry objects
+        // (plane, box, sphere, torus) match exactly with the texture space tangent.
+        // FIXME Generate these from the triangle's texture derivatives instead, but that's more expensive.
+        // Mind that tangents and bitangents are transformed as vectors, not normals, because they lie inside the surface's plane.
+        tg = normalize(transformVector(objectToWorld, tg));
+        // Calculate an ortho-normal system respective to the shading normal.
+        // Expanding the TBN tbn(tg, ns) constructor because TBN members can't be used as pointers for the Mdl_state with NUM_TEXTURE_SPACES > 1.
+        float3 bt = normalize(cross(ns, tg));
+        tg = cross(bt, ns); // Now the tangent is orthogonal to the shading normal.
 
-    // NUM_TEXTURE_SPACES is always at least 1.
-    texture_coordinates[0] = attr0.texcoord * alpha + attr1.texcoord * theBarycentrics.x + attr2.texcoord * theBarycentrics.y;
-    texture_bitangents[0] = bt;
-    texture_tangents[0] = tg;
+        // The Mdl_state holds the texture attributes per texture space in separate arrays.
+        float3 texture_coordinates[NUM_TEXTURE_SPACES];
+        float3 texture_tangents[NUM_TEXTURE_SPACES];
+        float3 texture_bitangents[NUM_TEXTURE_SPACES];
+
+        // NUM_TEXTURE_SPACES is always at least 1.
+        texture_coordinates[0] = attr0.texcoord * alpha + attr1.texcoord * theBarycentrics.x + attr2.texcoord *
+                                 theBarycentrics.y;
+        texture_bitangents[0] = bt;
+        texture_tangents[0] = tg;
 
 #if NUM_TEXTURE_SPACES == 2
-    // HACK Simply copy the vertex attributes of texture space 0, simply because there is no second texcood inside TriangleAttributes.
-    texture_coordinates[1] = texture_coordinates[0];
-    texture_bitangents[1] = bt;
-    texture_tangents[1] = tg;
-#endif 
+        // HACK Simply copy the vertex attributes of texture space 0, simply because there is no second texcood inside TriangleAttributes.
+        texture_coordinates[1] = texture_coordinates[0];
+        texture_bitangents[1] = bt;
+        texture_tangents[1] = tg;
+#endif
 
-    // Setup the Mdl_state.
-    Mdl_state state;
+        // Setup the Mdl_state.
+        Mdl_state state;
 
-    // The result of state::normal(). It represents the shading normal as determined by the renderer.
-    // This field will be updated to the result of "geometry.normal" by the material or BSDF init functions,
-    // if requested during code generation with set_option("include_geometry_normal", true) which is the default.
-    state.normal = ns;
+        // The result of state::normal(). It represents the shading normal as determined by the renderer.
+        // This field will be updated to the result of "geometry.normal" by the material or BSDF init functions,
+        // if requested during code generation with set_option("include_geometry_normal", true) which is the default.
+        state.normal = ns;
 
-    // The result of state::geometry_normal().
-    // It represents the geometry normal as determined by the renderer.
-    state.geom_normal = ng;
+        // The result of state::geometry_normal().
+        // It represents the geometry normal as determined by the renderer.
+        state.geom_normal = ng;
 
-    // The result of state::position().
-    // It represents the position where the material should be evaluated.
-    state.position = po;
+        // The result of state::position().
+        // It represents the position where the material should be evaluated.
+        state.position = po;
 
-    // The result of state::animation_time().
-    // It represents the time of the current sample in seconds.
-    state.animation_time = 0.0f; // This renderer implements no support for animations.
+        // The result of state::animation_time().
+        // It represents the time of the current sample in seconds.
+        state.animation_time = 0.0f; // This renderer implements no support for animations.
 
-    // An array containing the results of state::texture_coordinate(i).
-    // The i-th entry represents the texture coordinates of the i-th texture space at the current position.
-    // Only one element here because "num_texture_spaces" option has been set to 1.
-    state.text_coords = texture_coordinates;
+        // An array containing the results of state::texture_coordinate(i).
+        // The i-th entry represents the texture coordinates of the i-th texture space at the current position.
+        // Only one element here because "num_texture_spaces" option has been set to 1.
+        state.text_coords = texture_coordinates;
 
-    // An array containing the results of state::texture_tangent_u(i).
-    // The i-th entry represents the texture tangent vector of the i-th texture space at the
-    // current position, which points in the direction of the projection of the tangent to the
-    // positive u axis of this texture space onto the plane defined by the original surface normal.
-    state.tangent_u = texture_tangents;
+        // An array containing the results of state::texture_tangent_u(i).
+        // The i-th entry represents the texture tangent vector of the i-th texture space at the
+        // current position, which points in the direction of the projection of the tangent to the
+        // positive u axis of this texture space onto the plane defined by the original surface normal.
+        state.tangent_u = texture_tangents;
 
-    // An array containing the results of state::texture_tangent_v(i).
-    // The i-th entry represents the texture bitangent vector of the i-th texture space at the
-    // current position, which points in the general direction of the positive v axis of this
-    // texture space, but is orthogonal to both the original surface normal and the tangent
-    // of this texture space.
-    state.tangent_v = texture_bitangents;
+        // An array containing the results of state::texture_tangent_v(i).
+        // The i-th entry represents the texture bitangent vector of the i-th texture space at the
+        // current position, which points in the general direction of the positive v axis of this
+        // texture space, but is orthogonal to both the original surface normal and the tangent
+        // of this texture space.
+        state.tangent_v = texture_bitangents;
 
-    // The texture results lookup table.
-    // The size must match the backend set_option("num_texture_results") value.
-    // Values will be modified by the init functions to avoid duplicate texture fetches 
-    // and duplicate calculation of values (texture coordinate system).
-    // This implementation is using the single material init function, not the individual init per distribution function.
-    // PERF This influences how many things can be precalculated inside the init() function.
-    // If the number of result elements in this array is lower than what is required,
-    // the expressions for the remaining results will be compiled into the sample() and eval() functions
-    // which will make the compilation and runtime performance slower. 
-    float4 texture_results[NUM_TEXTURE_RESULTS];
+        // The texture results lookup table.
+        // The size must match the backend set_option("num_texture_results") value.
+        // Values will be modified by the init functions to avoid duplicate texture fetches
+        // and duplicate calculation of values (texture coordinate system).
+        // This implementation is using the single material init function, not the individual init per distribution function.
+        // PERF This influences how many things can be precalculated inside the init() function.
+        // If the number of result elements in this array is lower than what is required,
+        // the expressions for the remaining results will be compiled into the sample() and eval() functions
+        // which will make the compilation and runtime performance slower.
+        float4 texture_results[NUM_TEXTURE_RESULTS];
 
-    state.text_results = texture_results;
+        state.text_results = texture_results;
 
-    // A pointer to a read-only data segment.
-    // For "PTX", "LLVM-IR" and "native" JIT backend.
-    // For other backends, this should be NULL.
-    state.ro_data_segment = nullptr;
+        // A pointer to a read-only data segment.
+        // For "PTX", "LLVM-IR" and "native" JIT backend.
+        // For other backends, this should be NULL.
+        state.ro_data_segment = nullptr;
 
-    // A 4x4 transformation matrix in row-major order transforming from world to object coordinates.
-    // The last row is always implied to be (0, 0, 0, 1) and does not have to be provided.
-    // It is used by the state::transform_*() methods.
-    // This field is only used if the uniform state is included.
-    state.world_to_object = worldToObject;
+        // A 4x4 transformation matrix in row-major order transforming from world to object coordinates.
+        // The last row is always implied to be (0, 0, 0, 1) and does not have to be provided.
+        // It is used by the state::transform_*() methods.
+        // This field is only used if the uniform state is included.
+        state.world_to_object = worldToObject;
 
-    // A 4x4 transformation matrix in row-major order transforming from object to world coordinates.
-    // The last row is always implied to be (0, 0, 0, 1) and does not have to be provided.
-    // It is used by the state::transform_*() methods.
-    // This field is only used if the uniform state is included.
-    state.object_to_world = objectToWorld;
+        // A 4x4 transformation matrix in row-major order transforming from object to world coordinates.
+        // The last row is always implied to be (0, 0, 0, 1) and does not have to be provided.
+        // It is used by the state::transform_*() methods.
+        // This field is only used if the uniform state is included.
+        state.object_to_world = objectToWorld;
 
-    // The result of state::object_id().
-    // It is an application-specific identifier of the hit object as provided in a scene.
-    // It can be used to make instanced objects look different in spite of the same used material.
-    // This field is only used if the uniform state is included.
-    state.object_id = theData.ids.z; // idObject, this is the sg::Instance node ID.
+        // The result of state::object_id().
+        // It is an application-specific identifier of the hit object as provided in a scene.
+        // It can be used to make instanced objects look different in spite of the same used material.
+        // This field is only used if the uniform state is included.
+        state.object_id = theData.ids.z; // idObject, this is the sg::Instance node ID.
 
-    // The result of state::meters_per_scene_unit().
-    // The field is only used if the "fold_meters_per_scene_unit" option is set to false.
-    // Otherwise, the value of the "meters_per_scene_unit" option will be used in the code.
-    state.meters_per_scene_unit = 1.0f;
+        // The result of state::meters_per_scene_unit().
+        // The field is only used if the "fold_meters_per_scene_unit" option is set to false.
+        // Otherwise, the value of the "meters_per_scene_unit" option will be used in the code.
+        state.meters_per_scene_unit = 1.0f;
 
-    return state;
-}
-
-__forceinline__ __device__ bool getThinWalled(const DeviceShaderConfiguration& shaderConfig,
-                                              const Mdl_state& mdlState,
-                                              const mi::neuraylib::Resource_data& resourceData,
-                                              CUdeviceptr materialArgBlock)
-{
-    if (shaderConfig.idxCallThinWalled < 0) // thinWalled value in case the expression is a constant.
-    {
-        return static_cast<bool>(shaderConfig.flags & IS_THIN_WALLED);
-    }
-    return optixDirectCall<bool>(shaderConfig.idxCallThinWalled, &mdlState, &resourceData, materialArgBlock);
-}
-
-__forceinline__ __device__ float3 getIOR(const DeviceShaderConfiguration& shaderConfig,
-                                         const Mdl_state& mdlState,
-                                         const mi::neuraylib::Resource_data& resourceData,
-                                         CUdeviceptr materialArgBlock)
-{
-    if (shaderConfig.idxCallIor < 0) // IOR value in case the material ior expression is constant.
-    {
-        return shaderConfig.ior;
-    }
-    return optixDirectCall<float3>(shaderConfig.idxCallIor, &mdlState, &resourceData, materialArgBlock);
-}
-
-__forceinline__ __device__
-float3 getVolumeAbsorptionCoefficient(const DeviceShaderConfiguration& shaderConfig,
-                                      const Mdl_state& mdlState,
-                                      const mi::neuraylib::Resource_data& resourceData,
-                                      CUdeviceptr materialArgBlock)
-{
-    if (shaderConfig.idxCallVolumeAbsorptionCoefficient < 0)
-    {
-        return shaderConfig.absorption_coefficient;
-    }
-    return optixDirectCall<float3>(shaderConfig.idxCallVolumeAbsorptionCoefficient, &mdlState, &resourceData, materialArgBlock);
-}
-
-__forceinline__ __device__
-float3 getVolumeScatteringCoefficient(const DeviceShaderConfiguration& shaderConfig,
-                                      const Mdl_state& mdlState,
-                                      const mi::neuraylib::Resource_data& resourceData,
-                                      CUdeviceptr materialArgBlock)
-{
-    if (shaderConfig.idxCallVolumeScatteringCoefficient < 0)
-    {
-        return shaderConfig.scattering_coefficient;
-    }
-    return optixDirectCall<float3>(shaderConfig.idxCallVolumeScatteringCoefficient, &mdlState, &resourceData, materialArgBlock);
-}
-
-__forceinline__ __device__
-float getVolumeDirectionalBias(const DeviceShaderConfiguration& shaderConfig,
-                               const Mdl_state& mdlState,
-                               const mi::neuraylib::Resource_data& resourceData,
-                               CUdeviceptr materialArgBlock)
-{
-    if (shaderConfig.idxCallVolumeDirectionalBias < 0)
-    {
-        return shaderConfig.directional_bias;
-    }
-    return optixDirectCall<float>(shaderConfig.idxCallVolumeDirectionalBias, &mdlState, &resourceData, materialArgBlock);
-}
-
-__forceinline__ __device__
-float getGeometryCutoutOpacity(const DeviceShaderConfiguration& shaderConfig,
-                               const Mdl_state& mdlState,
-                               const mi::neuraylib::Resource_data& resourceData,
-                               CUdeviceptr materialArgBlock)
-{
-    if (shaderConfig.idxCallGeometryCutoutOpacity < 0)
-    {
-        return shaderConfig.cutout_opacity;
-    }
-    return optixDirectCall<float>(shaderConfig.idxCallGeometryCutoutOpacity, &mdlState, &resourceData, materialArgBlock);
-}
-
-__forceinline__ __device__
-BSDFSampleData importanceSampleBSDF(const Mdl_state& mdlState,
-                                                     const mi::neuraylib::Resource_data& resourceData,
-                                                     CUdeviceptr materialArgBlock,
-                                                     int idxCallScatteringSample, 
-                                                     PerRayData& thePrd, bool isFrontFace, bool isThinWalled, const float3 &ior)
-{
-    BSDFSampleData sampleData;
-
-    int idx = thePrd.idxStack;
-
-    // If the hit is either on the surface or a thin-walled material,
-    // the ray is inside the surrounding material and the material ior is on the other side.
-    if (isFrontFace || isThinWalled)
-    {
-        sampleData.ior1 = thePrd.stack[idx].ior; // From surrounding medium ior
-        sampleData.ior2 = ior;                    // to material ior.
-    }
-    else
-    {
-        // When hitting the backface of a non-thin-walled material, 
-        // the ray is inside the current material and the surrounding material is on the other side.
-        // The material's IOR is the current top-of-stack. We need the one further down!
-        idx = max(0, idx - 1);
-
-        sampleData.ior1 = ior;                    // From material ior 
-        sampleData.ior2 = thePrd.stack[idx].ior; // to surrounding medium ior
-    }
-    sampleData.k1 = thePrd.wo; // == -optixGetWorldRayDirection()
-    sampleData.xi = rng4(thePrd.seed);
-
-    optixDirectCall<void>(idxCallScatteringSample, &sampleData, &mdlState, &resourceData, materialArgBlock);
-
-    return sampleData;
-}
-
-// NOTE:
-// Estimated from one light.
-// Assume MIS and only compute the light sampling part.
-// The BSDF sampling part is handled in __closesthit__radiance, __miss__env_constant, or __miss__env_sphere
-__forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlState,
-                                                         const mi::neuraylib::Resource_data &resourceData,
-                                                         CUdeviceptr materialArgBlock,
-                                                         int idxCallScatteringEval,
-                                                         PerRayData &thePrd, bool isFrontFace, bool isThinWalled, const float3 &ior)
-{
-    // Sample one of many lights.
-    // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-    const int numLights = sysData.numLights;
-    const int indexLight = static_cast<int>(rng(thePrd.seed) * numLights);
-
-    const LightDefinition& light = sysData.lightDefinitions[indexLight];
-
-    LightSample lightSample = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, &thePrd);
-    
-    // Invalid light sample
-    if (lightSample.pdf <= 0.0f)
-    {
-        return make_float3(0.0f);
+        return state;
     }
 
-    BSDFEvaluateData eval_data;
-
-    // Evaluate the BSDF in the direction of the light sample
+    __forceinline__ __device__ bool getThinWalled(const DeviceShaderConfiguration &shaderConfig,
+                                                  const Mdl_state &mdlState,
+                                                  const mi::neuraylib::Resource_data &resourceData,
+                                                  CUdeviceptr materialArgBlock)
     {
+        if (shaderConfig.idxCallThinWalled < 0) // thinWalled value in case the expression is a constant.
+        {
+            return static_cast<bool>(shaderConfig.flags & IS_THIN_WALLED);
+        }
+        return optixDirectCall<bool>(shaderConfig.idxCallThinWalled, &mdlState, &resourceData, materialArgBlock);
+    }
+
+    __forceinline__ __device__ float3 getIOR(const DeviceShaderConfiguration &shaderConfig,
+                                             const Mdl_state &mdlState,
+                                             const mi::neuraylib::Resource_data &resourceData,
+                                             CUdeviceptr materialArgBlock)
+    {
+        if (shaderConfig.idxCallIor < 0) // IOR value in case the material ior expression is constant.
+        {
+            return shaderConfig.ior;
+        }
+        return optixDirectCall<float3>(shaderConfig.idxCallIor, &mdlState, &resourceData, materialArgBlock);
+    }
+
+    __forceinline__ __device__
+    float3 getVolumeAbsorptionCoefficient(const DeviceShaderConfiguration &shaderConfig,
+                                          const Mdl_state &mdlState,
+                                          const mi::neuraylib::Resource_data &resourceData,
+                                          CUdeviceptr materialArgBlock)
+    {
+        if (shaderConfig.idxCallVolumeAbsorptionCoefficient < 0) {
+            return shaderConfig.absorption_coefficient;
+        }
+        return optixDirectCall<float3>(shaderConfig.idxCallVolumeAbsorptionCoefficient, &mdlState, &resourceData,
+                                       materialArgBlock);
+    }
+
+    __forceinline__ __device__
+    float3 getVolumeScatteringCoefficient(const DeviceShaderConfiguration &shaderConfig,
+                                          const Mdl_state &mdlState,
+                                          const mi::neuraylib::Resource_data &resourceData,
+                                          CUdeviceptr materialArgBlock)
+    {
+        if (shaderConfig.idxCallVolumeScatteringCoefficient < 0) {
+            return shaderConfig.scattering_coefficient;
+        }
+        return optixDirectCall<float3>(shaderConfig.idxCallVolumeScatteringCoefficient, &mdlState, &resourceData,
+                                       materialArgBlock);
+    }
+
+    __forceinline__ __device__
+    float getVolumeDirectionalBias(const DeviceShaderConfiguration &shaderConfig,
+                                   const Mdl_state &mdlState,
+                                   const mi::neuraylib::Resource_data &resourceData,
+                                   CUdeviceptr materialArgBlock)
+    {
+        if (shaderConfig.idxCallVolumeDirectionalBias < 0) {
+            return shaderConfig.directional_bias;
+        }
+        return optixDirectCall<float>(shaderConfig.idxCallVolumeDirectionalBias, &mdlState, &resourceData,
+                                      materialArgBlock);
+    }
+
+    __forceinline__ __device__
+    float getGeometryCutoutOpacity(const DeviceShaderConfiguration &shaderConfig,
+                                   const Mdl_state &mdlState,
+                                   const mi::neuraylib::Resource_data &resourceData,
+                                   CUdeviceptr materialArgBlock)
+    {
+        if (shaderConfig.idxCallGeometryCutoutOpacity < 0) {
+            return shaderConfig.cutout_opacity;
+        }
+        return optixDirectCall<float>(shaderConfig.idxCallGeometryCutoutOpacity, &mdlState, &resourceData,
+                                      materialArgBlock);
+    }
+
+    __forceinline__ __device__
+    BSDFSampleData importanceSampleBSDF(const Mdl_state &mdlState,
+                                        const mi::neuraylib::Resource_data &resourceData,
+                                        CUdeviceptr materialArgBlock,
+                                        int idxCallScatteringSample,
+                                        PerRayData &thePrd, bool isFrontFace, bool isThinWalled, const float3 &ior)
+    {
+        BSDFSampleData sampleData;
+
         int idx = thePrd.idxStack;
 
-        if (isFrontFace || isThinWalled)
-        {
-            eval_data.ior1 = thePrd.stack[idx].ior;
-            eval_data.ior2 = ior;
-        }
-        else
-        {
+        // If the hit is either on the surface or a thin-walled material,
+        // the ray is inside the surrounding material and the material ior is on the other side.
+        if (isFrontFace || isThinWalled) {
+            sampleData.ior1 = thePrd.stack[idx].ior; // From surrounding medium ior
+            sampleData.ior2 = ior; // to material ior.
+        } else {
+            // When hitting the backface of a non-thin-walled material,
+            // the ray is inside the current material and the surrounding material is on the other side.
+            // The material's IOR is the current top-of-stack. We need the one further down!
             idx = max(0, idx - 1);
 
-            eval_data.ior1 = ior;
-            eval_data.ior2 = thePrd.stack[idx].ior;
+            sampleData.ior1 = ior; // From material ior
+            sampleData.ior2 = thePrd.stack[idx].ior; // to surrounding medium ior
+        }
+        sampleData.k1 = thePrd.wo; // == -optixGetWorldRayDirection()
+        sampleData.xi = rng4(thePrd.seed);
+
+        optixDirectCall<void>(idxCallScatteringSample, &sampleData, &mdlState, &resourceData, materialArgBlock);
+
+        return sampleData;
+    }
+
+    // NOTE:
+    // Estimated from one light.
+    // Assume MIS and only compute the light sampling part.
+    // The BSDF sampling part is handled in __closesthit__radiance, __miss__env_constant, or __miss__env_sphere
+    __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlState,
+                                                             const mi::neuraylib::Resource_data &resourceData,
+                                                             CUdeviceptr materialArgBlock,
+                                                             int idxCallScatteringEval,
+                                                             PerRayData &thePrd, bool isFrontFace, bool isThinWalled,
+                                                             const float3 &ior)
+    {
+        // Sample one of many lights.
+        // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
+        const int numLights = sysData.numLights;
+        const int indexLight = static_cast<int>(rng(thePrd.seed) * numLights);
+
+        const LightDefinition &light = sysData.lightDefinitions[indexLight];
+
+        LightSample lightSample = optixDirectCall<LightSample, const LightDefinition &, PerRayData *>(
+            NUM_LENS_TYPES + light.typeLight, light, &thePrd);
+
+        // Invalid light sample
+        if (lightSample.pdf <= 0.0f) {
+            return make_float3(0.0f);
         }
 
-        eval_data.k1 = thePrd.wo;
-        eval_data.k2 = lightSample.direction;
+        BSDFEvaluateData eval_data;
 
-        optixDirectCall<void>(idxCallScatteringEval, &eval_data, &mdlState, &resourceData, materialArgBlock);
-    }
-    
-    // This already contains the fabsf(dot(lightSample.direction, state.normal)) factor!
-    // For a white Lambert material, the bxdf components match the eval_data.pdf
-    const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
+        // Evaluate the BSDF in the direction of the light sample
+        {
+            int idx = thePrd.idxStack;
 
-    // Should not happen, since we checked for BSDF_EVENT_SUPPORT_NEE before calling this function
-    if (eval_data.pdf <= 0.0f || isNull(bxdf)) [[unlikely]]
-    {
-        return make_float3(0.0f);
-    }
+            if (isFrontFace || isThinWalled) {
+                eval_data.ior1 = thePrd.stack[idx].ior;
+                eval_data.ior2 = ior;
+            } else {
+                idx = max(0, idx - 1);
 
-    // Shoot shadow ray
-    {
-        thePrd.flags &= ~FLAG_SHADOW; // Clear the shadow flag.
+                eval_data.ior1 = ior;
+                eval_data.ior2 = thePrd.stack[idx].ior;
+            }
 
-        unsigned int p0 = optixGetPayload_0(),
-                     p1 = optixGetPayload_1();
+            eval_data.k1 = thePrd.wo;
+            eval_data.k2 = lightSample.direction;
 
-        // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval 
-        // to prevent self-intersections with the actual light geometry in the scene.
-        optixTrace(sysData.topObject,
-                   thePrd.pos, lightSample.direction, // origin, direction
-                   sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                   OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                   TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                   p0, p1); // Pass through thePrd to the shadow ray.
-    }
+            optixDirectCall<void>(idxCallScatteringEval, &eval_data, &mdlState, &resourceData, materialArgBlock);
+        }
 
-    if (thePrd.flags & FLAG_SHADOW) // Shadowed?
-    {
-        return make_float3(0.0f);
-    }
+        // This already contains the fabsf(dot(lightSample.direction, state.normal)) factor!
+        // For a white Lambert material, the bxdf components match the eval_data.pdf
+        const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
 
-    const float weightMIS = (light.typeLight >= TYPE_LIGHT_FIRST_SINGULAR)
-                          ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
+        // Should not happen, since we checked for BSDF_EVENT_SUPPORT_NEE before calling this function
+        if (eval_data.pdf <= 0.0f || isNull(bxdf)) [[unlikely]]
+        {
+            return make_float3(0.0f);
+        }
 
-    // The sampled emission needs to be scaled by the inverse probability to have selected this light,
-    // Selecting one of many lights means the inverse of 1.0f / numLights.
-    const auto directMISLightSampling = bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
+        // Shoot shadow ray
+        {
+            thePrd.flags &= ~FLAG_SHADOW; // Clear the shadow flag.
+
+            unsigned int p0 = optixGetPayload_0(),
+                    p1 = optixGetPayload_1();
+
+            // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
+            // to prevent self-intersections with the actual light geometry in the scene.
+            optixTrace(sysData.topObject,
+                       thePrd.pos, lightSample.direction, // origin, direction
+                       sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                       OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT,
+                       // The shadow ray type only uses anyhit programs.
+                       TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                       p0, p1); // Pass through thePrd to the shadow ray.
+        }
+
+        if (thePrd.flags & FLAG_SHADOW) // Shadowed?
+        {
+            return make_float3(0.0f);
+        }
+
+        const float weightMIS = (light.typeLight >= TYPE_LIGHT_FIRST_SINGULAR)
+                                    ? 1.0f
+                                    : balanceHeuristic(lightSample.pdf, eval_data.pdf);
+
+        // The sampled emission needs to be scaled by the inverse probability to have selected this light,
+        // Selecting one of many lights means the inverse of 1.0f / numLights.
+        const auto directMISLightSampling = bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
 
 #if SANITY_CHK
     if (is_nan_f3(directMISLightSampling))
@@ -441,126 +439,120 @@ __forceinline__ __device__ float3 estimateDirectLighting(const Mdl_state &mdlSta
     }
 #endif
 
-    return directMISLightSampling;
-}
-
-// NOTE: We assume thePrd.eventType contains the surface interaction.
-// It is needed to correct roughness of diffuse surfaces to (1.f, 1.f).
-__forceinline__ __device__ void getBSDFAuxiliaryData(const Mdl_state& mdlState,
-                                                     const mi::neuraylib::Resource_data& resourceData,
-                                                     CUdeviceptr materialArgBlock,
-                                                     int idxCallAuxiliarySample, 
-                                                     PerRayData& thePrd, bool isFrontFace, bool isThinWalled, const float3& ior,
-                                                     /*inout: */ bool &queried,
-                                                     /*out:   */ BSDFAuxiliaryData& auxData)
-{
-    if (queried)
-    {
-        return;
+        return directMISLightSampling;
     }
 
-    int idx = thePrd.idxStack;
-
-    // If the hit is either on the surface or a thin-walled material,
-    // the ray is inside the surrounding material and the material ior is on the other side.
-    if (isFrontFace || isThinWalled)
+    // NOTE: We assume thePrd.eventType contains the surface interaction.
+    // It is needed to correct roughness of diffuse surfaces to (1.f, 1.f).
+    __forceinline__ __device__ void getBSDFAuxiliaryData(const Mdl_state &mdlState,
+                                                         const mi::neuraylib::Resource_data &resourceData,
+                                                         CUdeviceptr materialArgBlock,
+                                                         int idxCallAuxiliarySample,
+                                                         PerRayData &thePrd, bool isFrontFace, bool isThinWalled,
+                                                         const float3 &ior,
+                                                         /*inout: */ bool &queried,
+                                                         /*out:   */ BSDFAuxiliaryData &auxData)
     {
-        auxData.ior1 = thePrd.stack[idx].ior; // From surrounding medium ior
-        auxData.ior2 = ior;                    // to material ior.
-    }
-    else
-    {
-        // When hitting the backface of a non-thin-walled material, 
-        // the ray is inside the current material and the surrounding material is on the other side.
-        // The material's IOR is the current top-of-stack. We need the one further down!
-        idx = max(0, idx - 1);
+        if (queried) {
+            return;
+        }
 
-        auxData.ior1 = ior;                    // From material ior 
-        auxData.ior2 = thePrd.stack[idx].ior; // to surrounding medium ior
-    }
-    auxData.k1 = thePrd.wo; // == -optixGetWorldRayDirection()
-    
-    optixDirectCall<void>(idxCallAuxiliarySample, &auxData, &mdlState, &resourceData, materialArgBlock);
+        int idx = thePrd.idxStack;
 
-    // roughtness returns (0, 0) for diffuse surfaces. Correct it to (1, 1).
-    if (thePrd.eventType & mi::neuraylib::BSDF_EVENT_DIFFUSE)
-    {
-        auxData.roughness = { 1.f, 1.f, 0.f };
-    }
+        // If the hit is either on the surface or a thin-walled material,
+        // the ray is inside the surrounding material and the material ior is on the other side.
+        if (isFrontFace || isThinWalled) {
+            auxData.ior1 = thePrd.stack[idx].ior; // From surrounding medium ior
+            auxData.ior2 = ior; // to material ior.
+        } else {
+            // When hitting the backface of a non-thin-walled material,
+            // the ray is inside the current material and the surrounding material is on the other side.
+            // The material's IOR is the current top-of-stack. We need the one further down!
+            idx = max(0, idx - 1);
 
-    queried = true;
-}
+            auxData.ior1 = ior; // From material ior
+            auxData.ior2 = thePrd.stack[idx].ior; // to surrounding medium ior
+        }
+        auxData.k1 = thePrd.wo; // == -optixGetWorldRayDirection()
 
-__forceinline__ __device__ void updatePrdMaterialStackAtTransmitBoundary(const DeviceShaderConfiguration& shaderConfig,
-                                                                         const Mdl_state& mdlState,
-                                                                         const mi::neuraylib::Resource_data& resourceData,
-                                                                         CUdeviceptr materialArgBlock, 
-                                                                         PerRayData& thePrd, bool entering, const float3& ior)
-{
-    if (entering) // Entered a volume. 
-    {
-        // Get volume properties
-        const float3 absorption = ::getVolumeAbsorptionCoefficient(shaderConfig, mdlState, resourceData, materialArgBlock);
-        const float3 scattering = ::getVolumeScatteringCoefficient(shaderConfig, mdlState, resourceData, materialArgBlock);
-        const float  bias       = ::getVolumeDirectionalBias(shaderConfig, mdlState, resourceData, materialArgBlock);
+        optixDirectCall<void>(idxCallAuxiliarySample, &auxData, &mdlState, &resourceData, materialArgBlock);
 
-        const int idx = min(thePrd.idxStack + 1, MATERIAL_STACK_LAST); // Push current medium parameters.
+        // roughtness returns (0, 0) for diffuse surfaces. Correct it to (1, 1).
+        if (thePrd.eventType & mi::neuraylib::BSDF_EVENT_DIFFUSE) {
+            auxData.roughness = {1.f, 1.f, 0.f};
+        }
 
-        thePrd.idxStack           = idx;
-        thePrd.stack[idx].ior     = ior;
-        thePrd.stack[idx].sigma_a = absorption;
-        thePrd.stack[idx].sigma_s = scattering;
-        thePrd.stack[idx].bias    = bias;
-
-        thePrd.sigma_t            = absorption + scattering; // Update the current extinction coefficient.
-    }
-    else // if !isFrontFace. Left a volume.
-    {
-        const int idx = max(0, thePrd.idxStack - 1); // Pop current medium parameters.
-
-        thePrd.idxStack = idx;
-
-        thePrd.sigma_t  = thePrd.stack[idx].sigma_a + thePrd.stack[idx].sigma_s; // Update the current extinction coefficient.
+        queried = true;
     }
 
-    thePrd.walk = 0; // Reset the number of random walk steps taken when crossing any volume boundary.
-}
-
-// Update the area spread and decide whether to terminate the rendering ray.
-__forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, PerRayData& thePrd)
-{
-    bool terminate = false;
-    
-    const float absCosine = abs(dot(thePrd.wo, mdlState.normal));
-
-    static constexpr auto UNBIASED_TRAIN_SUFFIX = FLAG_TRAIN_UNBIASED | FLAG_TRAIN_SUFFIX;
-    const bool isNotUnbiasedTrainSuffix = (thePrd.flags & UNBIASED_TRAIN_SUFFIX) != UNBIASED_TRAIN_SUFFIX;
-
-    // TODO, PERF: Make this a separate initial launch in the raygen shader
-    if (thePrd.depth == 0) // First bounce: Compute area threshold (Eq. 4)
+    __forceinline__ __device__ void updatePrdMaterialStackAtTransmitBoundary(
+        const DeviceShaderConfiguration &shaderConfig,
+        const Mdl_state &mdlState,
+        const mi::neuraylib::Resource_data &resourceData,
+        CUdeviceptr materialArgBlock,
+        PerRayData &thePrd, bool entering, const float3 &ior)
     {
-        const auto SQRT_C = sysData.pf.nrcAreaSpreadFactorSqrt;
-        const float denom = sqrtf(4.f * M_PIf * absCosine);   
-        thePrd.areaThreshold = SQRT_C * ::safeDiv(thePrd.distance, denom);
-// DEBUG INFO
+        if (entering) // Entered a volume.
+        {
+            // Get volume properties
+            const float3 absorption = ::getVolumeAbsorptionCoefficient(shaderConfig, mdlState, resourceData,
+                                                                       materialArgBlock);
+            const float3 scattering = ::getVolumeScatteringCoefficient(shaderConfig, mdlState, resourceData,
+                                                                       materialArgBlock);
+            const float bias = ::getVolumeDirectionalBias(shaderConfig, mdlState, resourceData, materialArgBlock);
+
+            const int idx = min(thePrd.idxStack + 1, MATERIAL_STACK_LAST); // Push current medium parameters.
+
+            thePrd.idxStack = idx;
+            thePrd.stack[idx].ior = ior;
+            thePrd.stack[idx].sigma_a = absorption;
+            thePrd.stack[idx].sigma_s = scattering;
+            thePrd.stack[idx].bias = bias;
+
+            thePrd.sigma_t = absorption + scattering; // Update the current extinction coefficient.
+        } else // if !isFrontFace. Left a volume.
+        {
+            const int idx = max(0, thePrd.idxStack - 1); // Pop current medium parameters.
+
+            thePrd.idxStack = idx;
+
+            thePrd.sigma_t = thePrd.stack[idx].sigma_a + thePrd.stack[idx].sigma_s;
+            // Update the current extinction coefficient.
+        }
+
+        thePrd.walk = 0; // Reset the number of random walk steps taken when crossing any volume boundary.
+    }
+
+    // Update the area spread and decide whether to terminate the rendering ray.
+    __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state &mdlState, PerRayData &thePrd)
+    {
+        bool terminate = false;
+
+        const float absCosine = abs(dot(thePrd.wo, mdlState.normal));
+
+        static constexpr auto UNBIASED_TRAIN_SUFFIX = FLAG_TRAIN_UNBIASED | FLAG_TRAIN_SUFFIX;
+        const bool isNotUnbiasedTrainSuffix = (thePrd.flags & UNBIASED_TRAIN_SUFFIX) != UNBIASED_TRAIN_SUFFIX;
+
+        // TODO, PERF: Make this a separate initial launch in the raygen shader
+        if (thePrd.depth == 0) // First bounce: Compute area threshold (Eq. 4)
+        {
+            const auto SQRT_C = sysData.pf.nrcAreaSpreadFactorSqrt;
+            const float denom = sqrtf(4.f * M_PIf * absCosine);
+            thePrd.areaThreshold = SQRT_C * ::safeDiv(thePrd.distance, denom);
+            // DEBUG INFO
 #if 0
         if (thePrd.flags & FLAG_DEBUG) printf("\nArea threashold: %f\n", thePrd.areaThreshold);
 #endif
-    }
-    else if (isNotUnbiasedTrainSuffix)
-    {
-        if (thePrd.eventType & mi::neuraylib::BSDF_EVENT_SPECULAR)
-        {
+        } else if (isNotUnbiasedTrainSuffix) {
+            if (thePrd.eventType & mi::neuraylib::BSDF_EVENT_SPECULAR) {
 #if 0
             if (thePrd.flags & FLAG_DEBUG) printf("Specular hit, continuing the ray\n");
 #endif
-        }
-        else
-        {
-            const float pdf = thePrd.pdf == 0.f ? INFINITY : thePrd.pdf;
-            const float denom = sqrtf(pdf * absCosine);
+            } else {
+                const float pdf = thePrd.pdf == 0.f ? INFINITY : thePrd.pdf;
+                const float denom = sqrtf(pdf * absCosine);
 
-            const float deltaAreaSpread = ::safeDiv(thePrd.distance, denom);
+                const float deltaAreaSpread = ::safeDiv(thePrd.distance, denom);
 
 #if 0
             if (thePrd.flags & FLAG_DEBUG)
@@ -570,13 +562,13 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
             }
 #endif
 
-            thePrd.areaSpread += deltaAreaSpread;
+                thePrd.areaSpread += deltaAreaSpread;
 
-            terminate = (thePrd.areaSpread > thePrd.areaThreshold);
+                terminate = (thePrd.areaSpread > thePrd.areaThreshold);
+            }
         }
-    }
 
-    // DEBUG INFO
+        // DEBUG INFO
 #if 0
     if (thePrd.flags & FLAG_DEBUG)
     {
@@ -589,32 +581,30 @@ __forceinline__ __device__ bool rayShouldTerminate(const Mdl_state& mdlState, Pe
     }
 #endif
 
-    return terminate;
-}
-
+        return terminate;
+    }
 }
 
 namespace nrc {
+    __forceinline__ __device__ void addQuery(const Mdl_state &mdlState,
+                                             const PerRayData &thePrd,
+                                             const BSDFAuxiliaryData &auxData,
+                                             bool flipNormal,
+                                             /*out:*/ RadianceQuery &radianceQuery)
+    {
+        // TODO: Use per-scene normalization tsfm
+        radianceQuery.position = mdlState.position;
+        radianceQuery.position *= 0.005f; // Cornell
 
-__forceinline__ __device__ void addQuery(const Mdl_state& mdlState, 
-                                         const PerRayData& thePrd, 
-                                         const BSDFAuxiliaryData &auxData,
-                                         bool flipNormal,
-                                         /*out:*/ RadianceQuery& radianceQuery)
-{
-    // TODO: Use per-scene normalization tsfm
-    radianceQuery.position = mdlState.position;
-    radianceQuery.position *= 0.005f; // Cornell
-    
-    const float2 direction = cartesianToSphericalUnitVector(thePrd.wo);
-    const float2 normal    = cartesianToSphericalUnitVector(flipNormal ? -mdlState.normal : mdlState.normal);
+        const float2 direction = cartesianToSphericalUnitVector(thePrd.wo);
+        const float2 normal = cartesianToSphericalUnitVector(flipNormal ? -mdlState.normal : mdlState.normal);
 #if USE_COMPACT_RADIANCE_QUERY
-    radianceQuery.direction1 = direction.x;
-    radianceQuery.direction2 = direction.y;
-    radianceQuery.normal1    = normal.x;
-    radianceQuery.normal2    = normal.y;
-    radianceQuery.roughness1 = auxData.roughness.x;
-    radianceQuery.roughness2 = auxData.roughness.y;
+        radianceQuery.direction1 = direction.x;
+        radianceQuery.direction2 = direction.y;
+        radianceQuery.normal1 = normal.x;
+        radianceQuery.normal2 = normal.y;
+        radianceQuery.roughness1 = auxData.roughness.x;
+        radianceQuery.roughness2 = auxData.roughness.y;
 #else
     radianceQuery.pad_      = 0.0f; // 1-float pad after position
     radianceQuery.direction = direction;
@@ -622,68 +612,67 @@ __forceinline__ __device__ void addQuery(const Mdl_state& mdlState,
     radianceQuery.roughness = make_float2(auxData.roughness);
 #endif
 
-        radianceQuery.diffuse   = auxData.albedo_diffuse;
-        radianceQuery.specular  = auxData.albedo_glossy;
-}
+        radianceQuery.diffuse = auxData.albedo_diffuse;
+        radianceQuery.specular = auxData.albedo_glossy;
+    }
 
-__forceinline__ __device__ void addRenderQuery(const Mdl_state& mdlState, 
-                                               const PerRayData& thePrd, 
-                                               const BSDFAuxiliaryData &auxData,
-                                               bool flipNormal)
-{
-        auto& renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
+    __forceinline__ __device__ void addRenderQuery(const Mdl_state &mdlState,
+                                                   const PerRayData &thePrd,
+                                                   const BSDFAuxiliaryData &auxData,
+                                                   bool flipNormal)
+    {
+        auto &renderQuery = sysData.nrcCB->bufDynamic.radianceQueriesInference[thePrd.pixelIndex];
         addQuery(mdlState, thePrd, auxData, flipNormal, renderQuery);
-}
+    }
 
-__forceinline__ __device__ void addTrainQuery(const Mdl_state& mdlState, 
-                                              const PerRayData& thePrd, 
-                                              const BSDFAuxiliaryData &auxData,
-                                              bool flipNormal, int trainRecordIndex)
+    __forceinline__ __device__ void addTrainQuery(const Mdl_state &mdlState,
+                                                  const PerRayData &thePrd,
+                                                  const BSDFAuxiliaryData &auxData,
+                                                  bool flipNormal, int trainRecordIndex)
 
-{
-        auto& trainQuery = sysData.nrcCB->bufStatic.radianceQueriesTraining[trainRecordIndex];
+    {
+        auto &trainQuery = sysData.nrcCB->bufStatic.radianceQueriesTraining[trainRecordIndex];
         addQuery(mdlState, thePrd, auxData, flipNormal, trainQuery);
-}
+    }
 
-__forceinline__ __device__ void addCacheVisQuery(const Mdl_state& mdlState, 
-                                                 const PerRayData& thePrd, 
-                                                 const BSDFAuxiliaryData &auxData,
-                                                 bool flipNormal)
-{
-        auto& cacheVisQuery = sysData.nrcCB->bufDynamic.radianceQueriesCacheVis[thePrd.pixelIndex];
+    __forceinline__ __device__ void addCacheVisQuery(const Mdl_state &mdlState,
+                                                     const PerRayData &thePrd,
+                                                     const BSDFAuxiliaryData &auxData,
+                                                     bool flipNormal)
+    {
+        auto &cacheVisQuery = sysData.nrcCB->bufDynamic.radianceQueriesCacheVis[thePrd.pixelIndex];
         addQuery(mdlState, thePrd, auxData, flipNormal, cacheVisQuery);
-}
+    }
 
 
-__forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state& mdlState, 
-                                                        const PerRayData& thePrd, 
-                                                        const BSDFAuxiliaryData &auxData,
-                                                        bool flipNormal)
-{
-    auto& dynBufs = sysData.nrcCB->bufDynamic;
+    __forceinline__ __device__ void endTrainSuffixSelfTrain(const Mdl_state &mdlState,
+                                                            const PerRayData &thePrd,
+                                                            const BSDFAuxiliaryData &auxData,
+                                                            bool flipNormal)
+    {
+        auto &dynBufs = sysData.nrcCB->bufDynamic;
 
         // Add an inference query at the end vertex of the train suffix.
-    const auto offset = sysData.resolution.x * sysData.resolution.y;
-        auto& query = dynBufs.radianceQueriesInference[offset + thePrd.tileIndex];
+        const auto offset = sysData.resolution.x * sysData.resolution.y;
+        auto &query = dynBufs.radianceQueriesInference[offset + thePrd.tileIndex];
         addQuery(mdlState, thePrd, auxData, flipNormal, query);
 
         // Add the TrainingSuffixEndVertex
-        auto& endVertex = dynBufs.trainSuffixEndVertices[thePrd.tileIndex];
+        auto &endVertex = dynBufs.trainSuffixEndVertices[thePrd.tileIndex];
         endVertex.radianceMask = 1.f; // 1 for self-training: Use the inferenced radiance to initiate propagation.
         endVertex.startTrainRecord = thePrd.lastTrainRecordIndex;
 
-    // DEBUG
-    //endVertex.pixelIndex = thePrd.pixelIndex;
-    //endVertex.tileIndex = thePrd.tileIndex;
-}
-
+        // DEBUG
+        //endVertex.pixelIndex = thePrd.pixelIndex;
+        //endVertex.tileIndex = thePrd.tileIndex;
+    }
 }
 
 // This shader handles every supported feature of the renderer.
 extern "C" __global__ void __closesthit__radiance()
 {
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
-    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+    PerRayData *thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
     // Get the data for the hit geometry instance
     const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
@@ -691,9 +680,10 @@ extern "C" __global__ void __closesthit__radiance()
     // States needed for MDL material evaluation
     const auto state = ::buildMDLState(theData);
 
-    thePrd->flags   |= FLAG_HIT;          // Required to distinguish surface hits from random walk miss.
-    thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
-    thePrd->pos      = state.position;
+    thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
+    thePrd->distance = optixGetRayTmax();
+    // Return the current path segment distance, needed for absorption calculations in the integrator.
+    thePrd->pos = state.position;
 
     // If we're inside a volume and hit something, the path throughput needs to be modulated
     // with the transmittance along this segment before adding surface or light radiance!
@@ -725,10 +715,10 @@ extern "C" __global__ void __closesthit__radiance()
     const bool isTrain = thePrd->flags & FLAG_TRAIN;
     bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
 
-    const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
-    mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
-    const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
-    
+    const MaterialDefinitionMDL &material = sysData.materialDefinitionsMDL[theData.ids.x];
+    mi::neuraylib::Resource_data res_data = {nullptr, material.texture_handler};
+    const DeviceShaderConfiguration &shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
+
     // Using a single material init function instead of per distribution init functions.
     // This is always present, even if it just returns.
     optixDirectCall<void>(shaderConfiguration.idxCallInit, &state, &res_data, material.arg_block);
@@ -740,55 +730,53 @@ extern "C" __global__ void __closesthit__radiance()
     const bool isFrontFace = (0.0f <= dot(thePrd->wo, state.geom_normal));
 
     const bool thin_walled = ::getThinWalled(shaderConfiguration, state, res_data, material.arg_block);
-    const float3       ior = ::getIOR(shaderConfiguration, state, res_data, material.arg_block);
+    const float3 ior = ::getIOR(shaderConfiguration, state, res_data, material.arg_block);
 
     // If directly lighting is disabled, simply add the emitted radiance. (weightMIS = 1.f)
-    // If directly lighting is enabled, we assume MIS was used in estimateDirect 
+    // If directly lighting is enabled, we assume MIS was used in estimateDirect
     // which adds the light-sampling part. So here we add the remaining BSDF sampling part.
     {
         // Handle optional surface and backface emission expressions.
         // Default to no EDF.
-        int idxCallEmissionEval          = -1;
-        int idxCallEmissionIntensity     = -1;
+        int idxCallEmissionEval = -1;
+        int idxCallEmissionIntensity = -1;
         int idxCallEmissionIntensityMode = -1;
         // These are not used when there is no emission, no need to initialize.
         float3 emission_intensity;
-        int    emission_intensity_mode;
+        int emission_intensity_mode;
 
         // MDL Specs: There is no emission on the back-side unless an EDF is specified with the backface field and thin_walled is set to true.
-        if (isFrontFace)
-        {
-            idxCallEmissionEval          = shaderConfiguration.idxCallSurfaceEmissionEval;
-            idxCallEmissionIntensity     = shaderConfiguration.idxCallSurfaceEmissionIntensity;
+        if (isFrontFace) {
+            idxCallEmissionEval = shaderConfiguration.idxCallSurfaceEmissionEval;
+            idxCallEmissionIntensity = shaderConfiguration.idxCallSurfaceEmissionIntensity;
             idxCallEmissionIntensityMode = shaderConfiguration.idxCallSurfaceEmissionIntensityMode;
 
-            emission_intensity           = shaderConfiguration.surface_intensity;
-            emission_intensity_mode      = shaderConfiguration.surface_intensity_mode;
-        }
-        else if (thin_walled) // && !isFrontFace
+            emission_intensity = shaderConfiguration.surface_intensity;
+            emission_intensity_mode = shaderConfiguration.surface_intensity_mode;
+        } else if (thin_walled) // && !isFrontFace
         {
             // These can be the same callable indices if the expressions from surface and backface were identical.
-            idxCallEmissionEval          = shaderConfiguration.idxCallBackfaceEmissionEval;
-            idxCallEmissionIntensity     = shaderConfiguration.idxCallBackfaceEmissionIntensity;
+            idxCallEmissionEval = shaderConfiguration.idxCallBackfaceEmissionEval;
+            idxCallEmissionIntensity = shaderConfiguration.idxCallBackfaceEmissionIntensity;
             idxCallEmissionIntensityMode = shaderConfiguration.idxCallBackfaceEmissionIntensityMode;
 
-            emission_intensity           = shaderConfiguration.backface_intensity;
-            emission_intensity_mode      = shaderConfiguration.backface_intensity_mode;
+            emission_intensity = shaderConfiguration.backface_intensity;
+            emission_intensity_mode = shaderConfiguration.backface_intensity_mode;
         }
-        
+
         // Check if the hit geometry contains any emission.
-        if (0 <= idxCallEmissionEval)
-        {
+        if (0 <= idxCallEmissionEval) {
             if (0 <= idxCallEmissionIntensity) // Emission intensity is not a constant.
             {
-                emission_intensity = optixDirectCall<float3>(idxCallEmissionIntensity, &state, &res_data, material.arg_block);
+                emission_intensity = optixDirectCall<float3>(idxCallEmissionIntensity, &state, &res_data,
+                                                             material.arg_block);
             }
             if (0 <= idxCallEmissionIntensityMode) // Emission intensity mode is not a constant.
             {
-                emission_intensity_mode = optixDirectCall<int>(idxCallEmissionIntensityMode, &state, &res_data, material.arg_block);
+                emission_intensity_mode = optixDirectCall<int>(idxCallEmissionIntensityMode, &state, &res_data,
+                                                               material.arg_block);
             }
-            if (isNotNull(emission_intensity))
-            {
+            if (isNotNull(emission_intensity)) {
                 EDFEvaluateData eval_data;
 
                 eval_data.k1 = thePrd->wo; // input: outgoing direction (-ray.direction)
@@ -798,17 +786,17 @@ extern "C" __global__ void __closesthit__radiance()
 
                 optixDirectCall<void>(idxCallEmissionEval, &eval_data, &state, &res_data, material.arg_block);
 
-                const float area = sysData.lightDefinitions[theData.ids.y].area; // This must be a mesh light, and then it has a valid idLight.
+                const float area = sysData.lightDefinitions[theData.ids.y].area;
+                // This must be a mesh light, and then it has a valid idLight.
 
                 eval_data.pdf = (thePrd->distance * thePrd->distance) / (area * eval_data.cos); // Solid angle measure.
 
                 float weightMIS = 1.0f;
                 // If the last event was diffuse or glossy, calculate the opposite MIS weight for this implicit light hit.
-                // Note that we don't need to multiply by numLights here because this light 
+                // Note that we don't need to multiply by numLights here because this light
                 // doesn't have to match the previous one sampled for direct lighting estimation
                 const auto eventWasNonDirac = static_cast<bool>(thePrd->eventType & BSDF_EVENT_NON_DIRAC);
-                if (sysData.directLighting && eventWasNonDirac)
-                {
+                if (sysData.directLighting && eventWasNonDirac) {
                     weightMIS = balanceHeuristic(thePrd->pdf, eval_data.pdf);
                 }
 
@@ -839,15 +827,15 @@ extern "C" __global__ void __closesthit__radiance()
     // The pdf of the previous event was needed for the emission calculation above.
     thePrd->pdf = 0.0f;
 
-    // Determine which BSDF to use when the material is thin-walled. 
+    // Determine which BSDF to use when the material is thin-walled.
     int idxCallScatteringSample = shaderConfiguration.idxCallSurfaceScatteringSample;
     int idxCallScatteringEval = shaderConfiguration.idxCallSurfaceScatteringEval;
     int idxCallScatteringAux = shaderConfiguration.idxCallSurfaceScatteringAux; // For material albedo/roughness.
 
     // thin-walled and looking at the backface and backface.scattering expression available?
-    const bool useBackfaceBSDF = thin_walled && !isFrontFace && 0 <= shaderConfiguration.idxCallBackfaceScatteringSample;
-    if (useBackfaceBSDF)
-    {
+    const bool useBackfaceBSDF = thin_walled && !isFrontFace && 0 <= shaderConfiguration.
+                                 idxCallBackfaceScatteringSample;
+    if (useBackfaceBSDF) {
         // Use the backface.scattering BSDF sample and evaluation functions.
         // Apparently the MDL code can handle front- and backfacing calculations appropriately with the original state and the properly setup volume IORs.
         // No need to flip normals to the ray side.
@@ -872,21 +860,21 @@ extern "C" __global__ void __closesthit__radiance()
                                                         idxCallScatteringSample, *thePrd,
                                                         isFrontFace, thin_walled, ior);
 
-        thePrd->wi          = sample_data.k2;            // Continuation direction.
-        thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
-        thePrd->pdf         = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
-        thePrd->eventType   = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
-                                                         // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
+        thePrd->wi = sample_data.k2; // Continuation direction.
+        thePrd->throughput *= sample_data.bsdf_over_pdf;
+        // Adjust the path throughput for all following incident lighting.
+        thePrd->pdf = sample_data.pdf;
+        // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
+        thePrd->eventType = sample_data.event_type; // This replaces the PRD flags used inside the other examples.
+        // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
         localThroughput = sample_data.bsdf_over_pdf;
-    }
-    else
-    {
+    } else {
         // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
         // This is usually happening with arbitrary mesh lights when only specifying emission.
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     }
 
-// DEBUG VIS: Albedos/roughness
+    // DEBUG VIS: Albedos/roughness
 #if 0
     ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
                            *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
@@ -910,11 +898,9 @@ extern "C" __global__ void __closesthit__radiance()
     }
 
     // Early unbiased termination.
-    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
-    {
+    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB) {
         // Terminate rendering path if it hasn't
-        if (!isTrainSuffix)
-        {
+        if (!isTrainSuffix) {
             // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
             //nrc::addRenderQuery(state, *thePrd, aux_data);
@@ -924,9 +910,8 @@ extern "C" __global__ void __closesthit__radiance()
         }
 
         // Terminate training suffix (unbiased)
-        if (isTrain)
-        {
-            // End the train suffix by a zero-radiance unbiased 
+        if (isTrain) {
+            // End the train suffix by a zero-radiance unbiased
             // terminal vertex that links to thePrd->lastTrainRecordIndex.
             nrc::endTrainSuffixUnbiased(sysData, *thePrd);
         }
@@ -953,18 +938,16 @@ extern "C" __global__ void __closesthit__radiance()
 
                 thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                 return;
-            }
-            else // Case 2: End of rendering path
+            } else // Case 2: End of rendering path
             {
                 // Add a (rendering) query for this *pixel*.
                 nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
-                // Store the last rendering throughput to accumulate the query by. 
+                // Store the last rendering throughput to accumulate the query by.
                 thePrd->lastRenderThroughput = throughput;
-                
+
                 // EDGE: Train suffix ended before rendering path due to a full buffer.
-                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL)
-                {
+                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL) {
                     thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                     return;
                 }
@@ -974,15 +957,14 @@ extern "C" __global__ void __closesthit__radiance()
                 thePrd->areaSpread = 0.f; // Restart area spread accumulation
                 isTrainSuffix = true;
             }
-        }
-        else // Pure rendering ray ends
+        } else // Pure rendering ray ends
         {
             // Add a (rendering) query for this *pixel*.
             nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
             // Store the last rendering throughput to accumulate the query by. Then terminate.
             thePrd->lastRenderThroughput = throughput;
-            
+
             thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
             return;
         }
@@ -992,19 +974,18 @@ extern "C" __global__ void __closesthit__radiance()
 
     // Try to atomically allocate a training record if we're training
     // ... and previous hits haven't reported a full buffer.
-    float3* trainTargetRadiance = nullptr;
-    const auto doAllocateTrainRecord = isTrain 
-                                    && eventIsNonDirac 
-                                    && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
-    if (doAllocateTrainRecord)
-    {
+    float3 *trainTargetRadiance = nullptr;
+    const auto doAllocateTrainRecord = isTrain
+                                       && eventIsNonDirac
+                                       && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+    if (doAllocateTrainRecord) {
         ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
                                *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
 
         int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
         if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
         {
-            auto& staticBufs = sysData.nrcCB->bufStatic;
+            auto &staticBufs = sysData.nrcCB->bufStatic;
 
             // Set up the record, linking it to the previous vertex.
             auto &trainRecord = staticBufs.trainingRecords[trainRecordIndex];
@@ -1022,12 +1003,10 @@ extern "C" __global__ void __closesthit__radiance()
             // Add a training query with (unencoded) inputs to NRC network
             nrc::addTrainQuery(state, *thePrd, aux_data, !isFrontFace, trainRecordIndex);
 
-            // Used for radiance prop and for next (potential) 
+            // Used for radiance prop and for next (potential)
             // emissive hit/env miss to accumulate BSDF-sampling MIS radiance.
             thePrd->lastTrainRecordIndex = trainRecordIndex;
-        }
-        else
-        {
+        } else {
             // If the train record buffer is full - we're forced to terminate the train suffix here.
             // Unconditionally treat this ray as self-training to avoid bias.
 
@@ -1036,37 +1015,34 @@ extern "C" __global__ void __closesthit__radiance()
             nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
 
             // If the rendering path has been completed already, we can terminate.
-            if (isTrainSuffix)
-            {
+            if (isTrainSuffix) {
                 thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                 return;
             }
 
-            // Otherwise the rendering path hasn't been completed. Must continue until it does. 
+            // Otherwise the rendering path hasn't been completed. Must continue until it does.
             // But we can tell the next hits to not bother with allocating training records.
             // -> doAllocateTrainRecord will always be false for next hits.
             thePrd->lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
         }
     }
-    
+
     // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
     const bool doDirectLighting = sysData.directLighting
-                                && sysData.numLights > 0
-                                && eventIsNonDirac
-                                && idxCallScatteringEval >= 0;
-    if (doDirectLighting)
-    {
+                                  && sysData.numLights > 0
+                                  && eventIsNonDirac
+                                  && idxCallScatteringEval >= 0;
+    if (doDirectLighting) {
         // directLighting == bxdf * lightsample.radiance_over_pdf * numLights * weightMIS
         // where: bxdf == abs(dot(lightSample.direction, state.normal)) * bsdf
         // Note that lightsample.pdf is already solid-angle projected.
         float3 directLighting = ::estimateDirectLighting(state, res_data, material.arg_block,
                                                          idxCallScatteringEval, *thePrd,
                                                          isFrontFace, thin_walled, ior);
-        
+
         // If we got a training record, accumulate the radiance at this vertex to it.
         // Note we don't need to modulate the radiance by throughput, because it is local.
-        if (trainTargetRadiance)
-        {
+        if (trainTargetRadiance) {
             *trainTargetRadiance += directLighting;
 #if SANITY_CHK
             if (is_nan_f3(directLighting)) printf("CH_radiance: directLighting is NAN\n");
@@ -1074,17 +1050,15 @@ extern "C" __global__ void __closesthit__radiance()
         }
 
         // Accumulate *rendering* radiance if not currently on a training suffix.
-        if (!isTrainSuffix)
-        {
+        if (!isTrainSuffix) {
             thePrd->radiance += throughput * directLighting;
         }
     }
     // Now after everything has been handled using the current material stack,
     // adjust the material stack if there was a transmission crossing a boundary surface.
     const bool isTransmitBoundary = !thin_walled && (thePrd->eventType & mi::neuraylib::BSDF_EVENT_TRANSMISSION);
-    if (isTransmitBoundary)
-    {
-        ::updatePrdMaterialStackAtTransmitBoundary(shaderConfiguration, state, res_data, material.arg_block, 
+    if (isTransmitBoundary) {
+        ::updatePrdMaterialStackAtTransmitBoundary(shaderConfiguration, state, res_data, material.arg_block,
                                                    *thePrd, /*entering = */isFrontFace, ior);
     }
 }
@@ -1094,17 +1068,18 @@ extern "C" __global__ void __closesthit__radiance()
 extern "C" __global__ void __closesthit__radiance_no_emission()
 {
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
-    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+    PerRayData *thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
     // Get the data for the hit geometry instance
-    const GeometryInstanceData& theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
 
     // States needed for MDL material evaluation
     const auto state = ::buildMDLState(theData);
 
-    thePrd->flags   |= FLAG_HIT;          // Required to distinguish surface hits from random walk miss.
-    thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
-    thePrd->pos      = state.position;
+    thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
+    thePrd->distance = optixGetRayTmax();
+    // Return the current path segment distance, needed for absorption calculations in the integrator.
+    thePrd->pos = state.position;
 
     // If we're inside a volume and hit something, the path throughput needs to be modulated
     // with the transmittance along this segment before adding surface or light radiance!
@@ -1122,9 +1097,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     const bool isTrain = thePrd->flags & FLAG_TRAIN;
     bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
 
-    const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
-    mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
-    const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
+    const MaterialDefinitionMDL &material = sysData.materialDefinitionsMDL[theData.ids.x];
+    mi::neuraylib::Resource_data res_data = {nullptr, material.texture_handler};
+    const DeviceShaderConfiguration &shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
 
     // Using a single material init function instead of per distribution init functions.
     // This is always present, even if it just returns.
@@ -1137,9 +1112,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     const bool isFrontFace = (0.0f <= dot(thePrd->wo, state.geom_normal));
 
     const bool thin_walled = ::getThinWalled(shaderConfiguration, state, res_data, material.arg_block);
-    const float3       ior = ::getIOR(shaderConfiguration, state, res_data, material.arg_block);
+    const float3 ior = ::getIOR(shaderConfiguration, state, res_data, material.arg_block);
 
-// Debug Vis
+    // Debug Vis
 #if 0
     if (thePrd->depth == 0)
     {
@@ -1171,15 +1146,15 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     const float3 throughput = thePrd->throughput;
     thePrd->pdf = 0.0f;
 
-    // Determine which BSDF to use when the material is thin-walled. 
+    // Determine which BSDF to use when the material is thin-walled.
     int idxCallScatteringSample = shaderConfiguration.idxCallSurfaceScatteringSample;
     int idxCallScatteringEval = shaderConfiguration.idxCallSurfaceScatteringEval;
     int idxCallScatteringAux = shaderConfiguration.idxCallSurfaceScatteringAux; // For material albedo/roughness.
 
     // thin-walled and looking at the backface and backface.scattering expression available?
-    const bool useBackfaceBSDF = thin_walled && !isFrontFace && 0 <= shaderConfiguration.idxCallBackfaceScatteringSample;
-    if (useBackfaceBSDF)
-    {
+    const bool useBackfaceBSDF = thin_walled && !isFrontFace && 0 <= shaderConfiguration.
+                                 idxCallBackfaceScatteringSample;
+    if (useBackfaceBSDF) {
         // Use the backface.scattering BSDF sample and evaluation functions.
         // Apparently the MDL code can handle front- and backfacing calculations appropriately with the original state and the properly setup volume IORs.
         // No need to flip normals to the ray side.
@@ -1210,22 +1185,22 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         //    printf("localThroughput at specular vertex: %f, %f, %f\n", lt.x, lt.y, lt.z);
         //}
 
-        thePrd->wi          = sample_data.k2;            // Continuation direction.
-        thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
-        thePrd->pdf         = sample_data.pdf;           // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
-        thePrd->eventType   = sample_data.event_type;    // This replaces the PRD flags used inside the other examples.
-                                                         // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
+        thePrd->wi = sample_data.k2; // Continuation direction.
+        thePrd->throughput *= sample_data.bsdf_over_pdf;
+        // Adjust the path throughput for all following incident lighting.
+        thePrd->pdf = sample_data.pdf;
+        // Note that specular events return pdf == 0.0f! (=> Not a path termination condition.)
+        thePrd->eventType = sample_data.event_type; // This replaces the PRD flags used inside the other examples.
+        // !IMPORTANT: the event_type can be BSDF_EVENT_ABSORB!
         localThroughput = sample_data.bsdf_over_pdf;
-    }
-    else
-    {
+    } else {
         // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
         // This is usually happening with arbitrary mesh lights when only specifying emission.
         // NOTE: Should not happen here?
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     }
 
-// DEBUG VIS: Albedos/roughness
+    // DEBUG VIS: Albedos/roughness
 #if 0
     ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
                            *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
@@ -1249,11 +1224,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     }
 
     // Early unbiased termination.
-    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
-    {
+    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB) {
         // Terminate rendering path if it hasn't
-        if (!isTrainSuffix)
-        {
+        if (!isTrainSuffix) {
             // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
             //nrc::addRenderQuery(state, *thePrd, aux_data);
@@ -1263,16 +1236,15 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         }
 
         // Terminate training suffix (unbiased)
-        if (isTrain)
-        {
-            // End the train suffix by a zero-radiance unbiased 
+        if (isTrain) {
+            // End the train suffix by a zero-radiance unbiased
             // terminal vertex that links to thePrd->lastTrainRecordIndex.
             nrc::endTrainSuffixUnbiased(sysData, *thePrd);
         }
 
         return;
     }
-    
+
     // Handle terminating vertex due to area spread.
     // Can be sure it's not an unbiased train suffix.
     if (terminateAreaSpread) [[unlikely]]
@@ -1290,18 +1262,16 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
                 thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                 return;
-            }
-            else // Case 2: End of rendering path
+            } else // Case 2: End of rendering path
             {
                 // Add a (rendering) query for this *pixel*.
                 nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
-                // Store the last rendering throughput to accumulate the query by. 
+                // Store the last rendering throughput to accumulate the query by.
                 thePrd->lastRenderThroughput = throughput;
-                
+
                 // EDGE: Train suffix ended before rendering path due to a full buffer.
-                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL)
-                {
+                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL) {
                     thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                     return;
                 }
@@ -1311,15 +1281,14 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                 thePrd->areaSpread = 0.f; // Restart area spread accumulation
                 isTrainSuffix = true;
             }
-        }
-        else // Pure rendering ray ends
+        } else // Pure rendering ray ends
         {
             // Add a (rendering) query for this *pixel*.
             nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
             // Store the last rendering throughput to accumulate the query by. Then terminate.
             thePrd->lastRenderThroughput = throughput;
-            
+
             thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
             return;
         }
@@ -1329,19 +1298,18 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
     // Try to atomically allocate a training record if we're training
     // ... and previous hits haven't reported a full buffer.
-    float3* trainTargetRadiance = nullptr;
-    const auto doAllocateTrainRecord = isTrain 
-                                    && eventIsNonDirac 
-                                    && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
-    if (doAllocateTrainRecord)
-    {
+    float3 *trainTargetRadiance = nullptr;
+    const auto doAllocateTrainRecord = isTrain
+                                       && eventIsNonDirac
+                                       && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+    if (doAllocateTrainRecord) {
         ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
                                *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
 
         int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
         if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
         {
-            auto& staticBufs = sysData.nrcCB->bufStatic;
+            auto &staticBufs = sysData.nrcCB->bufStatic;
 
             // Set up the record, linking it to the previous vertex.
             auto &trainRecord = staticBufs.trainingRecords[trainRecordIndex];
@@ -1359,12 +1327,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             // Add a training query with (unencoded) inputs to NRC network
             nrc::addTrainQuery(state, *thePrd, aux_data, !isFrontFace, trainRecordIndex);
 
-            // Used for radiance prop and for next (potential) 
+            // Used for radiance prop and for next (potential)
             // emissive hit/env miss to accumulate BSDF-sampling MIS radiance.
             thePrd->lastTrainRecordIndex = trainRecordIndex;
-        }
-        else
-        {
+        } else {
             // If the train record buffer is full - we're forced to terminate the train suffix here.
             // Unconditionally treat this ray as self-training to avoid bias.
 
@@ -1373,13 +1339,12 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
 
             // If the rendering path has been completed already, we can terminate.
-            if (isTrainSuffix)
-            {
+            if (isTrainSuffix) {
                 thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                 return;
             }
 
-            // Otherwise the rendering path hasn't been completed. Must continue until it does. 
+            // Otherwise the rendering path hasn't been completed. Must continue until it does.
             // But we can tell the next hits to not bother with allocating training records.
             // -> doAllocateTrainRecord will always be false for next hits.
             thePrd->lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
@@ -1388,22 +1353,20 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
     // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
     const bool doDirectLighting = sysData.directLighting
-                                && sysData.numLights > 0
-                                && eventIsNonDirac
-                                && idxCallScatteringEval >= 0;
-    if (doDirectLighting)
-    {
+                                  && sysData.numLights > 0
+                                  && eventIsNonDirac
+                                  && idxCallScatteringEval >= 0;
+    if (doDirectLighting) {
         // directLighting == bxdf * lightsample.radiance_over_pdf * numLights * weightMIS
         // where: bxdf == abs(dot(lightSample.direction, state.normal)) * bsdf
         // Note that lightsample.pdf is already solid-angle projected.
         float3 directLighting = ::estimateDirectLighting(state, res_data, material.arg_block,
                                                          idxCallScatteringEval, *thePrd,
                                                          isFrontFace, thin_walled, ior);
-        
+
         // If we got a training record at this vertex, accumulate the direct-lit radiance to it.
         // Note we don't need to modulate the radiance by throughput, because it is local.
-        if (trainTargetRadiance)
-        {
+        if (trainTargetRadiance) {
             *trainTargetRadiance += directLighting;
 #if SANITY_CHK
             if (is_nan_f3(directLighting)) printf("CH_radiance_no_emission: directLighting is NAN\n");
@@ -1411,8 +1374,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         }
 
         // Accumulate *rendering* radiance if not currently on a training suffix.
-        if (!isTrainSuffix)
-        {
+        if (!isTrainSuffix) {
             thePrd->radiance += throughput * directLighting;
         }
     }
@@ -1420,9 +1382,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     // Now after everything has been handled using the current material stack,
     // adjust the material stack if there was a transmission crossing a boundary surface.
     const bool isTransmitBoundary = !thin_walled && (thePrd->eventType & mi::neuraylib::BSDF_EVENT_TRANSMISSION);
-    if (isTransmitBoundary)
-    {
-        ::updatePrdMaterialStackAtTransmitBoundary(shaderConfiguration, state, res_data, material.arg_block, 
+    if (isTransmitBoundary) {
+        ::updatePrdMaterialStackAtTransmitBoundary(shaderConfiguration, state, res_data, material.arg_block,
                                                    *thePrd, /*entering = */isFrontFace, ior);
     }
 }
@@ -1445,7 +1406,7 @@ extern "C" __global__ void __anyhit__radiance_cutout()
 
     const MaterialDefinitionMDL &material = sysData.materialDefinitionsMDL[theData.ids.x];
 
-    mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
+    mi::neuraylib::Resource_data res_data = {nullptr, material.texture_handler};
 
     // The cutout opacity value needs to be determined based on the ShaderConfiguration data and geometry.cutout expression when needed.
     const DeviceShaderConfiguration &shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
@@ -1456,8 +1417,7 @@ extern "C" __global__ void __anyhit__radiance_cutout()
 
     // Stochastic alpha test to get an alpha blend effect.
     // No need to calculate an expensive random number if the test is going to fail anyway.
-    if (opacity < 1.0f && opacity <= rng(thePrd.seed))
-    {
+    if (opacity < 1.0f && opacity <= rng(thePrd.seed)) {
         optixIgnoreIntersection(); // Continue the ray
     }
 }
@@ -1467,7 +1427,7 @@ extern "C" __global__ void __anyhit__radiance_cutout()
 // Just set ray FLAG_SHADOW and return to CH.
 extern "C" __global__ void __anyhit__shadow()
 {
-    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+    PerRayData *thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
     // Always set payload values before calling optixIgnoreIntersection or optixTerminateRay because they return immediately!
     thePrd->flags |= FLAG_SHADOW; // Visbility check failed.
@@ -1486,7 +1446,7 @@ extern "C" __global__ void __anyhit__shadow_cutout()
 
     const MaterialDefinitionMDL &material = sysData.materialDefinitionsMDL[theData.ids.x];
 
-    mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
+    mi::neuraylib::Resource_data res_data = {nullptr, material.texture_handler};
 
     // The cutout opacity value needs to be determined based on the ShaderConfiguration data and geometry.cutout expression when needed.
     const DeviceShaderConfiguration &shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
@@ -1497,12 +1457,9 @@ extern "C" __global__ void __anyhit__shadow_cutout()
 
     // Stochastic alpha test to get an alpha blend effect.
     // No need to calculate an expensive random number if the test is going to fail anyway.
-    if (opacity < 1.0f && opacity <= rng(thePrd.seed))
-    {
+    if (opacity < 1.0f && opacity <= rng(thePrd.seed)) {
         optixIgnoreIntersection(); // Continue the ray
-    }
-    else
-    {
+    } else {
         // Always set payload values before calling optixIgnoreIntersection or optixTerminateRay because they return immediately!
         thePrd.flags |= FLAG_SHADOW;
 
@@ -1513,7 +1470,7 @@ extern "C" __global__ void __anyhit__shadow_cutout()
 
 // Explicit light sampling of a triangle mesh geometry with an emissive MDL material.
 // Defined here to be able to use the MDL runtime functions included via texture_lookup.h.
-extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefinition & light, PerRayData * prd)
+extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefinition &light, PerRayData *prd)
 {
     LightSample lightSample;
 
@@ -1524,7 +1481,7 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
     // Uniformly sample the triangles over their surface area.
     // Note that zero-area triangles (e.g. at the poles of spheres) are automatically never sampled with this method!
     // The cdfU is one bigger than light.width.
-    const float* cdfArea = reinterpret_cast<const float*>(light.cdfU);
+    const float *cdfArea = reinterpret_cast<const float *>(light.cdfU);
     const unsigned int idxTriangle = binarySearchCDF(cdfArea, light.width, sampleTriangle.z);
 
     // Unit square to triangle via barycentric coordinates.
@@ -1535,14 +1492,14 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
     const float gamma = 1.0f - alpha - beta;
 
     // This cast works because both unsigned int and uint3 have an alignment of 4 bytes.
-    const uint3* indices = reinterpret_cast<uint3*>(light.indices);
-    const uint3  tri = indices[idxTriangle];
+    const uint3 *indices = reinterpret_cast<uint3 *>(light.indices);
+    const uint3 tri = indices[idxTriangle];
 
-    const TriangleAttributes* attributes = reinterpret_cast<TriangleAttributes*>(light.attributes);
+    const TriangleAttributes *attributes = reinterpret_cast<TriangleAttributes *>(light.attributes);
 
-    const TriangleAttributes& attr0 = attributes[tri.x];
-    const TriangleAttributes& attr1 = attributes[tri.y];
-    const TriangleAttributes& attr2 = attributes[tri.z];
+    const TriangleAttributes &attr0 = attributes[tri.x];
+    const TriangleAttributes &attr1 = attributes[tri.y];
+    const TriangleAttributes &attr2 = attributes[tri.z];
 
     // Object space vertex attributes at the hit point.
     float3 po = attr0.vertex * alpha + attr1.vertex * beta + attr2.vertex * gamma;
@@ -1551,15 +1508,15 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
     po = transformPoint(light.matrix, po);
 
     // Calculate the outgoing direction from light sample position to surface point.
-    lightSample.direction = po - prd->pos;  // Sample direction from surface point to light sample position.
+    lightSample.direction = po - prd->pos; // Sample direction from surface point to light sample position.
     lightSample.distance = length(lightSample.direction);
 
-    if (lightSample.distance < DENOMINATOR_EPSILON)
-    {
+    if (lightSample.distance < DENOMINATOR_EPSILON) {
         return lightSample;
     }
 
-    lightSample.direction *= 1.0f / lightSample.distance; // Normalized vector from light sample position to surface point.
+    lightSample.direction *= 1.0f / lightSample.distance;
+    // Normalized vector from light sample position to surface point.
 
     float3 ns = attr0.normal * alpha + attr1.normal * beta + attr2.normal * gamma;
     float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
@@ -1588,7 +1545,7 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
     texture_coordinates[1] = texture_coordinates[0];
     texture_bitangents[1] = bt;
     texture_tangents[1] = tg;
-#endif 
+#endif
 
     // Setup the Mdl_state.
     Mdl_state state;
@@ -1609,11 +1566,11 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
     state.object_id = light.idObject;
     state.meters_per_scene_unit = 1.0f;
 
-    const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[light.idMaterial];
+    const MaterialDefinitionMDL &material = sysData.materialDefinitionsMDL[light.idMaterial];
 
-    mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
+    mi::neuraylib::Resource_data res_data = {nullptr, material.texture_handler};
 
-    const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
+    const DeviceShaderConfiguration &shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
 
     // This is always present, even if it just returns.
     optixDirectCall<void>(shaderConfiguration.idxCallInit, &state, &res_data, material.arg_block);
@@ -1622,8 +1579,7 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
     float opacity = ::getGeometryCutoutOpacity(shaderConfiguration, state, res_data, material.arg_block);
 
     // If the current light sample is inside a fully cutout region, reject that sample.
-    if (opacity <= 0.0f)
-    {
+    if (opacity <= 0.0f) {
         return lightSample;
     }
 
@@ -1639,19 +1595,17 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
     int idxCallEmissionIntensityMode = -1;
     // These are not used when there is no emission, no need to initialize.
     float3 emission_intensity;
-    int    emission_intensity_mode;
+    int emission_intensity_mode;
 
     // MDL Specs: There is no emission on the back-side unless an EDF is specified with the backface field and thin_walled is set to true.
-    if (isFrontFace)
-    {
+    if (isFrontFace) {
         idxCallEmissionEval = shaderConfiguration.idxCallSurfaceEmissionEval;
         idxCallEmissionIntensity = shaderConfiguration.idxCallSurfaceEmissionIntensity;
         idxCallEmissionIntensityMode = shaderConfiguration.idxCallSurfaceEmissionIntensityMode;
 
         emission_intensity = shaderConfiguration.surface_intensity;
         emission_intensity_mode = shaderConfiguration.surface_intensity_mode;
-    }
-    else if (thin_walled) // && !isFrontFace
+    } else if (thin_walled) // && !isFrontFace
     {
         // These can be the same callable indices if the expressions from surface and backface were identical.
         idxCallEmissionEval = shaderConfiguration.idxCallBackfaceEmissionEval;
@@ -1663,22 +1617,23 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
     }
 
     // Check if the hit geometry contains any emission.
-    if (0 <= idxCallEmissionEval)
-    {
+    if (0 <= idxCallEmissionEval) {
         if (0 <= idxCallEmissionIntensity) // Emission intensity is not a constant.
         {
-            emission_intensity = optixDirectCall<float3>(idxCallEmissionIntensity, &state, &res_data, material.arg_block);
+            emission_intensity = optixDirectCall<float3>(idxCallEmissionIntensity, &state, &res_data,
+                                                         material.arg_block);
         }
         if (0 <= idxCallEmissionIntensityMode) // Emission intensity mode is not a constant.
         {
-            emission_intensity_mode = optixDirectCall<int>(idxCallEmissionIntensityMode, &state, &res_data, material.arg_block);
+            emission_intensity_mode = optixDirectCall<int>(idxCallEmissionIntensityMode, &state, &res_data,
+                                                           material.arg_block);
         }
 
-        if (isNotNull(emission_intensity))
-        {
+        if (isNotNull(emission_intensity)) {
             EDFEvaluateData eval_data;
 
-            eval_data.k1 = -lightSample.direction; // input: outgoing direction (from light sample position to surface point).
+            eval_data.k1 = -lightSample.direction;
+            // input: outgoing direction (from light sample position to surface point).
             //eval_data.cos : output: dot(normal, k1)
             //eval_data.edf : output: edf
             //eval_data.pdf : output: pdf (non-projected hemisphere)
@@ -1697,8 +1652,7 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
 
             lightSample.pdf = lightSample.distance * lightSample.distance / denom; // Solid angle measure.
 
-            if (DENOMINATOR_EPSILON < lightSample.pdf)
-            {
+            if (DENOMINATOR_EPSILON < lightSample.pdf) {
                 lightSample.radiance_over_pdf = emission_intensity * eval_data.edf * (factor / lightSample.pdf);
             }
         }
@@ -1711,34 +1665,35 @@ extern "C" __device__ LightSample __direct_callable__light_mesh(const LightDefin
 extern "C" __global__ void __closesthit__curves()
 {
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
-    PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
+    PerRayData *thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
     // Get the data for the hit geometry instance
-    const GeometryInstanceData& theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    const GeometryInstanceData &theData = sysData.geometryInstanceData[optixGetInstanceId()];
 
     thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
-    thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
+    thePrd->distance = optixGetRayTmax();
+    // Return the current path segment distance, needed for absorption calculations in the integrator.
     // Note that no adjustment to the hit position is done here!
-    // The OptiX curve primitives are not intersecting with backfaces, which means the sceneEpsilon 
+    // The OptiX curve primitives are not intersecting with backfaces, which means the sceneEpsilon
     // offset on the continuation ray t_min is enough to prevent self-intersections independently
     // of the continuation ray direction being a reflection or transmisssion.
     //thePrd->pos = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
     thePrd->pos += thePrd->wi * thePrd->distance;
 
     // Build MDL state for the curve hit
-    Mdl_state state;
-    {
+    Mdl_state state; {
         float4 objectToWorld[3];
         float4 worldToObject[3];
 
-        getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject); // Single instance level transformation list only.
+        getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject);
+        // Single instance level transformation list only.
 
         const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
 
-        const unsigned int* indices = reinterpret_cast<unsigned int*>(theData.indices);
-        const unsigned int  index = indices[thePrimitiveIndex];
+        const unsigned int *indices = reinterpret_cast<unsigned int *>(theData.indices);
+        const unsigned int index = indices[thePrimitiveIndex];
 
-        const CurveAttributes* attributes = reinterpret_cast<const CurveAttributes*>(theData.attributes);
+        const CurveAttributes *attributes = reinterpret_cast<const CurveAttributes *>(theData.attributes);
 
         float4 spline[4];
 
@@ -1751,9 +1706,9 @@ extern "C" __global__ void __closesthit__curves()
         float3 rf = make_float3(attributes[index].reference);
 
         const float4 t = make_float4(attributes[index].texcoord.w,
-            attributes[index + 1].texcoord.w,
-            attributes[index + 2].texcoord.w,
-            attributes[index + 3].texcoord.w);
+                                     attributes[index + 1].texcoord.w,
+                                     attributes[index + 2].texcoord.w,
+                                     attributes[index + 3].texcoord.w);
 
         CubicInterpolator interpolator;
 
@@ -1772,12 +1727,15 @@ extern "C" __global__ void __closesthit__curves()
         // Coordinate in range [0.0f, 1.0f] from root to tip along the whole fiber.
         const float uFiber = (((ts0 * u) + ts1) * u + ts2) * u + ts3;
 
-        const float4 fiberPosition = interpolator.position4(u); // .xyz = object space position, .w = radius of the curve's center line at the interpolant u.
+        const float4 fiberPosition = interpolator.position4(u);
+        // .xyz = object space position, .w = radius of the curve's center line at the interpolant u.
 
-        float3 tg = interpolator.velocity3(u); // Unnormalized object space tangent along the fiber from root to tip at the interpolant u.
+        float3 tg = interpolator.velocity3(u);
+        // Unnormalized object space tangent along the fiber from root to tip at the interpolant u.
 
         float3 position = transformPoint(worldToObject, thePrd->pos); // Transform to object space.
-        float3 ns = surfaceNormal(interpolator, u, position);         // This moves position onto the surface of the curve in object space.
+        float3 ns = surfaceNormal(interpolator, u, position);
+        // This moves position onto the surface of the curve in object space.
 
         // Transform into renderer internal space == world space.
         rf = normalize(transformVector(objectToWorld, rf));
@@ -1795,7 +1753,7 @@ extern "C" __global__ void __closesthit__curves()
         // Only need the projected y- and z-components.(This works without normalization.
         const float2 proj = make_float2(dot(rf, bt), dot(rf, ns));
 
-        // The (bitangent, normal) plane contains the cross section of the intersection. 
+        // The (bitangent, normal) plane contains the cross section of the intersection.
         // I want vFiber go from 0.0f to 1.0f counter-clockwise around the fiber when looking from the fiber root along the fiber.
         // As texture coordinate this means lower-left origin texture coordinates like in OpenGL.
         const float vFiber = (atan2f(-proj.x, proj.y) + M_PIf) * 0.5f * M_1_PIf;
@@ -1815,13 +1773,13 @@ extern "C" __global__ void __closesthit__curves()
         texture_tangents[0] = tg;
 
 #if NUM_TEXTURE_SPACES == 2
-        // PERF Only ever set NUM_TEXTURE_SPACES to 2 if you need the hair BSDF to fully work, 
+        // PERF Only ever set NUM_TEXTURE_SPACES to 2 if you need the hair BSDF to fully work,
         // texture_coordinate(1): A position of the root of the hair fiber, for example, from a texture space of a surface supporting the hair fibers. This position is constant for a fiber.
         // Fixed texture coordinate for the fiber. Only loaded when NUM_TEXTURE_SPACES == 2.
         texture_coordinates[1] = make_float3(attributes[index].texcoord);
         texture_bitangents[1] = bt; // HACK Just copy the values from the first entry.
         texture_tangents[1] = tg;
-#endif 
+#endif
 
         float4 texture_results[NUM_TEXTURE_RESULTS];
 
@@ -1856,16 +1814,16 @@ extern "C" __global__ void __closesthit__curves()
     const bool isTrain = thePrd->flags & FLAG_TRAIN;
     bool isTrainSuffix = thePrd->flags & FLAG_TRAIN_SUFFIX;
 
-    const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
-    mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
-    const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
+    const MaterialDefinitionMDL &material = sysData.materialDefinitionsMDL[theData.ids.x];
+    mi::neuraylib::Resource_data res_data = {nullptr, material.texture_handler};
+    const DeviceShaderConfiguration &shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
 
     // This is always present, even if it just returns.
     optixDirectCall<void>(shaderConfiguration.idxCallInit, &state, &res_data, material.arg_block);
 
     const bool isFrontFace = true;
     const bool thin_walled = false;
-    const float3       ior = make_float3(MI_NEURAYLIB_BSDF_USE_MATERIAL_IOR);
+    const float3 ior = make_float3(MI_NEURAYLIB_BSDF_USE_MATERIAL_IOR);
 
     // Start fresh with the next BSDF sample.
     // Save the current path throughput for the direct lighting contribution.
@@ -1873,7 +1831,7 @@ extern "C" __global__ void __closesthit__curves()
     const float3 throughput = thePrd->throughput;
     thePrd->pdf = 0.0f;
 
-    // Determine which BSDF to use when the material is thin-walled. 
+    // Determine which BSDF to use when the material is thin-walled.
     int idxCallScatteringSample = shaderConfiguration.idxCallHairSample;
     int idxCallScatteringEval = shaderConfiguration.idxCallHairEval;
     int idxCallScatteringAux = shaderConfiguration.idxCallHairAux; // For material albedo/roughness.
@@ -1894,21 +1852,20 @@ extern "C" __global__ void __closesthit__curves()
                                                         idxCallScatteringSample, *thePrd,
                                                         isFrontFace, thin_walled, ior);
 
-        thePrd->wi          = sample_data.k2;            // Continuation direction.
-        thePrd->throughput *= sample_data.bsdf_over_pdf; // Adjust the path throughput for all following incident lighting.
-        thePrd->pdf         = sample_data.pdf;           // Specular events return pdf == 0.0f!
-        thePrd->eventType   = sample_data.event_type;    // This replaces the previous PRD flags.
+        thePrd->wi = sample_data.k2; // Continuation direction.
+        thePrd->throughput *= sample_data.bsdf_over_pdf;
+        // Adjust the path throughput for all following incident lighting.
+        thePrd->pdf = sample_data.pdf; // Specular events return pdf == 0.0f!
+        thePrd->eventType = sample_data.event_type; // This replaces the previous PRD flags.
 
         localThroughput = sample_data.bsdf_over_pdf;
-    }
-    else
-    {
+    } else {
         // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
         // This is usually happening with arbitrary mesh lights which only specify emission.
         thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
     }
 
-// DEBUG VIS: Albedos/roughness
+    // DEBUG VIS: Albedos/roughness
 #if 0
     ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
                            *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
@@ -1932,11 +1889,9 @@ extern "C" __global__ void __closesthit__curves()
     }
 
     // Early unbiased termination.
-    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB)
-    {
+    if (thePrd->eventType == mi::neuraylib::BSDF_EVENT_ABSORB) {
         // Terminate rendering path if it hasn't
-        if (!isTrainSuffix)
-        {
+        if (!isTrainSuffix) {
             // Add a (rendering) query for this *pixel*.
             // Not necessary here because we'd set render throughput to zero. So just leave the stale query there.
             //nrc::addRenderQuery(state, *thePrd, aux_data);
@@ -1946,9 +1901,8 @@ extern "C" __global__ void __closesthit__curves()
         }
 
         // Terminate training suffix (unbiased)
-        if (isTrain)
-        {
-            // End the train suffix by a zero-radiance unbiased 
+        if (isTrain) {
+            // End the train suffix by a zero-radiance unbiased
             // terminal vertex that links to thePrd->lastTrainRecordIndex.
             nrc::endTrainSuffixUnbiased(sysData, *thePrd);
         }
@@ -1973,18 +1927,16 @@ extern "C" __global__ void __closesthit__curves()
 
                 thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                 return;
-            }
-            else // Case 2: End of rendering path
+            } else // Case 2: End of rendering path
             {
                 // Add a (rendering) query for this *pixel*.
                 nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
-                // Store the last rendering throughput to accumulate the query by. 
+                // Store the last rendering throughput to accumulate the query by.
                 thePrd->lastRenderThroughput = throughput;
-                
+
                 // EDGE: Train suffix ended before rendering path due to a full buffer.
-                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL)
-                {
+                if (thePrd->lastTrainRecordIndex == nrc::TRAIN_RECORD_INDEX_BUFFER_FULL) {
                     thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                     return;
                 }
@@ -1994,15 +1946,14 @@ extern "C" __global__ void __closesthit__curves()
                 thePrd->areaSpread = 0.f; // Restart area spread accumulation
                 isTrainSuffix = true;
             }
-        }
-        else // Pure rendering ray ends
+        } else // Pure rendering ray ends
         {
             // Add a (rendering) query for this *pixel*.
             nrc::addRenderQuery(state, *thePrd, aux_data, !isFrontFace);
 
             // Store the last rendering throughput to accumulate the query by. Then terminate.
             thePrd->lastRenderThroughput = throughput;
-            
+
             thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
             return;
         }
@@ -2012,19 +1963,18 @@ extern "C" __global__ void __closesthit__curves()
 
     // Try to atomically allocate a training record if we're training
     // ... and previous hits haven't reported a full buffer.
-    float3* trainTargetRadiance = nullptr;
-    const auto doAllocateTrainRecord = isTrain 
-                                    && eventIsNonDirac 
-                                    && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
-    if (doAllocateTrainRecord)
-    {
+    float3 *trainTargetRadiance = nullptr;
+    const auto doAllocateTrainRecord = isTrain
+                                       && eventIsNonDirac
+                                       && thePrd->lastTrainRecordIndex > nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
+    if (doAllocateTrainRecord) {
         ::getBSDFAuxiliaryData(state, res_data, material.arg_block, idxCallScatteringAux,
                                *thePrd, isFrontFace, thin_walled, ior, queriedAuxData, aux_data);
 
         int trainRecordIndex = atomicAdd(&sysData.nrcCB->numTrainingRecords, 1);
         if (trainRecordIndex < nrc::NUM_TRAINING_RECORDS_PER_FRAME) [[likely]]
         {
-            auto& staticBufs = sysData.nrcCB->bufStatic;
+            auto &staticBufs = sysData.nrcCB->bufStatic;
 
             // Set up the record, linking it to the previous vertex.
             auto &trainRecord = staticBufs.trainingRecords[trainRecordIndex];
@@ -2042,12 +1992,10 @@ extern "C" __global__ void __closesthit__curves()
             // Add a training query with (unencoded) inputs to NRC network
             nrc::addTrainQuery(state, *thePrd, aux_data, !isFrontFace, trainRecordIndex);
 
-            // Used for radiance prop and for next (potential) 
+            // Used for radiance prop and for next (potential)
             // emissive hit/env miss to accumulate BSDF-sampling MIS radiance.
             thePrd->lastTrainRecordIndex = trainRecordIndex;
-        }
-        else
-        {
+        } else {
             // If the train record buffer is full - we're forced to terminate the train suffix here.
             // Unconditionally treat this ray as self-training to avoid bias.
 
@@ -2056,13 +2004,12 @@ extern "C" __global__ void __closesthit__curves()
             nrc::endTrainSuffixSelfTrain(state, *thePrd, aux_data, !isFrontFace);
 
             // If the rendering path has been completed already, we can terminate.
-            if (isTrainSuffix)
-            {
+            if (isTrainSuffix) {
                 thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
                 return;
             }
 
-            // Otherwise the rendering path hasn't been completed. Must continue until it does. 
+            // Otherwise the rendering path hasn't been completed. Must continue until it does.
             // But we can tell the next hits to not bother with allocating training records.
             // -> doAllocateTrainRecord will always be false for next hits.
             thePrd->lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_BUFFER_FULL;
@@ -2071,22 +2018,20 @@ extern "C" __global__ void __closesthit__curves()
 
     // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
     const bool doDirectLighting = sysData.directLighting
-                                && sysData.numLights > 0
-                                && eventIsNonDirac
-                                && idxCallScatteringEval >= 0;
-    if (doDirectLighting)
-    {
+                                  && sysData.numLights > 0
+                                  && eventIsNonDirac
+                                  && idxCallScatteringEval >= 0;
+    if (doDirectLighting) {
         // directLighting == bxdf * lightsample.radiance_over_pdf * numLights * weightMIS
         // where: bxdf == abs(dot(lightSample.direction, state.normal)) * bsdf
         // Note that lightsample.pdf is already solid-angle projected.
         float3 directLighting = ::estimateDirectLighting(state, res_data, material.arg_block,
                                                          idxCallScatteringEval, *thePrd,
                                                          isFrontFace, thin_walled, ior);
-        
+
         // If we got a training record at this vertex, accumulate the direct-lit radiance to it.
         // Note we don't need to modulate the radiance by throughput, because it is local.
-        if (trainTargetRadiance)
-        {
+        if (trainTargetRadiance) {
             *trainTargetRadiance += directLighting;
 #if SANITY_CHK
             if (is_nan_f3(directLighting)) printf("CH_curves: directLighting is NAN\n");
@@ -2094,10 +2039,8 @@ extern "C" __global__ void __closesthit__curves()
         }
 
         // Accumulate *rendering* radiance if not currently on a training suffix.
-        if (!isTrainSuffix)
-        {
+        if (!isTrainSuffix) {
             thePrd->radiance += throughput * directLighting;
         }
     }
-
 }

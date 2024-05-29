@@ -41,101 +41,106 @@
 #include "vertex_attributes.h"
 
 
- // Structure storing the per instance data for all instances inside the geometryInstanceData buffer below. Indexed via optixGetInstanceId().
-struct GeometryInstanceData
-{
-	// 16 byte alignment
-	// Pack the different IDs into a single int4 to load them vectorized.
-	int4 ids; // .x = idMaterial, .y = idLight, .z = idObject, .w = pad
-	// 8 byte alignment
-	// Using CUdeviceptr here to be able to handle different attribute and index formats.
-	CUdeviceptr attributes;
-	CUdeviceptr indices;
+// Structure storing the per instance data for all instances inside the geometryInstanceData buffer below. Indexed via optixGetInstanceId().
+struct GeometryInstanceData {
+    // 16 byte alignment
+    // Pack the different IDs into a single int4 to load them vectorized.
+    int4 ids; // .x = idMaterial, .y = idLight, .z = idObject, .w = pad
+    // 8 byte alignment
+    // Using CUdeviceptr here to be able to handle different attribute and index formats.
+    CUdeviceptr attributes;
+    CUdeviceptr indices;
 };
 
 // Data updated per frame
-struct SystemDataPerFrame
-{
-	// 16 byte alignment
+struct SystemDataPerFrame {
+    // 16 byte alignment
 
-	// 8 byte alignment
-	int2 tileSize{ 8, 8 };    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
-	//int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
-	int2 numTiles{ 0, 0 }; // Screen resolution / tileSize
+    // 8 byte alignment
+    int2 tileSize{8, 8};
+    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
+    //int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant.
+    int2 numTiles{0, 0}; // Screen resolution / tileSize
 
-	// 4 byte alignment
-	int iterationIndex;
-	int totalSubframeIndex;  // Added: total number of subframes, counting all iterations
-	int tileTrainingIndex;   // The local index of training ray within each tile. Randomly sampled from [0..tileSize) every subframe
+    // 4 byte alignment
+    int iterationIndex;
+    int totalSubframeIndex; // Added: total number of subframes, counting all iterations
+    int tileTrainingIndex;
+    // The local index of training ray within each tile. Randomly sampled from [0..tileSize) every subframe
 
-	// TODO: Both should not be per-frame (at least for scaling factor)
-	float nrcTrainUnbiasedRatio;
-	float nrcAreaSpreadFactorSqrt;
+    // TODO: Both should not be per-frame (at least for scaling factor)
+    float nrcTrainUnbiasedRatio;
+    float nrcAreaSpreadFactorSqrt;
 };
 
-namespace nrc { struct ControlBlock; }
+namespace nrc {
+    struct ControlBlock;
+}
 
-struct SystemData
-{
-	// 16 byte alignment
-	//int4 rect; // Unused, not implementing a tile renderer.
+struct SystemData {
+    // 16 byte alignment
+    //int4 rect; // Unused, not implementing a tile renderer.
 
-	// 8 byte alignment
-	OptixTraversableHandle topObject;
+    // 8 byte alignment
+    OptixTraversableHandle topObject;
 
-	nrc::ControlBlock* nrcCB; // Single NRC control block
+    nrc::ControlBlock *nrcCB; // Single NRC control block
 
-	// The accumulated linear color space output buffer.
-	// This is always sized to the resolution, not always matching the launch dimension.
-	// Using a CUdeviceptr here to allow for different buffer formats without too many casts.
-	CUdeviceptr outputBuffer;
-	// These buffers are used differently among the rendering strategies.
-	// See: Device::compositor. Not used for this NRC demo
-	CUdeviceptr tileBuffer;
-	CUdeviceptr texelBuffer;
+    // The accumulated linear color space output buffer.
+    // This is always sized to the resolution, not always matching the launch dimension.
+    // Using a CUdeviceptr here to allow for different buffer formats without too many casts.
+    CUdeviceptr outputBuffer;
+    // These buffers are used differently among the rendering strategies.
+    // See: Device::compositor. Not used for this NRC demo
+    CUdeviceptr tileBuffer;
+    CUdeviceptr texelBuffer;
 
-	GeometryInstanceData* geometryInstanceData; // Attributes, indices, idMaterial, idLight, idObject per instance.
+    GeometryInstanceData *geometryInstanceData; // Attributes, indices, idMaterial, idLight, idObject per instance.
 
-	CameraDefinition* cameraDefinitions; // Currently only one camera in the array. (Allows camera motion blur in the future.)
-	LightDefinition* lightDefinitions;
+    CameraDefinition *cameraDefinitions;
+    // Currently only one camera in the array. (Allows camera motion blur in the future.)
+    LightDefinition *lightDefinitions;
 
-	MaterialDefinitionMDL* materialDefinitionsMDL;  // The MDL material parameter argument block, texture handler and index into the shader.
-	DeviceShaderConfiguration* shaderConfigurations;    // Indexed by MaterialDefinitionMDL::indexShader.
+    MaterialDefinitionMDL *materialDefinitionsMDL;
+    // The MDL material parameter argument block, texture handler and index into the shader.
+    DeviceShaderConfiguration *shaderConfigurations; // Indexed by MaterialDefinitionMDL::indexShader.
 
-	int2 resolution;  // The actual rendering resolution. Independent from the launch dimensions for some rendering strategies.
-	int2 pathLengths; // .x = min path length before Russian Roulette kicks in, .y = maximum path length
+    int2 resolution;
+    // The actual rendering resolution. Independent from the launch dimensions for some rendering strategies.
+    int2 pathLengths; // .x = min path length before Russian Roulette kicks in, .y = maximum path length
 
-	// 4 byte alignment 
-	int deviceCount;   // Number of devices doing the rendering.
-	int deviceIndex;   // Device index to be able to distinguish the individual devices in a multi-GPU environment.
-	int samplesSqrt;
-	int walkLength;   // Volume scattering random walk steps until the maximum distance is used to potentially exit the volume (could be TIR).
+    // 4 byte alignment
+    int deviceCount; // Number of devices doing the rendering.
+    int deviceIndex; // Device index to be able to distinguish the individual devices in a multi-GPU environment.
+    int samplesSqrt;
+    int walkLength;
+    // Volume scattering random walk steps until the maximum distance is used to potentially exit the volume (could be TIR).
 
-	float sceneEpsilon;
-	float clockScale; // Only used with USE_TIME_VIEW.
+    float sceneEpsilon;
+    float clockScale; // Only used with USE_TIME_VIEW.
 
-	int typeLens;     // Camera type.
+    int typeLens; // Camera type.
 
-	int numCameras;     // Number of elements in cameraDefinitions.
-	int numLights;      // Number of elements in lightDefinitions.
-	int numMaterials;   // Number of elements in materialDefinitionsMDL. (Actually not used in device code.)
-	int numBitsShaders; // The number of bits needed to represent the number of elements in shaderConfigurations. Used as coherence hint in SER.
+    int numCameras; // Number of elements in cameraDefinitions.
+    int numLights; // Number of elements in lightDefinitions.
+    int numMaterials; // Number of elements in materialDefinitionsMDL. (Actually not used in device code.)
+    int numBitsShaders;
+    // The number of bits needed to represent the number of elements in shaderConfigurations. Used as coherence hint in SER.
 
-	int directLighting;
-	
-	// Padding to 16-byte alignment
-	//int pad0;
-	//int pad1;
+    int directLighting;
 
-	SystemDataPerFrame pf;
+    // Padding to 16-byte alignment
+    //int pad0;
+    //int pad1;
+
+    SystemDataPerFrame pf;
 };
 
 
 // Helper structure to optimize the lens shader direct callable arguments.
 // Return this primary ray structure instead of using references to local memory.
-struct LensRay
-{
-	float3 org;
-	float3 dir;
+struct LensRay {
+    float3 org;
+    float3 dir;
 };
 #endif // SYSTEM_DATA_H

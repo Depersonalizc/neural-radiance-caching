@@ -39,83 +39,79 @@
 
 
 /// Result of a material compilation.
-struct Compile_result
-{
-  /// The compiled material.
-  mi::base::Handle<mi::neuraylib::ICompiled_material const> compiled_material;
+struct Compile_result {
+    /// The compiled material.
+    mi::base::Handle<mi::neuraylib::ICompiled_material const> compiled_material;
 
-  /// The generated target code object.
-  mi::base::Handle<mi::neuraylib::ITarget_code const> target_code;
+    /// The generated target code object.
+    mi::base::Handle<mi::neuraylib::ITarget_code const> target_code;
 
-  /// The argument block for the compiled material.
-  mi::base::Handle<mi::neuraylib::ITarget_argument_block const> argument_block;
+    /// The argument block for the compiled material.
+    mi::base::Handle<mi::neuraylib::ITarget_argument_block const> argument_block;
 
-  /// Information required to load a texture.
-  struct Texture_info
-  {
-    std::string                                db_name;
-    mi::neuraylib::ITarget_code::Texture_shape shape;
+    /// Information required to load a texture.
+    struct Texture_info {
+        std::string db_name;
+        mi::neuraylib::ITarget_code::Texture_shape shape;
 
-    Texture_info()
-      : shape(mi::neuraylib::ITarget_code::Texture_shape_invalid)
+        Texture_info()
+            : shape(mi::neuraylib::ITarget_code::Texture_shape_invalid)
+        {
+        }
+
+        Texture_info(char const *db_name,
+                     mi::neuraylib::ITarget_code::Texture_shape shape)
+            : db_name(db_name)
+              , shape(shape)
+        {
+        }
+    };
+
+    /// Information required to load a light profile.
+    struct Light_profile_info {
+        std::string db_name;
+
+        Light_profile_info()
+        {
+        }
+
+        Light_profile_info(char const *db_name)
+            : db_name(db_name)
+        {
+        }
+    };
+
+    /// Information required to load a BSDF measurement.
+    struct Bsdf_measurement_info {
+        std::string db_name;
+
+        Bsdf_measurement_info()
+        {
+        }
+
+        Bsdf_measurement_info(char const *db_name)
+            : db_name(db_name)
+        {
+        }
+    };
+
+    /// Textures used by the compile result.
+    std::vector<Texture_info> textures;
+
+    /// Light profiles used by the compile result.
+    std::vector<Light_profile_info> light_profiles;
+
+    /// Bsdf_measurements used by the compile result.
+    std::vector<Bsdf_measurement_info> bsdf_measurements;
+
+    /// Constructor.
+    Compile_result()
     {
+        // Add invalid resources.
+        textures.emplace_back();
+        light_profiles.emplace_back();
+        bsdf_measurements.emplace_back();
     }
-
-    Texture_info(char const* db_name,
-                  mi::neuraylib::ITarget_code::Texture_shape shape)
-      : db_name(db_name)
-      , shape(shape)
-    {
-    }
-  };
-
-  /// Information required to load a light profile.
-  struct Light_profile_info
-  {
-    std::string db_name;
-
-    Light_profile_info()
-    {
-    }
-
-    Light_profile_info(char const* db_name)
-      : db_name(db_name)
-    {
-    }
-  };
-
-  /// Information required to load a BSDF measurement.
-  struct Bsdf_measurement_info
-  {
-    std::string db_name;
-
-    Bsdf_measurement_info()
-    {
-    }
-
-    Bsdf_measurement_info(char const* db_name)
-      : db_name(db_name)
-    {
-    }
-  };
-
-  /// Textures used by the compile result.
-  std::vector<Texture_info> textures;
-
-  /// Light profiles used by the compile result.
-  std::vector<Light_profile_info> light_profiles;
-
-  /// Bsdf_measurements used by the compile result.
-  std::vector<Bsdf_measurement_info> bsdf_measurements;
-
-  /// Constructor.
-  Compile_result()
-  {
-    // Add invalid resources.
-    textures.emplace_back();
-    light_profiles.emplace_back();
-    bsdf_measurements.emplace_back();
-  }
 };
 
 #endif // COMPILE_RESULT_H

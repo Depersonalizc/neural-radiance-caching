@@ -31,12 +31,11 @@
 #ifndef VERTEX_ATTRIBUTES_H
 #define VERTEX_ATTRIBUTES_H
 
-struct TriangleAttributes
-{
-  float3 vertex;
-  float3 tangent;
-  float3 normal;
-  float3 texcoord;
+struct TriangleAttributes {
+    float3 vertex;
+    float3 tangent;
+    float3 normal;
+    float3 texcoord;
 };
 
 #endif // VERTEX_ATTRIBUTES_H

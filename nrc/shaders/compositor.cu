@@ -34,35 +34,35 @@
 #include "half_common.h"
 
 // Compositor kernel to copy the tiles in the texelBuffer into the final outputBuffer location.
-extern "C" __global__ void compositor(CompositorData* args)
+extern "C" __global__ void compositor(CompositorData *args)
 {
-  const unsigned int xLaunch = blockDim.x * blockIdx.x + threadIdx.x;
-  const unsigned int yLaunch = blockDim.y * blockIdx.y + threadIdx.y;
-  
-  if (yLaunch < args->resolution.y)
-  {
-    // First calculate block coordinates of this launch index.
-    // That is the launch index divided by the tile dimensions. (No operator>>() on vectors?)
-    const unsigned int xBlock = xLaunch >> args->tileShift.x;
-    const unsigned int yBlock = yLaunch >> args->tileShift.y;
-  
-    // Each device needs to start at a different column and each row should start with a different device.
-    const unsigned int xTile = xBlock * args->deviceCount + ((args->deviceIndex + yBlock) % args->deviceCount);
+    const unsigned int xLaunch = blockDim.x * blockIdx.x + threadIdx.x;
+    const unsigned int yLaunch = blockDim.y * blockIdx.y + threadIdx.y;
 
-    // The horizontal pixel coordinate is: tile coordinate * tile width + launch index % tile width.
-    const unsigned int xPixel = xTile * args->tileSize.x + (xLaunch & (args->tileSize.x - 1)); // tileSize needs to be power-of-two for this modulo operation.
+    if (yLaunch < args->resolution.y) {
+        // First calculate block coordinates of this launch index.
+        // That is the launch index divided by the tile dimensions. (No operator>>() on vectors?)
+        const unsigned int xBlock = xLaunch >> args->tileShift.x;
+        const unsigned int yBlock = yLaunch >> args->tileShift.y;
 
-    if (xPixel < args->resolution.x)
-    {
+        // Each device needs to start at a different column and each row should start with a different device.
+        const unsigned int xTile = xBlock * args->deviceCount + ((args->deviceIndex + yBlock) % args->deviceCount);
+
+        // The horizontal pixel coordinate is: tile coordinate * tile width + launch index % tile width.
+        const unsigned int xPixel = xTile * args->tileSize.x + (xLaunch & (args->tileSize.x - 1));
+        // tileSize needs to be power-of-two for this modulo operation.
+
+        if (xPixel < args->resolution.x) {
 #if USE_FP32_OUTPUT
-      const float4 *src = reinterpret_cast<float4*>(args->tileBuffer);
-      float4       *dst = reinterpret_cast<float4*>(args->outputBuffer);
+            const float4 *src = reinterpret_cast<float4 *>(args->tileBuffer);
+            float4 *dst = reinterpret_cast<float4 *>(args->outputBuffer);
 #else
       const Half4 *src = reinterpret_cast<Half4*>(args->tileBuffer);
       Half4       *dst = reinterpret_cast<Half4*>(args->outputBuffer);
 #endif
-      // The src location needs to be calculated with the original launch width, because gridDim.x * blockDim.x might be different.
-      dst[yLaunch * args->resolution.x + xPixel] = src[yLaunch * args->launchWidth + xLaunch]; // Copy one pixel per launch index.
+            // The src location needs to be calculated with the original launch width, because gridDim.x * blockDim.x might be different.
+            dst[yLaunch * args->resolution.x + xPixel] = src[yLaunch * args->launchWidth + xLaunch];
+            // Copy one pixel per launch index.
+        }
     }
-  }
 }

@@ -35,14 +35,13 @@
 
 #include "texture_handler.h"
 
-struct MaterialDefinitionMDL
-{
-  // 8 byte alignment.
-  CUdeviceptr      arg_block;       // The MDL argument block pointer for this material reference.
-  Texture_handler* texture_handler; // The pointer to the texture handler data.
-  int              indexShader;     // Index into the MDL shader configuration vector.
-  // Pad to 8 byte alignment.
-  int pad0; 
+struct MaterialDefinitionMDL {
+    // 8 byte alignment.
+    CUdeviceptr arg_block; // The MDL argument block pointer for this material reference.
+    Texture_handler *texture_handler; // The pointer to the texture handler data.
+    int indexShader; // Index into the MDL shader configuration vector.
+    // Pad to 8 byte alignment.
+    int pad0;
 };
 
 #endif // MATERIAL_DEFINITION_MDL_H

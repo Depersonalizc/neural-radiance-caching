@@ -31,12 +31,11 @@
 #ifndef CAMERA_DEFINITION_H
 #define CAMERA_DEFINITION_H
 
-struct CameraDefinition
-{
-  float3 P;
-  float3 U;
-  float3 V;
-  float3 W;
+struct CameraDefinition {
+    float3 P;
+    float3 U;
+    float3 V;
+    float3 W;
 };
 
 #endif // CAMERA_DEFINITION_H

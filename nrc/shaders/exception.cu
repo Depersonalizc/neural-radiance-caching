@@ -37,20 +37,20 @@ extern "C" __constant__ SystemData sysData;
 
 extern "C" __global__ void __exception__all()
 {
-  //const uint3 theLaunchDim     = optixGetLaunchDimensions(); 
-  const uint3 theLaunchIndex   = optixGetLaunchIndex();
-  const int   theExceptionCode = optixGetExceptionCode();
+    //const uint3 theLaunchDim     = optixGetLaunchDimensions();
+    const uint3 theLaunchIndex = optixGetLaunchIndex();
+    const int theExceptionCode = optixGetExceptionCode();
 
-  printf("Exception %d at (%u, %u)\n", theExceptionCode, theLaunchIndex.x, theLaunchIndex.y);
+    printf("Exception %d at (%u, %u)\n", theExceptionCode, theLaunchIndex.x, theLaunchIndex.y);
 
-// FIXME This debug color writing only works for render strategies where the launch dimension matches the outputBuffer resolution!
-//
-//  const unsigned int index = theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x;
-//#if USE_FP32_OUTPUT
-//  float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
-//  buffer[index] = make_float4(1000000.0f, 0.0f, 1000000.0f, 1.0f); // RGBA32F super magenta
-//#else
-//  Half4* buffer = reinterpret_cast<Half4*>(sysData.outputBuffer);
-//  buffer[index] = make_Half4(1000000.0f, 0.0f, 1000000.0f, 1.0f); // RGBA16F super magenta
-//#endif
+    // FIXME This debug color writing only works for render strategies where the launch dimension matches the outputBuffer resolution!
+    //
+    //  const unsigned int index = theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x;
+    //#if USE_FP32_OUTPUT
+    //  float4* buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
+    //  buffer[index] = make_float4(1000000.0f, 0.0f, 1000000.0f, 1.0f); // RGBA32F super magenta
+    //#else
+    //  Half4* buffer = reinterpret_cast<Half4*>(sysData.outputBuffer);
+    //  buffer[index] = make_Half4(1000000.0f, 0.0f, 1000000.0f, 1.0f); // RGBA16F super magenta
+    //#endif
 }

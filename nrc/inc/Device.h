@@ -35,7 +35,7 @@
 #include "shaders/config.h"
 
 #include <cuda.h>
- // This is needed for the __align__ only.
+// This is needed for the __align__ only.
 #include <cuda_runtime.h>
 #include <curand.h>
 
@@ -69,623 +69,656 @@
 #include <memory>
 #include <vector>
 
-struct DeviceAttribute
-{
-	int maxThreadsPerBlock;
-	int maxBlockDimX;
-	int maxBlockDimY;
-	int maxBlockDimZ;
-	int maxGridDimX;
-	int maxGridDimY;
-	int maxGridDimZ;
-	int maxSharedMemoryPerBlock;
-	int sharedMemoryPerBlock;
-	int totalConstantMemory;
-	int warpSize;
-	int maxPitch;
-	int maxRegistersPerBlock;
-	int registersPerBlock;
-	int clockRate;
-	int textureAlignment;
-	int gpuOverlap;
-	int multiprocessorCount;
-	int kernelExecTimeout;
-	int integrated;
-	int canMapHostMemory;
-	int computeMode;
-	int maximumTexture1dWidth;
-	int maximumTexture2dWidth;
-	int maximumTexture2dHeight;
-	int maximumTexture3dWidth;
-	int maximumTexture3dHeight;
-	int maximumTexture3dDepth;
-	int maximumTexture2dLayeredWidth;
-	int maximumTexture2dLayeredHeight;
-	int maximumTexture2dLayeredLayers;
-	int maximumTexture2dArrayWidth;
-	int maximumTexture2dArrayHeight;
-	int maximumTexture2dArrayNumslices;
-	int surfaceAlignment;
-	int concurrentKernels;
-	int eccEnabled;
-	int pciBusId;
-	int pciDeviceId;
-	int tccDriver;
-	int memoryClockRate;
-	int globalMemoryBusWidth;
-	int l2CacheSize;
-	int maxThreadsPerMultiprocessor;
-	int asyncEngineCount;
-	int unifiedAddressing;
-	int maximumTexture1dLayeredWidth;
-	int maximumTexture1dLayeredLayers;
-	int canTex2dGather;
-	int maximumTexture2dGatherWidth;
-	int maximumTexture2dGatherHeight;
-	int maximumTexture3dWidthAlternate;
-	int maximumTexture3dHeightAlternate;
-	int maximumTexture3dDepthAlternate;
-	int pciDomainId;
-	int texturePitchAlignment;
-	int maximumTexturecubemapWidth;
-	int maximumTexturecubemapLayeredWidth;
-	int maximumTexturecubemapLayeredLayers;
-	int maximumSurface1dWidth;
-	int maximumSurface2dWidth;
-	int maximumSurface2dHeight;
-	int maximumSurface3dWidth;
-	int maximumSurface3dHeight;
-	int maximumSurface3dDepth;
-	int maximumSurface1dLayeredWidth;
-	int maximumSurface1dLayeredLayers;
-	int maximumSurface2dLayeredWidth;
-	int maximumSurface2dLayeredHeight;
-	int maximumSurface2dLayeredLayers;
-	int maximumSurfacecubemapWidth;
-	int maximumSurfacecubemapLayeredWidth;
-	int maximumSurfacecubemapLayeredLayers;
-	int maximumTexture1dLinearWidth;
-	int maximumTexture2dLinearWidth;
-	int maximumTexture2dLinearHeight;
-	int maximumTexture2dLinearPitch;
-	int maximumTexture2dMipmappedWidth;
-	int maximumTexture2dMipmappedHeight;
-	int computeCapabilityMajor;
-	int computeCapabilityMinor;
-	int maximumTexture1dMipmappedWidth;
-	int streamPrioritiesSupported;
-	int globalL1CacheSupported;
-	int localL1CacheSupported;
-	int maxSharedMemoryPerMultiprocessor;
-	int maxRegistersPerMultiprocessor;
-	int managedMemory;
-	int multiGpuBoard;
-	int multiGpuBoardGroupId;
-	int hostNativeAtomicSupported;
-	int singleToDoublePrecisionPerfRatio;
-	int pageableMemoryAccess;
-	int concurrentManagedAccess;
-	int computePreemptionSupported;
-	int canUseHostPointerForRegisteredMem;
-	int canUse64BitStreamMemOps;
-	int canUseStreamWaitValueNor;
-	int cooperativeLaunch;
-	int cooperativeMultiDeviceLaunch;
-	int maxSharedMemoryPerBlockOptin;
-	int canFlushRemoteWrites;
-	int hostRegisterSupported;
-	int pageableMemoryAccessUsesHostPageTables;
-	int directManagedMemAccessFromHost;
+struct DeviceAttribute {
+    int maxThreadsPerBlock;
+    int maxBlockDimX;
+    int maxBlockDimY;
+    int maxBlockDimZ;
+    int maxGridDimX;
+    int maxGridDimY;
+    int maxGridDimZ;
+    int maxSharedMemoryPerBlock;
+    int sharedMemoryPerBlock;
+    int totalConstantMemory;
+    int warpSize;
+    int maxPitch;
+    int maxRegistersPerBlock;
+    int registersPerBlock;
+    int clockRate;
+    int textureAlignment;
+    int gpuOverlap;
+    int multiprocessorCount;
+    int kernelExecTimeout;
+    int integrated;
+    int canMapHostMemory;
+    int computeMode;
+    int maximumTexture1dWidth;
+    int maximumTexture2dWidth;
+    int maximumTexture2dHeight;
+    int maximumTexture3dWidth;
+    int maximumTexture3dHeight;
+    int maximumTexture3dDepth;
+    int maximumTexture2dLayeredWidth;
+    int maximumTexture2dLayeredHeight;
+    int maximumTexture2dLayeredLayers;
+    int maximumTexture2dArrayWidth;
+    int maximumTexture2dArrayHeight;
+    int maximumTexture2dArrayNumslices;
+    int surfaceAlignment;
+    int concurrentKernels;
+    int eccEnabled;
+    int pciBusId;
+    int pciDeviceId;
+    int tccDriver;
+    int memoryClockRate;
+    int globalMemoryBusWidth;
+    int l2CacheSize;
+    int maxThreadsPerMultiprocessor;
+    int asyncEngineCount;
+    int unifiedAddressing;
+    int maximumTexture1dLayeredWidth;
+    int maximumTexture1dLayeredLayers;
+    int canTex2dGather;
+    int maximumTexture2dGatherWidth;
+    int maximumTexture2dGatherHeight;
+    int maximumTexture3dWidthAlternate;
+    int maximumTexture3dHeightAlternate;
+    int maximumTexture3dDepthAlternate;
+    int pciDomainId;
+    int texturePitchAlignment;
+    int maximumTexturecubemapWidth;
+    int maximumTexturecubemapLayeredWidth;
+    int maximumTexturecubemapLayeredLayers;
+    int maximumSurface1dWidth;
+    int maximumSurface2dWidth;
+    int maximumSurface2dHeight;
+    int maximumSurface3dWidth;
+    int maximumSurface3dHeight;
+    int maximumSurface3dDepth;
+    int maximumSurface1dLayeredWidth;
+    int maximumSurface1dLayeredLayers;
+    int maximumSurface2dLayeredWidth;
+    int maximumSurface2dLayeredHeight;
+    int maximumSurface2dLayeredLayers;
+    int maximumSurfacecubemapWidth;
+    int maximumSurfacecubemapLayeredWidth;
+    int maximumSurfacecubemapLayeredLayers;
+    int maximumTexture1dLinearWidth;
+    int maximumTexture2dLinearWidth;
+    int maximumTexture2dLinearHeight;
+    int maximumTexture2dLinearPitch;
+    int maximumTexture2dMipmappedWidth;
+    int maximumTexture2dMipmappedHeight;
+    int computeCapabilityMajor;
+    int computeCapabilityMinor;
+    int maximumTexture1dMipmappedWidth;
+    int streamPrioritiesSupported;
+    int globalL1CacheSupported;
+    int localL1CacheSupported;
+    int maxSharedMemoryPerMultiprocessor;
+    int maxRegistersPerMultiprocessor;
+    int managedMemory;
+    int multiGpuBoard;
+    int multiGpuBoardGroupId;
+    int hostNativeAtomicSupported;
+    int singleToDoublePrecisionPerfRatio;
+    int pageableMemoryAccess;
+    int concurrentManagedAccess;
+    int computePreemptionSupported;
+    int canUseHostPointerForRegisteredMem;
+    int canUse64BitStreamMemOps;
+    int canUseStreamWaitValueNor;
+    int cooperativeLaunch;
+    int cooperativeMultiDeviceLaunch;
+    int maxSharedMemoryPerBlockOptin;
+    int canFlushRemoteWrites;
+    int hostRegisterSupported;
+    int pageableMemoryAccessUsesHostPageTables;
+    int directManagedMemAccessFromHost;
 };
 
-struct DeviceProperty
-{
-	unsigned int rtcoreVersion;
-	unsigned int limitMaxTraceDepth;
-	unsigned int limitMaxTraversableGraphDepth;
-	unsigned int limitMaxPrimitivesPerGas;
-	unsigned int limitMaxInstancesPerIas;
-	unsigned int limitMaxInstanceId;
-	unsigned int limitNumBitsInstanceVisibilityMask;
-	unsigned int limitMaxSbtRecordsPerGas;
-	unsigned int limitMaxSbtOffset;
-	unsigned int shaderExecutionReordering;
+struct DeviceProperty {
+    unsigned int rtcoreVersion;
+    unsigned int limitMaxTraceDepth;
+    unsigned int limitMaxTraversableGraphDepth;
+    unsigned int limitMaxPrimitivesPerGas;
+    unsigned int limitMaxInstancesPerIas;
+    unsigned int limitMaxInstanceId;
+    unsigned int limitNumBitsInstanceVisibilityMask;
+    unsigned int limitMaxSbtRecordsPerGas;
+    unsigned int limitMaxSbtOffset;
+    unsigned int shaderExecutionReordering;
 };
 
 
 // None of the programs is using SBT data!
-struct SbtRecordHeader
-{
-	__align__(OPTIX_SBT_RECORD_ALIGNMENT) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
+struct SbtRecordHeader {
+    __align__(OPTIX_SBT_RECORD_ALIGNMENT) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
 };
 
 
-enum ModuleIdentifier
-{
-	MODULE_ID_RAYGENERATION,
-	MODULE_ID_FIRST_CUSTOM = MODULE_ID_RAYGENERATION,
-	MODULE_ID_EXCEPTION,
-	MODULE_ID_MISS,
-	MODULE_ID_HIT,
-	MODULE_ID_LENS_SHADER,
-	MODULE_ID_LIGHT_SAMPLE,
-	MODULE_ID_LAST_CUSTOM = MODULE_ID_LIGHT_SAMPLE,
+enum ModuleIdentifier {
+    MODULE_ID_RAYGENERATION,
+    MODULE_ID_FIRST_CUSTOM = MODULE_ID_RAYGENERATION,
+    MODULE_ID_EXCEPTION,
+    MODULE_ID_MISS,
+    MODULE_ID_HIT,
+    MODULE_ID_LENS_SHADER,
+    MODULE_ID_LIGHT_SAMPLE,
+    MODULE_ID_LAST_CUSTOM = MODULE_ID_LIGHT_SAMPLE,
 
-	MODULE_ID_BUILTIN_CUBIC_BSPLINE_IS,
+    MODULE_ID_BUILTIN_CUBIC_BSPLINE_IS,
 
-	NUM_MODULE_IDENTIFIERS
+    NUM_MODULE_IDENTIFIERS
 };
 
 
-enum ProgramGroupId
-{
-	PGID_RAYGENERATION,
+enum ProgramGroupId {
+    PGID_RAYGENERATION,
 
-	PGID_EXCEPTION,
+    PGID_EXCEPTION,
 
-	PGID_MISS_RADIANCE, PGID_MISS_SHADOW,
+    PGID_MISS_RADIANCE, PGID_MISS_SHADOW,
 
-	// Hit records for triangles:
-	// 0 = no emission, no cutout
-	PGID_HIT_RADIANCE_0,
-	PGID_FIRST_HIT_GROUP = PGID_HIT_RADIANCE_0,
-	PGID_HIT_SHADOW_0,
-	// 1 = emission, no cutout
-	PGID_HIT_RADIANCE_1,
-	PGID_HIT_SHADOW_1,
-	// 2 = no emission, cutout
-	PGID_HIT_RADIANCE_2,
-	PGID_HIT_SHADOW_2,
-	// 3 = emission, cutout
-	PGID_HIT_RADIANCE_3,
-	PGID_HIT_SHADOW_3,
-	// 4 = cubic B-spline curves.
-	PGID_HIT_CURVES,
-	PGID_HIT_CURVES_SHADOW,
-	PGID_LAST_HIT_GROUP  = PGID_HIT_CURVES_SHADOW,
+    // Hit records for triangles:
+    // 0 = no emission, no cutout
+    PGID_HIT_RADIANCE_0,
+    PGID_FIRST_HIT_GROUP = PGID_HIT_RADIANCE_0,
+    PGID_HIT_SHADOW_0,
+    // 1 = emission, no cutout
+    PGID_HIT_RADIANCE_1,
+    PGID_HIT_SHADOW_1,
+    // 2 = no emission, cutout
+    PGID_HIT_RADIANCE_2,
+    PGID_HIT_SHADOW_2,
+    // 3 = emission, cutout
+    PGID_HIT_RADIANCE_3,
+    PGID_HIT_SHADOW_3,
+    // 4 = cubic B-spline curves.
+    PGID_HIT_CURVES,
+    PGID_HIT_CURVES_SHADOW,
+    PGID_LAST_HIT_GROUP = PGID_HIT_CURVES_SHADOW,
 
-	// Direct Callables
-	// Lens shader
-	PGID_LENS_PINHOLE,
-	PGID_FIRST_DIRECT_CALLABLE = PGID_LENS_PINHOLE,
-	PGID_LENS_FISHEYE,
-	PGID_LENS_SPHERE,
-	// Light sample
-	PGID_LIGHT_ENV_CONSTANT,
-	PGID_LIGHT_ENV_SPHERE,
-	PGID_LIGHT_MESH,
-	PGID_LIGHT_POINT, // singular
-	PGID_LIGHT_SPOT,  // singular
-	PGID_LIGHT_IES,   // singular (same as point light but with additional IES light profile luminance texture.)
-	
-	// We have more DC from MDL
-	//PGID_LAST_DIRECT_CALLABLE  = PGID_LIGHT_IES,
+    // Direct Callables
+    // Lens shader
+    PGID_LENS_PINHOLE,
+    PGID_FIRST_DIRECT_CALLABLE = PGID_LENS_PINHOLE,
+    PGID_LENS_FISHEYE,
+    PGID_LENS_SPHERE,
+    // Light sample
+    PGID_LIGHT_ENV_CONSTANT,
+    PGID_LIGHT_ENV_SPHERE,
+    PGID_LIGHT_MESH,
+    PGID_LIGHT_POINT, // singular
+    PGID_LIGHT_SPOT, // singular
+    PGID_LIGHT_IES, // singular (same as point light but with additional IES light profile luminance texture.)
 
-	// Number of all hardcoded program group entries. 
-	// There are more direct callables appended by the MDL materials.
-	NUM_PROGRAM_GROUP_IDS
+    // We have more DC from MDL
+    //PGID_LAST_DIRECT_CALLABLE  = PGID_LIGHT_IES,
+
+    // Number of all hardcoded program group entries. 
+    // There are more direct callables appended by the MDL materials.
+    NUM_PROGRAM_GROUP_IDS
 };
 
 // This is in preparation for more than one geometric primitive type.
-enum PrimitiveType
-{
-	PT_UNKNOWN,   // It's an error when this is still set.
-	PT_TRIANGLES,
-	PT_CURVES
+enum PrimitiveType {
+    PT_UNKNOWN, // It's an error when this is still set.
+    PT_TRIANGLES,
+    PT_CURVES
 };
 
 
-struct GeometryData
-{
-	GeometryData()
-		: primitiveType(PT_UNKNOWN)
-		, owner(-1)
-		, traversable(0)
-		, d_attributes(0)
-		, d_indices(0)
-		, numAttributes(0)
-		, numIndices(0)
-		, d_gas(0)
-	{
-		info = {};
-	}
+struct GeometryData {
+    GeometryData()
+        : primitiveType(PT_UNKNOWN)
+          , owner(-1)
+          , traversable(0)
+          , d_attributes(0)
+          , d_indices(0)
+          , numAttributes(0)
+          , numIndices(0)
+          , d_gas(0)
+    {
+        info = {};
+    }
 
-	PrimitiveType            primitiveType; // Triangles or cubic B-spline curves. Used to pick the correct hit record inside the SBT.
-	int                      owner;         // The device index which originally allocated all device side memory below. Needed when sharing GeometryData, resp. when freeing it.
-	OptixTraversableHandle   traversable;   // The traversable handle for this GAS. Assigned to the Instance above it.
-	CUdeviceptr              d_attributes;  // Array of VertexAttribute structs.
-	CUdeviceptr              d_indices;     // Array of unsigned int indices.
-	size_t                   numAttributes; // Count of attributes structs.
-	size_t                   numIndices;    // Count of unsigned int indices (not triplets for triangles).
-	CUdeviceptr              d_gas;         // The geometry AS for the traversable handle.
+    PrimitiveType primitiveType;
+    // Triangles or cubic B-spline curves. Used to pick the correct hit record inside the SBT.
+    int owner;
+    // The device index which originally allocated all device side memory below. Needed when sharing GeometryData, resp. when freeing it.
+    OptixTraversableHandle traversable; // The traversable handle for this GAS. Assigned to the Instance above it.
+    CUdeviceptr d_attributes; // Array of VertexAttribute structs.
+    CUdeviceptr d_indices; // Array of unsigned int indices.
+    size_t numAttributes; // Count of attributes structs.
+    size_t numIndices; // Count of unsigned int indices (not triplets for triangles).
+    CUdeviceptr d_gas; // The geometry AS for the traversable handle.
 #if (OPTIX_VERSION >= 70600)
-	OptixRelocationInfo      info;          // The relocation info allows to check if the AS is compatible across OptiX contexts. 
-	// (In the NVLINK case that isn't really required, because the GPU configuration must be homogeneous inside an NVLINK island.)
+    OptixRelocationInfo info; // The relocation info allows to check if the AS is compatible across OptiX contexts. 
+    // (In the NVLINK case that isn't really required, because the GPU configuration must be homogeneous inside an NVLINK island.)
 #else
 	OptixAccelRelocationInfo info;
 #endif
 };
 
-struct InstanceData
-{
-	InstanceData(const unsigned int geometry,
-		const int material,
-		const int light,
-		const int object)
-		: idGeometry(geometry)
-		, idMaterial(material)
-		, idLight(light)
-		, idObject(object)
-	{
-	}
+struct InstanceData {
+    InstanceData(const unsigned int geometry,
+                 const int material,
+                 const int light,
+                 const int object)
+        : idGeometry(geometry)
+          , idMaterial(material)
+          , idLight(light)
+          , idObject(object)
+    {
+    }
 
-	unsigned int idGeometry;
-	int          idMaterial; // Negative is an error.
-	int          idLight;    // Negative means no light.
-	int          idObject;   // Application-specific identifier used in state.object_id. It's the sg::Instance ID.
+    unsigned int idGeometry;
+    int idMaterial; // Negative is an error.
+    int idLight; // Negative means no light.
+    int idObject; // Application-specific identifier used in state.object_id. It's the sg::Instance ID.
 };
 
 // GUI controllable settings in the device.
-struct DeviceState
-{
-	int2     resolution;
-	//int2     tileSize;
-	int2     pathLengths;
-	int      walkLength;
-	int      samplesSqrt;
-	TypeLens typeLens;
-	float    epsilonFactor;
-	float    clockFactor;
-	int      directLighting;
+struct DeviceState {
+    int2 resolution;
+    //int2     tileSize;
+    int2 pathLengths;
+    int walkLength;
+    int samplesSqrt;
+    TypeLens typeLens;
+    float epsilonFactor;
+    float clockFactor;
+    int directLighting;
 
-	// NRC related
-	float nrcTrainUnbiasedRatio;
-	float nrcAreaSpreadFactorSqrt;
+    // NRC related
+    float nrcTrainUnbiasedRatio;
+    float nrcAreaSpreadFactorSqrt;
 
-	float nrcTrainLearningRate;
-	nrc::RenderMode    nrcRenderMode;
-	nrc::InputEncoding nrcInputEncoding;
+    float nrcTrainLearningRate;
+    nrc::RenderMode nrcRenderMode;
+    nrc::InputEncoding nrcInputEncoding;
 };
 
 class Device;
 
 // To be able to share texture CUarrays among devices inside a CUDA peer-to-peer island, 
 // the owner device and all data required to create a texture object from the shared CUarray are required.
-struct TextureMDLHost
-{
-	Device* m_owner; // The device which created this Texture. Needed for peer-to-peer sharing, resp. for proper destruction.
+struct TextureMDLHost {
+    Device *m_owner;
+    // The device which created this Texture. Needed for peer-to-peer sharing, resp. for proper destruction.
 
-	int m_index; // The index inside the per-device cache vector. 
-	// Used to maintain the MaterialMDL indices vector with the indices into that cache. 
+    int m_index; // The index inside the per-device cache vector. 
+    // Used to maintain the MaterialMDL indices vector with the indices into that cache. 
 
-	CUDA_ARRAY3D_DESCRIPTOR m_descArray3D; // FIXME This is not actually required for the sharing.
-	CUDA_RESOURCE_DESC      m_resourceDescription;
-	CUDA_TEXTURE_DESC       m_textureDescription;
+    CUDA_ARRAY3D_DESCRIPTOR m_descArray3D; // FIXME This is not actually required for the sharing.
+    CUDA_RESOURCE_DESC m_resourceDescription;
+    CUDA_TEXTURE_DESC m_textureDescription;
 
-	CUarray m_d_array; // FIXME This is also in host.m_resourceDescription.res.array.hArray
+    CUarray m_d_array; // FIXME This is also in host.m_resourceDescription.res.array.hArray
 
-	// How much memory the CUarray required in bytes, input to cuMemcpy3d()
-	// (without m_deviceAttribute.textureAlignment or potential row padding on the device).
-	size_t m_sizeBytesArray;
+    // How much memory the CUarray required in bytes, input to cuMemcpy3d()
+    // (without m_deviceAttribute.textureAlignment or potential row padding on the device).
+    size_t m_sizeBytesArray;
 
-	// The per-device texture objects and sizes are tracked in this struct 
-	// which is used inside the Texture_handler for the texture lookup functions.
-	TextureMDL m_texture;
+    // The per-device texture objects and sizes are tracked in this struct 
+    // which is used inside the Texture_handler for the texture lookup functions.
+    TextureMDL m_texture;
 };
 
 
-struct MbsdfHost
-{
-	Device* m_owner; // The device which created this Texture. Needed for peer-to-peer sharing, resp. for proper destruction.
+struct MbsdfHost {
+    Device *m_owner;
+    // The device which created this Texture. Needed for peer-to-peer sharing, resp. for proper destruction.
 
-	int m_index; // The index inside the per-device cache vector. 
+    int m_index; // The index inside the per-device cache vector. 
 
-	CUDA_ARRAY3D_DESCRIPTOR m_descArray3D[2]; // FIXME This is not actually required for the sharing.
-	CUDA_RESOURCE_DESC      m_resourceDescription[2];
-	CUDA_TEXTURE_DESC       m_textureDescription; // Same settings for both parts!
+    CUDA_ARRAY3D_DESCRIPTOR m_descArray3D[2]; // FIXME This is not actually required for the sharing.
+    CUDA_RESOURCE_DESC m_resourceDescription[2];
+    CUDA_TEXTURE_DESC m_textureDescription; // Same settings for both parts!
 
-	CUarray m_d_array[2]; // FIXME This is also in host.m_resourceDescription.res.array.hArray
-	// How much memory the CUarray required in bytes, input to cuMemcpy3d()
-	// (without m_deviceAttribute.textureAlignment or potential row padding on the device).
-	size_t m_sizeBytesArray[2];
+    CUarray m_d_array[2]; // FIXME This is also in host.m_resourceDescription.res.array.hArray
+    // How much memory the CUarray required in bytes, input to cuMemcpy3d()
+    // (without m_deviceAttribute.textureAlignment or potential row padding on the device).
+    size_t m_sizeBytesArray[2];
 
-	Mbsdf m_mbsdf;
+    Mbsdf m_mbsdf;
 };
 
 
-struct LightprofileHost
-{
-	Device* m_owner; // The device which created this Texture. Needed for peer-to-peer sharing, resp. for proper destruction.
+struct LightprofileHost {
+    Device *m_owner;
+    // The device which created this Texture. Needed for peer-to-peer sharing, resp. for proper destruction.
 
-	int m_index; // The index inside the per-device cache vector. 
+    int m_index; // The index inside the per-device cache vector. 
 
-	CUDA_ARRAY3D_DESCRIPTOR m_descArray3D; // FIXME This is not actually required for the sharing.
-	CUDA_RESOURCE_DESC      m_resourceDescription;
-	CUDA_TEXTURE_DESC       m_textureDescription;
+    CUDA_ARRAY3D_DESCRIPTOR m_descArray3D; // FIXME This is not actually required for the sharing.
+    CUDA_RESOURCE_DESC m_resourceDescription;
+    CUDA_TEXTURE_DESC m_textureDescription;
 
-	CUarray m_d_array; // FIXME This is also in host.m_resourceDescription.res.array.hArray
-	// How much memory the CUarray required in bytes, input to cuMemcpy3d()
-	// (without m_deviceAttribute.textureAlignment or potential row padding on the device).
-	size_t m_sizeBytesArray;
+    CUarray m_d_array; // FIXME This is also in host.m_resourceDescription.res.array.hArray
+    // How much memory the CUarray required in bytes, input to cuMemcpy3d()
+    // (without m_deviceAttribute.textureAlignment or potential row padding on the device).
+    size_t m_sizeBytesArray;
 
-	Lightprofile m_profile;
+    Lightprofile m_profile;
 };
 
 struct PipelineStackSizes {
-	unsigned int directCallableStackSizeFromTraversal,
-				 directCallableStackSizeFromState,
-				 continuationStackSize,
-				 maxTraversableGraphDepth;
+    unsigned int directCallableStackSizeFromTraversal,
+            directCallableStackSizeFromState,
+            continuationStackSize,
+            maxTraversableGraphDepth;
 };
 
-class Device
-{
+class Device {
 public:
-	Device(const int ordinal,       // The original CUDA ordinal ID.
-		   const int index,         // The zero based index of this device, required for multi-GPU work distribution.
-		   const int count,         // The number of active devices, required for multi-GPU work distribution.
-		   const TypeLight typeEnv, // Controls which miss shader to use.
-		   const int interop,       // The interop mode to use.
-		   const unsigned int tex,  // OpenGL HDR texture object handle
-		   const unsigned int pbo,  // OpenGL PBO handle.
-		   const size_t sizeArena); // The default Arena size in mega-bytes.
-	~Device();
+    Device(const int ordinal, // The original CUDA ordinal ID.
+           const int index, // The zero based index of this device, required for multi-GPU work distribution.
+           const int count, // The number of active devices, required for multi-GPU work distribution.
+           const TypeLight typeEnv, // Controls which miss shader to use.
+           const int interop, // The interop mode to use.
+           const unsigned int tex, // OpenGL HDR texture object handle
+           const unsigned int pbo, // OpenGL PBO handle.
+           const size_t sizeArena); // The default Arena size in mega-bytes.
+    ~Device();
 
-	bool matchUUID(const char* uuid);
-	bool matchLUID(const char* luid, const unsigned int nodeMask);
+    bool matchUUID(const char *uuid);
 
-	void initCameras(const std::vector<CameraDefinition>& cameras);
-	void initLights(const std::vector<LightGUI>& lightsGUI, 
-					const std::vector<GeometryData>& geometryData, 
-					const unsigned int stride, 
-					const unsigned int index); // Must be called after initScene()!
+    bool matchLUID(const char *luid, const unsigned int nodeMask);
 
-	GeometryData createGeometry(std::shared_ptr<sg::Triangles> geometry);
-	GeometryData createGeometry(std::shared_ptr<sg::Curves> geometry);
-	void destroyGeometry(GeometryData& data);
-	void createInstance(const GeometryData& geometryData, const InstanceData& data, const float matrix[12]);
-	void createTLAS();
-	void createGeometryInstanceData(const std::vector<GeometryData>& geometryData, const unsigned int stride, const unsigned int index);
+    void initCameras(const std::vector<CameraDefinition> &cameras);
 
-	void updateCamera(const int idCamera, const CameraDefinition& camera);
-	void updateLight(const int idLight, const LightGUI& lightsGUI);
-	//void updateLight(const int idLight, const LightDefinition& light);
-	void updateMaterial(const int idMaterial, const MaterialMDL* materialMDL);
+    void initLights(const std::vector<LightGUI> &lightsGUI,
+                    const std::vector<GeometryData> &geometryData,
+                    const unsigned int stride,
+                    const unsigned int index); // Must be called after initScene()!
 
-	void setState(const DeviceState& state);
-	void compositor(Device* other);
+    GeometryData createGeometry(std::shared_ptr<sg::Triangles> geometry);
 
-	void activateContext() const;
-	void synchronizeStream() const;
-	void render(unsigned int iterationIndex, unsigned int totalSubframeIndex, void** buffer, const int mode);
-	void updateDisplayTexture();
-	const void* getOutputBufferHost();
+    GeometryData createGeometry(std::shared_ptr<sg::Curves> geometry);
 
-	CUdeviceptr memAlloc(const size_t size, const size_t alignment, const cuda::Usage usage = cuda::USAGE_STATIC);
-	void memFree(const CUdeviceptr ptr);
+    void destroyGeometry(GeometryData &data);
 
-	size_t getMemoryFree() const;
-	size_t getMemoryAllocated() const;
+    void createInstance(const GeometryData &geometryData, const InstanceData &data, const float matrix[12]);
 
-	Texture* initTexture(const std::string& name, const Picture* picture, const unsigned int flags);
-	void shareTexture(const std::string& name, const Texture* shared);
+    void createTLAS();
 
-	unsigned int appendProgramGroupMDL(const int indexModule, const std::string& nameFunction);
+    void createGeometryInstanceData(const std::vector<GeometryData> &geometryData, const unsigned int stride,
+                                    const unsigned int index);
 
-	void compileMaterial(mi::neuraylib::ITransaction* transaction,
-						 MaterialMDL* material,
-						 const Compile_result& res,
-						 const ShaderConfiguration& config);
+    void updateCamera(const int idCamera, const CameraDefinition &camera);
 
-	const TextureMDLHost* prepareTextureMDL(mi::neuraylib::ITransaction* transaction,
-											mi::base::Handle<mi::neuraylib::IImage_api> image_api,
-											char const* texture_db_name,
-											mi::neuraylib::ITarget_code::Texture_shape texture_shape);
-	void shareTextureMDL(const TextureMDLHost* shared,
-						 char const* texture_db_name,
-						 mi::neuraylib::ITarget_code::Texture_shape texture_shape);
+    void updateLight(const int idLight, const LightGUI &lightsGUI);
 
-	MbsdfHost* prepareMBSDF(mi::neuraylib::ITransaction* transaction,
-							const mi::neuraylib::ITarget_code* code,
-							const int index);
-	void shareMBSDF(const MbsdfHost* shared);
+    //void updateLight(const int idLight, const LightDefinition& light);
+    void updateMaterial(const int idMaterial, const MaterialMDL *materialMDL);
 
-	LightprofileHost* prepareLightprofile(mi::neuraylib::ITransaction* transaction,
-										  const mi::neuraylib::ITarget_code* code,
-										  int index);
-	void shareLightprofile(const LightprofileHost* shared);
+    void setState(const DeviceState &state);
 
-	void initTextureHandler(std::vector<std::unique_ptr<MaterialMDL>>& materialsMDL);
+    void compositor(Device *other);
 
-	void resetNRC();
+    void activateContext() const;
+
+    void synchronizeStream() const;
+
+    void render(unsigned int iterationIndex, unsigned int totalSubframeIndex, void **buffer, const int mode);
+
+    void updateDisplayTexture();
+
+    const void *getOutputBufferHost();
+
+    CUdeviceptr memAlloc(const size_t size, const size_t alignment, const cuda::Usage usage = cuda::USAGE_STATIC);
+
+    void memFree(const CUdeviceptr ptr);
+
+    size_t getMemoryFree() const;
+
+    size_t getMemoryAllocated() const;
+
+    Texture *initTexture(const std::string &name, const Picture *picture, const unsigned int flags);
+
+    void shareTexture(const std::string &name, const Texture *shared);
+
+    unsigned int appendProgramGroupMDL(const int indexModule, const std::string &nameFunction);
+
+    void compileMaterial(mi::neuraylib::ITransaction *transaction,
+                         MaterialMDL *material,
+                         const Compile_result &res,
+                         const ShaderConfiguration &config);
+
+    const TextureMDLHost *prepareTextureMDL(mi::neuraylib::ITransaction *transaction,
+                                            mi::base::Handle<mi::neuraylib::IImage_api> image_api,
+                                            char const *texture_db_name,
+                                            mi::neuraylib::ITarget_code::Texture_shape texture_shape);
+
+    void shareTextureMDL(const TextureMDLHost *shared,
+                         char const *texture_db_name,
+                         mi::neuraylib::ITarget_code::Texture_shape texture_shape);
+
+    MbsdfHost *prepareMBSDF(mi::neuraylib::ITransaction *transaction,
+                            const mi::neuraylib::ITarget_code *code,
+                            const int index);
+
+    void shareMBSDF(const MbsdfHost *shared);
+
+    LightprofileHost *prepareLightprofile(mi::neuraylib::ITransaction *transaction,
+                                          const mi::neuraylib::ITarget_code *code,
+                                          int index);
+
+    void shareLightprofile(const LightprofileHost *shared);
+
+    void initTextureHandler(std::vector<std::unique_ptr<MaterialMDL> > &materialsMDL);
+
+    void resetNRC();
 
 private:
-	OptixResult initFunctionTable();
-	void initDeviceAttributes();
-	void initDeviceProperties();
-	void loadNativeModules();
-	void initNRCPipeline();
-	void initSBT(const std::vector<OptixProgramGroup>& programGroups);
-	void initNRC();
-	void resizeNRC();
+    OptixResult initFunctionTable();
 
-	void nrcInferRadiance(int screenSize, int numTiles, bool skipRenderCache);
-	void nrcAccumulateRadiance(bool skipRenderCache);
-	void nrcVisualizeFirstRadiance(int screenSize);
-	void nrcPropagateRadiance(int screenSize);
-	void nrcShuffleTrainingData();
-	void nrcTrainRadiance();
+    void initDeviceAttributes();
 
-	// Adjust the tile size according to #train records generated last frame.
-	void adjustTileSize(int numTrainRecords);
+    void initDeviceProperties();
 
-	[[nodiscard]] std::vector<OptixModule> buildModules() const;
-	[[nodiscard]] std::vector<OptixProgramGroupDesc> buildProgramGroupDescs(const std::vector<OptixModule>& modules) const;
-	[[nodiscard]] std::vector<OptixProgramGroup> buildProgramGroups(const std::vector<OptixProgramGroupDesc>& programGroupDescs) const;
+    void loadNativeModules();
 
-	[[nodiscard]] PipelineStackSizes estimatePipelineStackSizes(const std::vector<OptixProgramGroup>& programGroups) const;
+    void initNRCPipeline();
 
-	bool prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
-							 MbsdfHost& host,
-							 const mi::neuraylib::IBsdf_measurement* bsdf_measurement);
+    void initSBT(const std::vector<OptixProgramGroup> &programGroups);
+
+    void initNRC();
+
+    void resizeNRC();
+
+    void nrcInferRadiance(int screenSize, int numTiles, bool skipRenderCache);
+
+    void nrcAccumulateRadiance(bool skipRenderCache);
+
+    void nrcVisualizeFirstRadiance(int screenSize);
+
+    void nrcPropagateRadiance(int screenSize);
+
+    void nrcShuffleTrainingData();
+
+    void nrcTrainRadiance();
+
+    // Adjust the tile size according to #train records generated last frame.
+    void adjustTileSize(int numTrainRecords);
+
+    [[nodiscard]] std::vector<OptixModule> buildModules() const;
+
+    [[nodiscard]] std::vector<OptixProgramGroupDesc> buildProgramGroupDescs(
+        const std::vector<OptixModule> &modules) const;
+
+    [[nodiscard]] std::vector<OptixProgramGroup> buildProgramGroups(
+        const std::vector<OptixProgramGroupDesc> &programGroupDescs) const;
+
+    [[nodiscard]] PipelineStackSizes estimatePipelineStackSizes(
+        const std::vector<OptixProgramGroup> &programGroups) const;
+
+    bool prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
+                             MbsdfHost &host,
+                             const mi::neuraylib::IBsdf_measurement *bsdf_measurement);
 
 public:
-	// Constructor arguments:
-	int          m_ordinal; // The ordinal number of this CUDA device. Used to get the CUdevice handle m_cudaDevice.
-	int          m_index;   // The index inside the m_devicesActive vector.
-	int          m_count;   // The number of active devices.
-	TypeLight    m_typeEnv; // Type of environment miss shader to use.
-	int          m_interop; // The interop mode to use.
-	unsigned int m_tex;     // The OpenGL HDR texture object.
-	unsigned int m_pbo;     // The OpenGL PixelBufferObject handle when interop should be used. 0 when not.
+    // Constructor arguments:
+    int m_ordinal; // The ordinal number of this CUDA device. Used to get the CUdevice handle m_cudaDevice.
+    int m_index; // The index inside the m_devicesActive vector.
+    int m_count; // The number of active devices.
+    TypeLight m_typeEnv; // Type of environment miss shader to use.
+    int m_interop; // The interop mode to use.
+    unsigned int m_tex; // The OpenGL HDR texture object.
+    unsigned int m_pbo; // The OpenGL PixelBufferObject handle when interop should be used. 0 when not.
 
-	float m_clockFactor; // Clock Factor scaled by CLOCK_FACTOR_SCALE (1.0e-9f) for USE_TIME_VIEW
+    float m_clockFactor; // Clock Factor scaled by CLOCK_FACTOR_SCALE (1.0e-9f) for USE_TIME_VIEW
 
-	CUuuid m_deviceUUID{};
+    CUuuid m_deviceUUID{};
 
-	// Not actually used because this only works under Windows WDDM mode, not in TCC mode!
-	// (Though using LUID is recommended under Windows when possible because you can potentially
-	// get the same UUID for MS hybrid configurations (like when running under Remote Desktop).
-	char         m_deviceLUID[8]{};
-	unsigned int m_nodeMask;
+    // Not actually used because this only works under Windows WDDM mode, not in TCC mode!
+    // (Though using LUID is recommended under Windows when possible because you can potentially
+    // get the same UUID for MS hybrid configurations (like when running under Remote Desktop).
+    char m_deviceLUID[8]{};
+    unsigned int m_nodeMask;
 
-	std::string m_deviceName;
-	std::string m_devicePciBusId;  // domain:bus:device.function, required to find matching CUDA device via NVML.
+    std::string m_deviceName;
+    std::string m_devicePciBusId; // domain:bus:device.function, required to find matching CUDA device via NVML.
 
-	DeviceAttribute m_deviceAttribute; // CUDA 
-	DeviceProperty  m_deviceProperty;  // OptiX
+    DeviceAttribute m_deviceAttribute; // CUDA 
+    DeviceProperty m_deviceProperty; // OptiX
 
-	CUdevice  m_cudaDevice;  // The CUdevice handle of the CUDA device ordinal. (Usually identical to m_ordinal.)
-	CUcontext m_cudaContext{};
-	CUstream  m_cudaStream{};
+    CUdevice m_cudaDevice; // The CUdevice handle of the CUDA device ordinal. (Usually identical to m_ordinal.)
+    CUcontext m_cudaContext{};
+    CUstream m_cudaStream{};
 
-	OptixFunctionTable m_api;
-	OptixDeviceContext m_optixContext{};
+    OptixFunctionTable m_api;
+    OptixDeviceContext m_optixContext{};
 
-	std::vector<std::string> m_moduleFilenames;
+    std::vector<std::string> m_moduleFilenames;
 
-	// These are used in different Device functions. Set them once inside the constructor.
-	OptixModuleCompileOptions   m_mco{};
-	OptixPipelineCompileOptions m_pco{};
-	OptixPipelineLinkOptions    m_plo{};
-	OptixProgramGroupOptions    m_pgo{}; // This is a just placeholder.
+    // These are used in different Device functions. Set them once inside the constructor.
+    OptixModuleCompileOptions m_mco{};
+    OptixPipelineCompileOptions m_pco{};
+    OptixPipelineLinkOptions m_plo{};
+    OptixProgramGroupOptions m_pgo{}; // This is a just placeholder.
 
-	OptixPipeline m_pipeline{};
+    OptixPipeline m_pipeline{};
 
-	OptixShaderBindingTable m_sbt;
+    OptixShaderBindingTable m_sbt;
 
-	CUdeviceptr m_d_sbtRecordHeaders;
+    CUdeviceptr m_d_sbtRecordHeaders;
 
-	CUdeviceptr m_d_ias;
+    CUdeviceptr m_d_ias;
 
-	std::vector<OptixInstance> m_instances;
+    std::vector<OptixInstance> m_instances;
 
-	std::vector<InstanceData>  m_instanceData; // idGeometry, idMaterial, idLight, idObject
+    std::vector<InstanceData> m_instanceData; // idGeometry, idMaterial, idLight, idObject
 
-	std::vector<GeometryInstanceData> m_geometryInstanceData;
-	GeometryInstanceData* m_d_geometryInstanceData;
+    std::vector<GeometryInstanceData> m_geometryInstanceData;
+    GeometryInstanceData *m_d_geometryInstanceData;
 
-	// Host-side copy of NRC Control block.
-	// Device-side is pointed by m_systemData.nrcCB
-	nrc::ControlBlock  m_nrcControlBlock;
-	nrc::Network       m_nrcNetwork;
-	nrc::HyperParams   m_nrcHyperParams;
-	nrc::TrainingStat  m_nrcTrainStat;
-	nrc::RenderMode    m_nrcRenderMode;
-	nrc::InputEncoding m_nrcInputEncoding;
-	bool               m_nrcNeedsReset;
+    // Host-side copy of NRC Control block.
+    // Device-side is pointed by m_systemData.nrcCB
+    nrc::ControlBlock m_nrcControlBlock;
+    nrc::Network m_nrcNetwork;
+    nrc::HyperParams m_nrcHyperParams;
+    nrc::TrainingStat m_nrcTrainStat;
+    nrc::RenderMode m_nrcRenderMode;
+    nrc::InputEncoding m_nrcInputEncoding;
+    bool m_nrcNeedsReset;
 
-	// We only use this for shuffling the NRC training records.
-	curandGenerator_t m_curandGenerator{};
+    // We only use this for shuffling the NRC training records.
+    curandGenerator_t m_curandGenerator{};
 
-	SystemData m_systemData{
-		// Static Data ==========
-		// This contains the root traversable handle as well.
-		.resolution     = {2, 2},
-		.pathLengths    = {2, 5},
-		.walkLength     = 1,
-		.sceneEpsilon   = 500.0f * SCENE_EPSILON_SCALE,
-		.clockScale     = 1000.0f * CLOCK_FACTOR_SCALE,
-		.directLighting = 1,
+    SystemData m_systemData{
+        // Static Data ==========
+        // This contains the root traversable handle as well.
+        .resolution = {2, 2},
+        .pathLengths = {2, 5},
+        .walkLength = 1,
+        .sceneEpsilon = 500.0f * SCENE_EPSILON_SCALE,
+        .clockScale = 1000.0f * CLOCK_FACTOR_SCALE,
+        .directLighting = 1,
 
-		// Per-frame Data ==========
-		.pf = {
-			.tileSize  = {8, 8},
-			//.tileShift = {3, 3},
-		}
-	};
-	SystemData* m_d_systemData;             // Device side (global-mem) CUdeviceptr of the system data.
-											// This is allocated by us and *copied to constant mem* by Optix at launch.
-	SystemData* m_d_systemData_nrcHelpers;  // Same thing, but copied for the NRC helper module and actually points to constant mem.
+        // Per-frame Data ==========
+        .pf = {
+            .tileSize = {8, 8},
+            //.tileShift = {3, 3},
+        }
+    };
+    SystemData *m_d_systemData; // Device side (global-mem) CUdeviceptr of the system data.
+    // This is allocated by us and *copied to constant mem* by Optix at launch.
+    SystemData *m_d_systemData_nrcHelpers;
+    // Same thing, but copied for the NRC helper module and actually points to constant mem.
 
-	//std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
+    //std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
 
-	int m_launchWidth;
+    int m_launchWidth;
 
-	bool m_isDirtySystemData;
-	bool m_isDirtyOutputBuffer;
-	bool m_isDirtyHyperParams;
-	bool m_ownsSharedBuffer; // DEBUG This flag is only evaluated in asserts.
+    bool m_isDirtySystemData;
+    bool m_isDirtyOutputBuffer;
+    bool m_isDirtyHyperParams;
+    bool m_ownsSharedBuffer; // DEBUG This flag is only evaluated in asserts.
 
-	std::map<std::string, Texture*> m_mapTextures;
+    std::map<std::string, Texture *> m_mapTextures;
 
-	std::vector<LightDefinition> m_lights; // Staging data for the device side sysData.lightDefinitions
+    std::vector<LightDefinition> m_lights; // Staging data for the device side sysData.lightDefinitions
 
-	CUgraphicsResource  m_cudaGraphicsResource{}; // The handle for the registered OpenGL PBO or texture image resource when using interop.
+    CUgraphicsResource m_cudaGraphicsResource{};
+    // The handle for the registered OpenGL PBO or texture image resource when using interop.
 
-	// Native CUDA kernels --------------
-	// Compositor
-	CUmodule    m_moduleCompositor{};
-	CUfunction  m_functionCompositor{};
-	CUdeviceptr m_d_compositorData{};
+    // Native CUDA kernels --------------
+    // Compositor
+    CUmodule m_moduleCompositor{};
+    CUfunction m_functionCompositor{};
+    CUdeviceptr m_d_compositorData{};
 
-	// A single module contains all the helper functions below.
-	CUmodule    m_moduleNRCHelpers{};
-	CUfunction  m_fnCopyRadianceToOutputBuffer{},
-				m_fnAccumulateRenderRadiance{},
-				m_fnPropagateTrainRadiance{},
-				m_fnPermuteTrainData{};
-	int         m_fnCopyRadianceToOutputBufferBlockSize,
-				m_fnAccumulateRenderRadianceBlockSize,
-			    m_fnPropagateTrainRadianceBlockSize,
-				m_fnPermuteTrainDataBlockSize;
+    // A single module contains all the helper functions below.
+    CUmodule m_moduleNRCHelpers{};
+    CUfunction m_fnCopyRadianceToOutputBuffer{},
+            m_fnAccumulateRenderRadiance{},
+            m_fnPropagateTrainRadiance{},
+            m_fnPermuteTrainData{};
+    int m_fnCopyRadianceToOutputBufferBlockSize,
+            m_fnAccumulateRenderRadianceBlockSize,
+            m_fnPropagateTrainRadianceBlockSize,
+            m_fnPermuteTrainDataBlockSize;
 
 #if USE_FP32_OUTPUT
-	std::vector<float4> m_bufferHost;
+    std::vector<float4> m_bufferHost;
 #else
 	std::vector<Half4>  m_bufferHost;
-#endif  
+#endif
 
-	cuda::ArenaAllocator* m_allocator;
+    cuda::ArenaAllocator *m_allocator;
 
-	size_t m_sizeMemoryTextureArrays; // The sum of all texture CUarray resp. CUmipmappedArray.
+    size_t m_sizeMemoryTextureArrays; // The sum of all texture CUarray resp. CUmipmappedArray.
 
-	// The modules and device shader configurations are both indexed by the shader index.
-	std::vector<OptixModule>               m_modulesMDL;
-	std::vector<DeviceShaderConfiguration> m_deviceShaderConfigurations;
+    // The modules and device shader configurations are both indexed by the shader index.
+    std::vector<OptixModule> m_modulesMDL;
+    std::vector<DeviceShaderConfiguration> m_deviceShaderConfigurations;
 
-	// These are all direct callable program groups initialized by all different MDL shaders in the scene.
-	// (The shader configuration idxCall* fields are indexing into the full set of program groups though,
-	// already including the lens shader plus light sampling count offset.)
-	std::vector<OptixProgramGroup> m_programGroupsMDL;
+    // These are all direct callable program groups initialized by all different MDL shaders in the scene.
+    // (The shader configuration idxCall* fields are indexing into the full set of program groups though,
+    // already including the lens shader plus light sampling count offset.)
+    std::vector<OptixProgramGroup> m_programGroupsMDL;
 
-	// The Device needs to track these to be able to get the shader index from a material index
-	// which is only stored in the MaterialDefinitionMDL struct on device side.
-	std::vector<MaterialDefinitionMDL> m_materialDefinitions; // One element per material reference, indexed by indexMaterial.
+    // The Device needs to track these to be able to get the shader index from a material index
+    // which is only stored in the MaterialDefinitionMDL struct on device side.
+    std::vector<MaterialDefinitionMDL> m_materialDefinitions;
+    // One element per material reference, indexed by indexMaterial.
 
-	// MDL Resource handling, textures, measured BSDFs, light profiles.
-	// All different resources (textures, MBSDFs, light profiles) used by the MDL materials inside the scene are stored per device.
-	// The MaterialMDL only holds vectors with indices into these caches. That index is the same on each device.
-	// It gets expanded into the Texture_handler structure in Device::initTextureHandler().
+    // MDL Resource handling, textures, measured BSDFs, light profiles.
+    // All different resources (textures, MBSDFs, light profiles) used by the MDL materials inside the scene are stored per device.
+    // The MaterialMDL only holds vectors with indices into these caches. That index is the same on each device.
+    // It gets expanded into the Texture_handler structure in Device::initTextureHandler().
 
-	std::map<std::string, int>  m_mapTextureNameToIndex; // Texture cache.
-	std::vector<TextureMDLHost> m_textureMDLHosts;       // All textures used by the materials inside the scene.
+    std::map<std::string, int> m_mapTextureNameToIndex; // Texture cache.
+    std::vector<TextureMDLHost> m_textureMDLHosts; // All textures used by the materials inside the scene.
 
-	// There is no cache implemented for measured BSDFs and light profiles.
-	// The assumption is that measured BSDFs or light profiles are not used by multiple material shaders.
-	std::vector<MbsdfHost> m_mbsdfHosts; // All MBSDFs used by the materials inside the scene.
+    // There is no cache implemented for measured BSDFs and light profiles.
+    // The assumption is that measured BSDFs or light profiles are not used by multiple material shaders.
+    std::vector<MbsdfHost> m_mbsdfHosts; // All MBSDFs used by the materials inside the scene.
 
-	std::vector<LightprofileHost> m_lightprofileHosts; // All light profiles used by materials inside the scene
+    std::vector<LightprofileHost> m_lightprofileHosts; // All light profiles used by materials inside the scene
 };
 
 #endif // DEVICE_H
